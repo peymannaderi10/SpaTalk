@@ -1,7 +1,7 @@
 # operations plan Task E3: Retention with receipts
 
 Status: done with deviations
-Commit: <pending>
+Commit: 5d3a579
 Tests: `TEST_DATABASE_URL=…/spatalk_test_e3 uv run pytest -q tests/test_ops_retention.py` -> 11/11;
 full suite `TEST_DATABASE_URL=…/spatalk_test_e3 uv run pytest -q` -> **646 passed, 1 skipped**
 in 175 s (647/647; the skip is `test_driver.py::test_gemini_client_calls_a_tool`, `skipif` on
