@@ -1,7 +1,7 @@
 # portal Task C6: Billing per organisation
 
 Status: done with deviations
-Commit: <pending>
+Commit: b41328a
 Tests: `cd portal/e2e-tests && RUNTIME_INTERNAL_URL=… npx playwright test tests/billing.spec.ts` -> 15/15; full portal suite -> 153/153 (`npx playwright test` 57, `wasp test client run` 70, `npm run test:unit` 26), green twice in a row, plus `wasp build` and `npx tsc -p tsconfig.src.json --noEmit` clean
 
 Interfaces produced:
