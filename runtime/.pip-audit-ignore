@@ -1,0 +1,17 @@
+# Accepted pip-audit findings (operations plan, Task E8).
+#
+# CI fails on any known-vulnerable Python dependency. An advisory listed here is one we have
+# read and decided to carry, and it needs three things: the package, why the runtime is not
+# exposed, and what would take it off this list. Anything without a fix upstream is reviewed
+# again at the next monthly cost-and-drift pass; an advisory that gains a fix version comes
+# off this list and the dependency is upgraded instead.
+#
+# Format: one advisory id per line, each introduced by the comment block above it.
+
+# nltk 3.10.3 — file sandbox bypass in the model-artifact APIs (TransitionParser.train/parse,
+# AveragedPerceptron.save/load, PerceptronTagger.save_to_json, save_maxent_params). No patched
+# release exists as of 2026-09-02. nltk is a transitive dependency of pipecat-ai, which uses it
+# only to split assistant text into sentences; SpaTalk never trains, loads or saves an nltk
+# model, and no caller-controlled path ever reaches those APIs. Reviewed: 2026-09-02. Remove
+# when nltk ships the fix and pipecat-ai accepts it.
+PYSEC-2026-3740

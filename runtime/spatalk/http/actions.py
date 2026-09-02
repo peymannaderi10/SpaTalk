@@ -17,6 +17,21 @@ PAGE = (
     "{body}</body>"
 )
 
+# --- security headers (operations plan, Task E8) ---
+# These pages are reached from an email link and can show a transcript. The policy allows
+# exactly what the page uses — an inline style attribute and a form posting back here — and
+# nothing else: no script, no image, no frame, no outbound request of any kind. `no-referrer`
+# keeps the signed token out of the Referer header if a page ever grows an outbound link.
+SECURITY_HEADERS = {
+    "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'",
+    "Referrer-Policy": "no-referrer",
+}
+
+
+def _page(body: str) -> HTMLResponse:
+    return HTMLResponse(PAGE.format(body=body), headers=SECURITY_HEADERS)
+# --- end security headers ---
+
 
 def _claim(request: Request, token: str):
     try:
@@ -44,7 +59,7 @@ async def confirm(request: Request, token: str):
             "".join(f"<p><b>{escape(m.role)}:</b> {escape(m.text)}</p>" for m in msgs)
             or "<p>No transcript.</p>"
         )
-        return PAGE.format(body=f"<h2>Item #{item.id} transcript</h2>{rows}")
+        return _page(f"<h2>Item #{item.id} transcript</h2>{rows}")
     verb = "Acknowledge" if claim.action == "ack" else "Resolve"
     body = (
         f"<h2>{verb} item #{item.id}?</h2>"
@@ -52,7 +67,7 @@ async def confirm(request: Request, token: str):
         f"<form method=post><label>Your name or email <input name=actor required></label> "
         f"<button type=submit>{verb}</button></form>"
     )
-    return PAGE.format(body=body)
+    return _page(body)
 
 
 @router.post("/a/{token}", response_class=HTMLResponse)
@@ -68,7 +83,7 @@ async def act(request: Request, token: str, actor: str = Form(...)):
     if item is None:
         raise HTTPException(status_code=404)
     await _audit(ctx, actor, claim.action, "item", str(item.id))
-    return PAGE.format(
-        body=f"<h2>Done</h2><p>Item #{item.id} is now <b>{escape(item.state)}</b>. "
+    return _page(
+        f"<h2>Done</h2><p>Item #{item.id} is now <b>{escape(item.state)}</b>. "
         f"You can close this tab.</p>"
     )

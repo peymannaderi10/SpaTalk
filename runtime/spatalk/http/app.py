@@ -12,6 +12,7 @@ from spatalk import jobs
 from spatalk.clock import SystemClock
 from spatalk.db import make_engine, make_session_factory
 from spatalk.http import actions, internal, slack, slack_events
+from spatalk.http.ratelimit import install_rate_limits
 from spatalk.ledger.delivery import make_delivery, schedule_item_delivery
 from spatalk.ledger.items import PgLedger
 from spatalk.ledger.scheduler import run_scheduler_forever
@@ -81,6 +82,11 @@ def create_app(ctx: jobs.JobContext, start_background: bool = True) -> FastAPI:
 
     app = FastAPI(title="spatalk runtime", lifespan=lifespan)
     app.state.ctx = ctx
+    # --- security hardening (operations plan, Task E8) ---
+    # In front of every HTTP route, before any router: per-IP token buckets, 429 with
+    # Retry-After. `/healthz`, `/internal/*` and the media socket are not in any bin.
+    install_rate_limits(app)
+    # --- end security hardening ---
     attach_router(app, texml.router)
     attach_router(app, actions.router)
     attach_router(app, slack.router)

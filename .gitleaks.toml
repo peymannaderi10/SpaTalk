@@ -1,0 +1,59 @@
+# gitleaks configuration (operations plan, Task E8).
+#
+# CI runs `gitleaks detect` over the whole history on every push. The default rule set is the
+# floor — it already knows Google, Slack, Stripe, AWS and private-key shapes — and this file
+# adds the two things it cannot know: the names this project gives its own shared keys, and
+# the handful of deliberately fake values the fixtures carry.
+#
+# Rules for editing: an exception must be narrow and must say why. Never allowlist a whole
+# directory that holds deployable configuration, and never allowlist `.env`: that file is
+# gitignored and must stay out of the repository entirely (CLAUDE.md, non-negotiable 5).
+
+title = "SpaTalk"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "spatalk-shared-key"
+description = "A SpaTalk shared key assigned a real-looking value"
+# The keys that unlock something on their own: the portal's key into /internal/*, the edge
+# worker's key into the webhooks, the signing key behind every action link, the Fernet key
+# over the Meta tokens, and the carrier key. Twenty characters is above every placeholder
+# the repository uses and below every real key any of these providers issues.
+regex = '''(?i)\b(INTERNAL_API_KEY|RUNTIME_INTERNAL_KEY|EDGE_SHARED_KEY|SECRET_KEY|META_TOKEN_ENCRYPTION_KEY|TELNYX_API_KEY)["']?\s*[:=]\s*["']?([A-Za-z0-9+/=_\-]{20,})'''
+secretGroup = 2
+keywords = [
+  "internal_api_key",
+  "runtime_internal_key",
+  "edge_shared_key",
+  "secret_key",
+  "meta_token_encryption_key",
+  "telnyx_api_key",
+]
+
+[[allowlists]]
+description = """Fixtures. Every credential under a test tree is invented, and the suites are
+the one place the repository is supposed to contain credential-shaped strings. A real key must
+never be pasted here either; that is what code review is for."""
+paths = [
+  '''runtime/tests/''',
+  '''runtime/scenarios/''',
+  '''portal/src/.*\.test\.ts$''',
+  '''portal/e2e-tests/''',
+  '''edge/sms-worker/test/''',
+  '''edge/sms-worker/vitest\.config\.ts$''',
+]
+
+[[allowlists]]
+description = """Placeholders and throwaway CI values. `.env*.example` files ship with
+`change-me` style values, the CI jobs invent a JWT secret for the portal server they start,
+and the runtime and portal agree on a literal `ci-internal-key` inside the runner. None of
+them exists anywhere else."""
+regexes = [
+  '''(?i)change[-_]?me''',
+  '''(?i)^(your|example|placeholder|dummy|fake|sample)[-_]''',
+  '''(?i)[-_](example|placeholder|dummy|fake|sample|for[-_]tests)$''',
+  '''^ci-internal-key$''',
+  '''^0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef$''',
+]

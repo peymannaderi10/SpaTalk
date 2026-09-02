@@ -177,3 +177,44 @@ jobs:
             portal/e2e-tests/mail-sink.log
             runtime/runtime-serve.log
           if-no-files-found: ignore
+
+  # Security hardening (operations plan, Task E8). Nothing here needs a database, a browser
+  # or a provider key, so it runs beside the suites and fails the push on its own. All three
+  # scanners are allowlist-driven: an accepted finding is a line in a file with a reason next
+  # to it, never a flag that silences a whole class of finding.
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        # gitleaks reads the history: a key that was committed and then removed is still a
+        # leaked key, and the default checkout depth would only ever see the tip.
+        with: { fetch-depth: 0 }
+      - name: secret scan
+        run: |
+          docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.30.1 \
+            detect --source=/repo --config=/repo/.gitleaks.toml --redact --no-banner --verbose
+
+      - uses: astral-sh/setup-uv@v3
+      - name: the runtime environment to audit
+        working-directory: runtime
+        run: uv venv --python 3.12 && uv pip install -e ".[dev]" && uv pip install pip-audit
+      - name: python dependency audit
+        working-directory: runtime
+        # Accepted advisories, with the reason each was accepted, live in .pip-audit-ignore.
+        run: |
+          ignore=()
+          while IFS= read -r line || [ -n "$line" ]; do
+            advisory="${line%%#*}"
+            advisory="${advisory//[[:space:]]/}"
+            if [ -n "$advisory" ]; then ignore+=(--ignore-vuln "$advisory"); fi
+          done < .pip-audit-ignore
+          uv run pip-audit --progress-spinner off --skip-editable "${ignore[@]}"
+
+      - uses: actions/setup-node@v4
+        with: { node-version: "22" }
+      # `npm audit --audit-level=high` with the accepted findings in
+      # .github/npm-audit-allow.json; the gate exits non-zero on anything else.
+      - name: portal dependency audit
+        run: node .github/scripts/npm-audit-gate.mjs portal
+      - name: worker dependency audit
+        run: node .github/scripts/npm-audit-gate.mjs edge/sms-worker
