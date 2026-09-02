@@ -1,7 +1,7 @@
 # operations Task E1: Carrier failover bin and the loop guard
 
 Status: done with deviations
-Commit: <pending>
+Commit: e67010a
 Tests: `uv run pytest -q tests/test_ops_loop_guard.py` -> 10/10; full suite
 `TEST_DATABASE_URL=…/spatalk_test_e1 uv run pytest -q` -> 635 passed, 1 skipped, 0 failed
 (636/636; the skip is `test_driver.py::test_gemini_client_calls_a_tool`, `skipif` on
