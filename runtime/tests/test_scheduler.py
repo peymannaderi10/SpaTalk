@@ -16,7 +16,7 @@ async def test_breached_item_is_escalated_once_on_all_channels(sf, registry, fix
     await ledger.create_item(ref, ItemDraft(type="callback", urgency="normal", contact=ContactInfo(name="Dana")))
     delivery = MemoryDelivery()
     ctx = jobs.JobContext(sf=sf, clock=fixed_clock, registry=registry, ledger=ledger, delivery=delivery,
-                          settings=Settings(public_base_url="https://api.test", secret_key="s"))
+                          settings=Settings(_env_file=None, public_base_url="https://api.test", secret_key="s"))
     assert await escalate_breached(ctx) == 0
     fixed_clock.advance(days=2)
     assert await escalate_breached(ctx) == 1
@@ -34,7 +34,7 @@ async def test_digest_sent_once_per_local_day_after_digest_time(sf, registry, fi
     from spatalk.settings import Settings
     delivery = MemoryDelivery()
     ctx = jobs.JobContext(sf=sf, clock=fixed_clock, registry=registry, ledger=PgLedger(sf, fixed_clock),
-                          delivery=delivery, settings=Settings(public_base_url="https://api.test", secret_key="s"))
+                          delivery=delivery, settings=Settings(_env_file=None, public_base_url="https://api.test", secret_key="s"))
     # fixed_clock is 14:00 Toronto, digest_time 07:30, not yet sent today -> sends
     assert await send_digests(ctx) == 1
     assert await send_digests(ctx) == 0

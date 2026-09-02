@@ -41,6 +41,7 @@ async def ctx(sf, registry, fixed_clock):
         ledger=PgLedger(sf, fixed_clock),
         delivery=MemoryDelivery(),
         settings=Settings(
+            _env_file=None,
             secret_key="s", internal_api_key=INTERNAL_KEY, git_commit="deadbeefcafe"
         ),
     )

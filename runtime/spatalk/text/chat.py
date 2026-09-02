@@ -79,6 +79,11 @@ class RateLimiter:
 
 async def verify_turnstile(token: str, secret: str, remote_ip: str | None = None) -> bool:
     """Ask Cloudflare whether this token is good. Any failure is a refusal, never a pass."""
+    # No secret means there is nothing to verify against: refuse without opening a socket to
+    # Cloudflare. Callers that mean "do not challenge at all" test the secret themselves
+    # before calling (see ``chat_ws`` and ``chat_fallback``). QA gate B, finding 1.
+    if not secret:
+        return False
     data = {"secret": secret, "response": token}
     if remote_ip:
         data["remoteip"] = remote_ip

@@ -5,6 +5,13 @@ import pytest
 import pytest_asyncio
 from sqlalchemy import text
 
+# The suite is hermetic: it must never read the developer's runtime/.env, or a machine that
+# holds real provider keys runs different tests from a clean checkout (QA gate B, finding 1).
+# This is set before spatalk is imported anywhere, and Settings reads the switch at
+# construction time, so every settings object built during the session ignores the dotenv
+# file. Test helpers pass _env_file=None as well, as belt and braces.
+os.environ["SPATALK_NO_ENV_FILE"] = "1"
+
 os.environ.setdefault(
     "TEST_DATABASE_URL", "postgresql+asyncpg://spatalk:spatalk@localhost:5434/spatalk_test"
 )

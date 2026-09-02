@@ -39,7 +39,7 @@ def _settings(**overrides):
         meta_token_encryption_key=Fernet.generate_key().decode(),
     )
     values.update(overrides)
-    return Settings(**values)
+    return Settings(_env_file=None, **values)
 
 
 async def _build(sf, registry, fixed_clock, *, settings=None, graph_responses=None):

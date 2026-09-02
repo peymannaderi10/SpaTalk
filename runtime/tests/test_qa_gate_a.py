@@ -312,7 +312,7 @@ async def client(sf, registry, fixed_clock):
     from spatalk.ledger.items import PgLedger
     from spatalk.settings import Settings
 
-    settings = Settings(public_base_url="https://api.test", secret_key="s3cret")
+    settings = Settings(_env_file=None, public_base_url="https://api.test", secret_key="s3cret")
     ledger = PgLedger(sf, fixed_clock)
     ctx = jobs.JobContext(
         sf=sf,
@@ -467,11 +467,12 @@ def test_stt_and_tts_providers_are_chosen_by_environment_without_network():
     from spatalk.settings import Settings
     from spatalk.voice.pipeline import make_llm, make_stt, make_tts
 
-    default = Settings(soniox_api_key="k", inworld_api_key="k", google_api_key="k")
+    default = Settings(_env_file=None, soniox_api_key="k", inworld_api_key="k", google_api_key="k")
     assert type(make_stt(default)).__name__ == "SonioxSTTService"
     assert type(make_tts(default)).__name__ == "InworldTTSService"
 
     swapped = Settings(
+        _env_file=None,
         stt_provider="deepgram_flux",
         tts_provider="deepgram_aura2",
         deepgram_api_key="k",
@@ -480,7 +481,7 @@ def test_stt_and_tts_providers_are_chosen_by_environment_without_network():
     assert type(make_stt(swapped)).__name__ == "DeepgramFluxSTTService"
     assert type(make_tts(swapped)).__name__ == "DeepgramTTSService"
 
-    llm = make_llm(Settings(google_api_key="k", llm_model="gemini-2.5-flash-lite"))
+    llm = make_llm(Settings(_env_file=None, google_api_key="k", llm_model="gemini-2.5-flash-lite"))
     assert type(llm).__name__ == "GoogleLLMService"
 
 

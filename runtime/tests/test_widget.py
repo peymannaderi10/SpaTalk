@@ -47,7 +47,7 @@ async def _build(sf, registry, fixed_clock, llm, **setting_overrides):
     cfg = await registry.get("skincentrix")
     await registry.import_config(cfg.model_copy(update={"sms_from_number": SMS_FROM}), "test")
     registry.invalidate("skincentrix")
-    settings = Settings(secret_key="s3cret", **setting_overrides)
+    settings = Settings(_env_file=None, secret_key="s3cret", **setting_overrides)
     ctx = jobs.JobContext(
         sf=sf,
         clock=fixed_clock,

@@ -8,7 +8,7 @@ async def test_healthz_and_routes_present(sf, registry, fixed_clock):
     from spatalk.ledger.items import PgLedger
     from spatalk.settings import Settings
     ctx = jobs.JobContext(sf=sf, clock=fixed_clock, registry=registry, ledger=PgLedger(sf, fixed_clock),
-                          delivery=MemoryDelivery(), settings=Settings(secret_key="s"))
+                          delivery=MemoryDelivery(), settings=Settings(_env_file=None, secret_key="s"))
     app = create_app(ctx, start_background=False)
     paths = {r.path for r in app.routes}
     assert {"/healthz", "/telnyx/texml", "/ws/{token}", "/a/{token}", "/slack/interactions"} <= paths

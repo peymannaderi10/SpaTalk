@@ -11,7 +11,7 @@ async def client(sf, registry, fixed_clock):
     app = FastAPI()
     app.include_router(router)
     app.state.ctx = jobs.JobContext(sf=sf, clock=fixed_clock, registry=registry, ledger=None, delivery=None,
-                                    settings=Settings(secret_key="s", media_ws_host="media.test"))
+                                    settings=Settings(_env_file=None, secret_key="s", media_ws_host="media.test"))
     async with AsyncClient(transport=ASGITransport(app=app), base_url="https://api.test") as c:
         yield c
 

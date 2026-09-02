@@ -259,7 +259,7 @@ async def sms_world(sf, registry, fixed_clock):
         registry=registry,
         ledger=PgLedger(sf, fixed_clock),
         delivery=MemoryDelivery(),
-        settings=Settings(secret_key="s3cret", edge_shared_key=EDGE_KEY),
+        settings=Settings(_env_file=None, secret_key="s3cret", edge_shared_key=EDGE_KEY),
         sms=MemorySms(),
         llm=llm,
     )

@@ -299,6 +299,7 @@ async def _build(sf, registry, fixed_clock, *, reply: str, public_reply: bool = 
     from spatalk.tenants.schema import SocialSettings
 
     settings = Settings(
+        _env_file=None,
         secret_key="s3cret",
         public_base_url="https://api.example.com",
         instagram_app_id="IG_APP_ID",

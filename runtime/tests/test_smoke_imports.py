@@ -56,4 +56,4 @@ def test_pipecat_symbols():
 def test_settings_load(monkeypatch):
     monkeypatch.setenv("LLM_MODEL", "gemini-2.5-flash-lite")
     from spatalk.settings import Settings
-    assert Settings().llm_model == "gemini-2.5-flash-lite"
+    assert Settings(_env_file=None).llm_model == "gemini-2.5-flash-lite"

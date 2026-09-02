@@ -65,6 +65,7 @@ async def _ctx(sf, registry, fixed_clock, bot: bool = True, llm=None):
         ledger=PgLedger(sf, fixed_clock, on_created=on_created),
         delivery=MemoryBotDelivery() if bot else MemoryDelivery(),
         settings=Settings(
+            _env_file=None,
             secret_key="s3cret",
             slack_signing_secret="slacksecret",
             slack_bot_token="xoxb-test" if bot else "",
@@ -224,7 +225,7 @@ async def test_the_real_bot_delivery_posts_roots_replies_and_webhooks():
 
     client, http = _FakeSlackClient(), _FakeHttp()
     delivery = SlackBotDelivery(
-        Settings(slack_bot_token="xoxb-test"), http=http, client=client
+        Settings(_env_file=None, slack_bot_token="xoxb-test"), http=http, client=client
     )
     ts = await delivery.post_thread_root(CHANNEL, [{"type": "divider"}], "#1 Callback requested")
     assert ts == "1712.000900"
@@ -236,7 +237,7 @@ async def test_the_real_bot_delivery_posts_roots_replies_and_webhooks():
     assert client.calls[1]["thread_ts"] == ts and client.calls[1]["text"] == "Customer: hello"
     assert http.posts and http.posts[0][0].startswith("https://hooks.slack.com")
     assert isinstance(
-        make_delivery(Settings(slack_bot_token="xoxb-test")), SlackBotDelivery
+        make_delivery(Settings(_env_file=None, slack_bot_token="xoxb-test")), SlackBotDelivery
     )
 
 

@@ -10,7 +10,7 @@ async def test_item_delivery_enqueues_per_destination_and_sends(sf, registry, fi
     cfg = await registry.get("skincentrix")
     cid = await start_conversation(sf, "skincentrix", "voice", "c1", "+19055550101")
     delivery = MemoryDelivery()
-    settings = Settings(public_base_url="https://api.test", secret_key="s")
+    settings = Settings(_env_file=None, public_base_url="https://api.test", secret_key="s")
 
     async def on_created(item, cfg_):
         await schedule_item_delivery(sf, item, cfg_)

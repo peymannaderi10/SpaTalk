@@ -39,7 +39,7 @@ async def ctx(sf, registry, fixed_clock):
         registry=registry,
         ledger=None,
         delivery=MemoryDelivery(),
-        settings=Settings(secret_key="s3cret", edge_shared_key=EDGE_KEY),
+        settings=Settings(_env_file=None, secret_key="s3cret", edge_shared_key=EDGE_KEY),
     )
 
 

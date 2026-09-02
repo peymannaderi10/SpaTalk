@@ -52,6 +52,7 @@ async def world(sf, registry, fixed_clock):
         ledger=PgLedger(sf, fixed_clock),
         delivery=MemoryBotDelivery(),
         settings=Settings(
+            _env_file=None,
             secret_key="s3cret", slack_signing_secret=SECRET, slack_bot_token="xoxb-test"
         ),
         sms=MemorySms(),

@@ -36,7 +36,7 @@ async def ctx(sf, registry, fixed_clock):
         registry=registry,
         ledger=PgLedger(sf, fixed_clock),
         delivery=MemoryDelivery(),
-        settings=Settings(secret_key="s3cret"),
+        settings=Settings(_env_file=None, secret_key="s3cret"),
         sms=MemorySms(),
     )
 

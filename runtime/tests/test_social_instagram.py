@@ -61,6 +61,7 @@ async def _build(sf, registry, fixed_clock, *, replies=("We open at ten today.",
     from spatalk.social.meta_oauth import store_integration
 
     settings = Settings(
+        _env_file=None,
         secret_key="s3cret",
         public_base_url="https://api.example.com",
         instagram_app_id="IG_APP_ID",

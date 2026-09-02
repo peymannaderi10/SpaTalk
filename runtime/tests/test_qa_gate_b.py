@@ -125,7 +125,7 @@ async def build_text_app(sf, registry, fixed_clock, model, **settings_overrides)
         registry=registry,
         ledger=PgLedger(sf, fixed_clock),
         delivery=MemoryDelivery(),
-        settings=Settings(**fields),
+        settings=Settings(_env_file=None, **fields),
         sms=MemorySms(),
         llm=model,
     )
@@ -445,6 +445,7 @@ async def build_social_app(sf, registry, fixed_clock, *, provider: str, external
     registry.invalidate("skincentrix")
 
     settings = Settings(
+        _env_file=None,
         secret_key="s3cret",
         public_base_url="https://api.example.com",
         instagram_app_id="IG_APP_ID",

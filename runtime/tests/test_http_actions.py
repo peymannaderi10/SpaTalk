@@ -9,7 +9,7 @@ async def client(sf, registry, fixed_clock):
     from spatalk.ledger.delivery import MemoryDelivery
     from spatalk.ledger.items import PgLedger
     from spatalk.settings import Settings
-    settings = Settings(public_base_url="https://api.test", secret_key="s3cret", slack_signing_secret="slacksecret")
+    settings = Settings(_env_file=None, public_base_url="https://api.test", secret_key="s3cret", slack_signing_secret="slacksecret")
     ledger = PgLedger(sf, fixed_clock)
     ctx = jobs.JobContext(sf=sf, clock=fixed_clock, registry=registry, ledger=ledger, delivery=MemoryDelivery(), settings=settings)
     app = create_app(ctx, start_background=False)

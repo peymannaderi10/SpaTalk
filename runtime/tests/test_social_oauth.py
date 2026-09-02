@@ -27,6 +27,7 @@ def settings():
     from spatalk.settings import Settings
 
     return Settings(
+        _env_file=None,
         secret_key="s3cret",
         public_base_url="https://api.example.com",
         instagram_app_id="IG_APP_ID",

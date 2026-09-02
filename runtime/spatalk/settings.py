@@ -1,6 +1,22 @@
+import os
 from functools import lru_cache
+from typing import Any
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# --- hermetic settings (QA gate B, finding 1) -------------------------------------------
+# ``env_file=".env"`` is right for a running service and wrong for a test run: on a machine
+# that holds real provider keys the suite would silently inherit them and behave differently
+# from a clean checkout. With SPATALK_NO_ENV_FILE=1 in the environment, every ``Settings()``
+# ignores the dotenv file entirely and reads only its defaults, explicit keyword arguments
+# and real environment variables. tests/conftest.py sets it for the whole session.
+NO_ENV_FILE_VAR = "SPATALK_NO_ENV_FILE"
+_TRUTHY = {"1", "true", "yes", "on"}
+
+
+def env_file_disabled() -> bool:
+    """True when the environment explicitly forbids reading ``.env``."""
+    return os.environ.get(NO_ENV_FILE_VAR, "").strip().lower() in _TRUTHY
 
 
 class Settings(BaseSettings):
@@ -69,6 +85,18 @@ class Settings(BaseSettings):
     # The string Meta echoes back on `GET /instagram/webhook` (api-surface.md, plan D). It
     # lives here because settings.py belongs to this task and D2's webhook needs it.
     instagram_webhook_verify_token: str = ""
+
+    # --- hermetic settings (QA gate B, finding 1) -----------------------------------------
+    def __init__(self, **values: Any) -> None:
+        """Honour SPATALK_NO_ENV_FILE=1 by not reading ``.env`` at all.
+
+        The switch is read at construction time, not at import time, so it works however
+        early ``spatalk.settings`` happens to be imported. An explicit ``_env_file`` keyword
+        always wins, which is what the tests pass as belt and braces.
+        """
+        if env_file_disabled():
+            values.setdefault("_env_file", None)
+        super().__init__(**values)
 
 
 @lru_cache
