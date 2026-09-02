@@ -1,6 +1,6 @@
 # sms-staff-delivery Task S1: SMS destination, delivery job, digest
 Status: done with deviations
-Commit: 66bc694
+Commit: c672865
 Tests: `uv run pytest -q tests/test_sms_staff_delivery.py` -> 17/17; full suite `uv run pytest -q` -> 772/773 (the one failure, `test_internal_api.py::test_the_packaged_rates_match_the_researched_table`, is pre-existing on `c984cae` and unrelated: it compares `spatalk/rates.json` with `docs/research/rates.json`, neither of which this task touches)
 Interfaces produced: `Destination(kind="sms", address_env=...)`, `spatalk.ledger.delivery.build_sms_text(item, cfg, links, now=None, escalation=False)`, `build_list_sms(items, cfg, now=None)`, `sms_segments(text)`, `sms_destination_numbers(cfg)`, `SMS_STAFF_LIMIT`, `SMS_HEALTH_LINE`, `SMS_DIGEST_TEXT`, `SMS_LIST_HEADER`, `SMS_LIST_MAX_ITEMS`, job `deliver.sms`, `schedule_item_delivery` sms branch, `_digest_sms`
 
