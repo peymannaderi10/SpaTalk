@@ -19,6 +19,8 @@ from fastapi import APIRouter, HTTPException, Request
 from loguru import logger
 
 from spatalk.brain.renderer import render_script
+# --- sms staff delivery (plan S) ---
+from spatalk.ledger.delivery import build_list_sms, sms_destination_numbers
 from spatalk.text import takeover
 from spatalk.text.service import (
     TextConversationService,
@@ -171,7 +173,18 @@ async def inbound_sms(request: Request):
 
     # A staff phone is not a customer: `#4821 on my way` relays to that item's conversation
     # and hands it to the person; anything else from that number gets the help text (B5).
-    if sender and sender in cfg.delivery.staff_phone_numbers:
+    # --- sms staff delivery (plan S) ---
+    # An `sms` destination's number is staff as well: the digest that goes to it says
+    # "Reply LIST for details", so the number the digest reached must be recognised here.
+    # Task S2 replaces both lookups with spatalk.text.staff.staff_numbers(cfg) and adds the
+    # ACK and DONE keywords beside LIST.
+    if sender and (
+        sender in cfg.delivery.staff_phone_numbers or sender in sms_destination_numbers(cfg)
+    ):
+        if normalise_keyword(text) == ["list"]:
+            open_items = await ctx.ledger.list_open(cfg.id)
+            await _send(ctx, cfg, sender, build_list_sms(open_items, cfg, ctx.clock.now()))
+            return {"ok": True, "handled": "staff_list"}
         if await takeover.relay_staff_sms(ctx, cfg, sender, text):
             return {"ok": True, "handled": "staff_relay"}
         help_text = render_script("help_text", cfg, ctx.clock.now(), urgent=False)

@@ -52,6 +52,8 @@ async def test_booking_link_texts_when_sms_number_configured(world):
 async def test_booking_link_is_captured_when_no_sms_or_no_phone(world):
     cfg, ledger, sms, caps = world
     from spatalk.brain.requests import BookingLinkRequest, ContactInfo
+    # The bundle carries a messaging number since S1, so "no sms" is said here, not assumed.
+    cfg = cfg.model_copy(update={"sms_from_number": None})
     out = await caps.send_booking_link(_ref(cfg), BookingLinkRequest(service_id="facial", contact=ContactInfo()))
     assert out.kind == "captured" and ledger.items[0].type == "send_link"
     out2 = await caps.send_booking_link(_ref(cfg, channel="voice", caller=None),

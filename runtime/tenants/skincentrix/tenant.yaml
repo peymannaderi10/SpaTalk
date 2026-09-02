@@ -18,7 +18,7 @@ hours:
   sun: [["13:00", "18:00"]]
 holidays: []
 voice_numbers: []          # filled by `spatalk numbers add` after Telnyx purchase
-sms_from_number: null      # toll-free number once verified
+sms_from_number: "+12899170079"   # the tenant messaging number staff texts come from (S1)
 transfer_number: null      # UNVERIFIED: a TELUS extension that does not forward to us
 booking_url_default: https://skincentrix.janeapp.com/locations/skincentrix
 social:
@@ -45,5 +45,8 @@ delivery:
       channel_id: null       # Slack channel id; set with SLACK_BOT_TOKEN for takeover threads
     - kind: whatsapp
       address_env: SKINCENTRIX_WHATSAPP_STAFF   # env var NAME; the staff E.164 never lands here
+    # The founder's own mobile, named not written (S1). Ordinary SMS from the number above.
+    - kind: sms
+      address_env: SKINCENTRIX_STAFF_SMS
   digest_time_local: "07:30"
   staff_phone_numbers: []

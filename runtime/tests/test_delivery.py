@@ -1,10 +1,11 @@
 async def test_item_delivery_enqueues_per_destination_and_sends(sf, registry, fixed_clock, monkeypatch):
     monkeypatch.setenv("SKINCENTRIX_SLACK_WEBHOOK", "https://hooks.slack.com/services/T/B/x")
-    # The bundle carries three destinations since the whatsapp plan (W1): email, Slack and
-    # a WhatsApp staff number named by environment variable.
+    # The bundle carries four destinations: email, Slack, the dormant WhatsApp number (W1)
+    # and, since the sms staff delivery plan (S1), the owner mobile as ordinary SMS.
     monkeypatch.setenv("SKINCENTRIX_WHATSAPP_STAFF", "+15195550123")
+    monkeypatch.setenv("SKINCENTRIX_STAFF_SMS", "+15195550124")
     from spatalk import jobs
-    from spatalk.brain.ports import ItemDraft
+    from spatalk.brain.ports import ItemDraft, MemorySms
     from spatalk.brain.requests import ContactInfo, ConversationRef
     from spatalk.conversations import start_conversation
     from spatalk.ledger.delivery import MemoryDelivery, schedule_item_delivery
@@ -12,7 +13,7 @@ async def test_item_delivery_enqueues_per_destination_and_sends(sf, registry, fi
     from spatalk.settings import Settings
     cfg = await registry.get("skincentrix")
     cid = await start_conversation(sf, "skincentrix", "voice", "c1", "+19055550101")
-    delivery = MemoryDelivery()
+    delivery, sms = MemoryDelivery(), MemorySms()
     settings = Settings(_env_file=None, public_base_url="https://api.test", secret_key="s")
 
     async def on_created(item, cfg_):
@@ -21,8 +22,12 @@ async def test_item_delivery_enqueues_per_destination_and_sends(sf, registry, fi
     ref = ConversationRef(conversation_id=cid, tenant=cfg, channel="voice", caller_phone="+19055550101")
     rec = await ledger.create_item(ref, ItemDraft(type="callback", urgency="normal",
                                                   contact=ContactInfo(name="Dana", phone="+19055550101")))
-    ctx = jobs.JobContext(sf=sf, clock=fixed_clock, registry=registry, ledger=ledger, delivery=delivery, settings=settings)
-    assert await jobs.run_once(sf, ctx) == 3
+    ctx = jobs.JobContext(sf=sf, clock=fixed_clock, registry=registry, ledger=ledger, delivery=delivery, settings=settings, sms=sms)
+    assert await jobs.run_once(sf, ctx) == 4
+    # The staff SMS: from the tenant number in the bundle, to the number the env names (S1).
+    assert len(sms.sent) == 1 and sms.sent[0][0] == cfg.sms_from_number
+    assert sms.sent[0][1] == "+15195550124"
+    assert f"#{rec.id}" in sms.sent[0][2] and "Reply ACK" in sms.sent[0][2]
     # No window row for this number, so WhatsApp uses the approved template (W1).
     assert len(delivery.whatsapp_templates) == 1
     assert delivery.whatsapp_templates[0]["to"] == "+15195550123"

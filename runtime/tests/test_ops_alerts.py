@@ -75,6 +75,15 @@ async def _texting_tenant(registry):
     registry.invalidate("skincentrix")
 
 
+async def _silent_tenant(registry):
+    """Skincentrix without a messaging number: the bundle carries one since S1."""
+    cfg = await registry.get("skincentrix")
+    await registry.import_config(
+        cfg.model_copy(update={"sms_from_number": None}), created_by="test"
+    )
+    registry.invalidate("skincentrix")
+
+
 async def _job(sf, kind="deliver.email", *, state="queued", run_at=NOW, payload=None, error=None):
     from spatalk.models import Job
 
@@ -210,9 +219,10 @@ async def test_without_an_ops_sms_number_nothing_is_texted(sf, registry):
 
 
 async def test_with_no_tenant_number_to_send_from_the_alert_is_still_recorded(sf, registry):
-    """Skincentrix has `sms_from_number: null` until the toll-free number is verified."""
+    """A tenant that cannot text still gets its incident on the record, by email."""
     from spatalk.ops import alerts
 
+    await _silent_tenant(registry)
     ctx = _ctx(sf, registry, _clock(), _settings(ops_sms_number=OPS_SMS))
     assert await alerts.notify(ctx, "jobs_dead", "first", "body") is True
 

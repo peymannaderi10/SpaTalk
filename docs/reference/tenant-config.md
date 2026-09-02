@@ -29,7 +29,7 @@ tenants/<id>/
 | hours | map weekday → list of [start, end] `HH:MM` | yes | empty list means closed |
 | holidays | list of dates | default [] | |
 | voice_numbers | list E.164 | default [] | informational; `tenant_numbers` is authoritative |
-| sms_from_number | E.164 or null | default null | toll-free once verified |
+| sms_from_number | E.164 or null | default null | the number every SMS is sent *from*, staff delivery included; a `sms` destination cannot be delivered while it is null [S1] |
 | transfer_number | E.164 or null | default null | staffed back-line for live transfer [E10] |
 | booking_url_default | URL | yes | |
 | persona.assistant_name | string | default "the assistant" | |
@@ -40,7 +40,7 @@ tenants/<id>/
 | escalation.urgent_minutes | int | default 15 | |
 | escalation.standard_business_hours | int | default 3 | |
 | escalation.after_hours_clinical_contact | string or null | | informational |
-| delivery.destinations[] | list | yes | each: `kind` (`slack`, `email`, `webhook`, `whatsapp` [W1]), `webhook_env` (env var name for slack or webhook), `address` (email), `address_env` (env var name holding the value: required for `whatsapp`, an alternative to `address` for `email`) [W1], `channel_id` (Slack channel id when a bot token is used) [B5], `urgent_only` bool |
+| delivery.destinations[] | list | yes | each: `kind` (`slack`, `email`, `webhook`, `whatsapp` [W1], `sms` [S1]), `webhook_env` (env var name for slack or webhook), `address` (email), `address_env` (env var name holding the value: required for `whatsapp` and `sms`, an alternative to `address` for `email`) [W1] [S1], `channel_id` (Slack channel id when a bot token is used) [B5], `urgent_only` bool |
 | delivery.digest_time_local | `HH:MM` | default 07:30 | |
 | delivery.staff_phone_numbers | list E.164 | default [] | staff who may relay by SMS [B5] |
 | social.comment_mode | `off` `keyword` `all` | default `keyword` | [D2] |

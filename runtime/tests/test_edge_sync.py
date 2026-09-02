@@ -43,7 +43,12 @@ async def ctx(sf, registry, fixed_clock):
     )
 
 
-async def _give_the_tenant_an_sms_number(registry, number: str = SMS_FROM):
+async def _take_the_tenants_sms_number_away(registry):
+    """The bundle carries a messaging number since S1, so "no number" is now said aloud."""
+    await _give_the_tenant_an_sms_number(registry, None)
+
+
+async def _give_the_tenant_an_sms_number(registry, number: str | None = SMS_FROM):
     cfg = await registry.get("skincentrix")
     await registry.import_config(cfg.model_copy(update={"sms_from_number": number}), "test")
     registry.invalidate("skincentrix")
@@ -72,10 +77,10 @@ async def test_the_payload_carries_one_entry_per_tenant_with_an_sms_number(ctx, 
     }
 
 
-async def test_a_tenant_without_an_sms_number_is_skipped(ctx):
+async def test_a_tenant_without_an_sms_number_is_skipped(ctx, registry):
     from spatalk.cli import collect_tenant_texts
 
-    # The bundle ships `sms_from_number: null` until the toll-free number is verified.
+    await _take_the_tenants_sms_number_away(registry)
     assert await collect_tenant_texts(ctx) == {}
 
 
@@ -141,9 +146,10 @@ async def test_sync_raises_when_the_worker_rejects_the_push(ctx, registry):
             await sync_tenant_texts(ctx, WORKER_URL, EDGE_KEY, http=http)
 
 
-async def test_sync_sends_nothing_when_no_tenant_has_an_sms_number(ctx):
+async def test_sync_sends_nothing_when_no_tenant_has_an_sms_number(ctx, registry):
     from spatalk.cli import sync_tenant_texts
 
+    await _take_the_tenants_sms_number_away(registry)
     http, seen = _recording_client()
     async with http:
         assert await sync_tenant_texts(ctx, WORKER_URL, EDGE_KEY, http=http) == {}

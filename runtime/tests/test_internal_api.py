@@ -242,8 +242,11 @@ async def test_tenants_lists_id_name_version_numbers_and_tier(client):
             "id": "skincentrix",
             "name": "Skincentrix",
             "version": 1,
-            "numbers": [{"number": "+19055550100", "kind": "voice"}],
-            "sms_from_number": None,
+            "numbers": [
+                {"number": "+12899170079", "kind": "sms"},
+                {"number": "+19055550100", "kind": "voice"},
+            ],
+            "sms_from_number": "+12899170079",
             "integration_tier": "C",
         }
     ]
@@ -264,7 +267,14 @@ async def test_get_config_for_an_unknown_tenant_is_404(client):
 
 async def test_post_tenants_creates_a_tenant_at_version_one(client):
     cfg = (await client.get("/internal/tenants/skincentrix/config")).json()["config"]
-    cfg = {**cfg, "id": "otherclinic", "name": "Other Clinic", "voice_numbers": ["+15145550111"]}
+    # A second tenant cannot claim skincentrix's messaging number, so it starts without one.
+    cfg = {
+        **cfg,
+        "id": "otherclinic",
+        "name": "Other Clinic",
+        "voice_numbers": ["+15145550111"],
+        "sms_from_number": None,
+    }
     r = await client.post(
         "/internal/tenants", json={"config": cfg, "created_by": "admin@agency.test"}
     )

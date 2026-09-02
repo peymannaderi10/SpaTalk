@@ -566,6 +566,18 @@ async def schedule_item_delivery(
                     "escalation": escalation,
                 },
             )
+        # --- sms staff delivery (plan S) ---
+        elif dest.kind == "sms":
+            await jobs.enqueue(
+                sf,
+                "deliver.sms",
+                {
+                    "item_id": item.id,
+                    "tenant_id": cfg.id,
+                    "to_env": dest.address_env,
+                    "escalation": escalation,
+                },
+            )
     if escalation:
         await jobs.enqueue(
             sf,
@@ -702,6 +714,9 @@ async def _digest_email(payload: dict, ctx: jobs.JobContext) -> None:
         # --- whatsapp (plan W) ---
         elif dest.kind == "whatsapp":
             await _digest_whatsapp(ctx, cfg, dest, body, now)
+        # --- sms staff delivery (plan S) ---
+        elif dest.kind == "sms":
+            await _digest_sms(ctx, cfg, dest, len(items))
 
 
 async def _digest_whatsapp(
@@ -724,3 +739,201 @@ async def _digest_whatsapp(
             [],
         )
     await record_usage(ctx.sf, cfg.id, None, "whatsapp", "meta", "wa_out", 1)
+
+
+# --- sms staff delivery (plan S) ------------------------------------------------------------
+# Founder decision 2026-09-02: a tracked item lands on the owner's own mobile as an ordinary
+# SMS from the tenant's Telnyx number, and the owner acknowledges or resolves by replying.
+# Everything below is built from the item's structured columns and fixed wording; no model
+# output ever reaches a staff phone (CLAUDE.md non-negotiable 1).
+
+# Three GSM-7 segments. A concatenated segment carries 153 septets, not 160: the six-byte
+# UDH that lets the handset reassemble the parts eats the difference.
+SMS_SINGLE_GSM7 = 160
+SMS_MULTI_GSM7 = 153
+SMS_SINGLE_UCS2 = 70
+SMS_MULTI_UCS2 = 67
+SMS_STAFF_LIMIT = 3 * SMS_MULTI_GSM7          # 459
+
+SMS_HEALTH_LINE = "Caller mentioned a health condition; read the transcript first."
+SMS_DIGEST_TEXT = "{name} front desk: {n} open item(s). Reply LIST for details."
+SMS_LIST_HEADER = "{name} front desk: {n} open item(s)."
+SMS_LIST_MAX_ITEMS = 5
+
+# GSM 03.38: the default alphabet, and the extension table whose characters cost two septets.
+GSM7_BASIC = set(
+    "@£$¥èéùìòÇ\nØø\rÅåΔ_"
+    "ΦΓΛΩΠΨΣΘΞÆæßÉ"
+    " !\"#¤%&'()*+,-./0123456789:;<=>?¡"
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜ§¿"
+    "abcdefghijklmnopqrstuvwxyzäöñüà"
+)
+GSM7_EXTENDED = set("^{}\\[~]|€")
+
+
+def sms_segments(text: str) -> int:
+    """How many SMS segments this body costs, which is what the carrier bills for."""
+    if not text:
+        return 1
+    if all(c in GSM7_BASIC or c in GSM7_EXTENDED for c in text):
+        length = sum(2 if c in GSM7_EXTENDED else 1 for c in text)
+        single, multi = SMS_SINGLE_GSM7, SMS_MULTI_GSM7
+    else:
+        # UCS-2: a segment is counted in 16-bit code units, so an emoji costs two.
+        length = len(text.encode("utf-16-le")) // 2
+        single, multi = SMS_SINGLE_UCS2, SMS_MULTI_UCS2
+    return 1 if length <= single else -(-length // multi)
+
+
+def _sms_who(item: Item) -> str:
+    who = (
+        f"{item.contact_name or 'name not given'} "
+        f"{item.contact_phone or ''} {item.contact_email or ''}"
+    )
+    return " ".join(who.split())
+
+
+def build_sms_text(
+    item: Item,
+    cfg: TenantConfig,
+    links: ActionLinks,
+    now: datetime | None = None,
+    escalation: bool = False,
+) -> str:
+    """One tracked item as at most three SMS segments, ending in the transcript link.
+
+    Lines are dropped, never truncated, and in a fixed order: the health line first (it
+    carries no detail the transcript does not), then the who line. The link survives every
+    cut, because a staff member who cannot open the transcript cannot act on the item.
+    """
+    now = now or datetime.now(timezone.utc)
+    prefix = (ESCALATED_PREFIX if escalation else "") + (
+        "URGENT: " if item.urgency == "urgent" else ""
+    )
+    head = (
+        f"{prefix}{cfg.name} front desk #{item.id}: "
+        f"{TYPE_LABELS.get(item.type, item.type)} via {item.channel}."
+    )
+    who = f"Who: {_sms_who(item)}."
+    urgent = item.urgency == "urgent"
+    due = f"Due {humanize_due(item.due_at, now, cfg.timezone, urgent)}."
+    reply = f"Reply ACK {item.id} or DONE {item.id}."
+    tail = f"Transcript: {links.transcript_url}"
+    flagged = bool(getattr(item, "health_context", False))
+
+    def assemble(with_health: bool, with_who: bool) -> str:
+        parts = [head]
+        if with_who:
+            parts.append(who)
+        parts.append(due)
+        if with_health:
+            parts.append(SMS_HEALTH_LINE)
+        parts += [reply, tail]
+        return " ".join(parts)
+
+    text = ""
+    for with_health, with_who in ((flagged, True), (False, True), (False, False)):
+        text = assemble(with_health, with_who)
+        if len(text) <= SMS_STAFF_LIMIT:
+            return text
+    # Nothing left to drop: cut the front, keep the link whole.
+    room = SMS_STAFF_LIMIT - len(tail) - 1
+    return f"{text[:room].rstrip()} {tail}" if room > 0 else tail[:SMS_STAFF_LIMIT]
+
+
+def build_list_sms(items: list[Item], cfg: TenantConfig, now: datetime | None = None) -> str:
+    """The open items as one short text: a count, then up to five lines with their ids."""
+    now = now or datetime.now(timezone.utc)
+    lines = [SMS_LIST_HEADER.format(name=cfg.name, n=len(items))]
+    for item in items[:SMS_LIST_MAX_ITEMS]:
+        due = humanize_due(item.due_at, now, cfg.timezone, item.urgency == "urgent")
+        lines.append(
+            f"#{item.id} {TYPE_LABELS.get(item.type, item.type)}, "
+            f"{item.contact_name or 'name not given'}, due {due}"
+        )
+    while len(lines) > 1 and len("\n".join(lines)) > SMS_STAFF_LIMIT:
+        lines.pop()
+    return "\n".join(lines)
+
+
+def sms_destination_numbers(cfg: TenantConfig) -> set[str]:
+    """Every staff number an ``sms`` destination names, resolved now. Missing env is ignored.
+
+    Delivery and the inbound webhook must agree on who counts as staff, so both read this.
+    Task S2 folds it into ``spatalk.text.staff.staff_numbers`` together with
+    ``delivery.staff_phone_numbers``.
+    """
+    numbers = set()
+    for dest in cfg.delivery.destinations:
+        if dest.kind == "sms":
+            number = destination_address(dest)
+            if number:
+                numbers.add(number)
+    return numbers
+
+
+async def _staff_number_opted_out(ctx: jobs.JobContext, tenant_id: str, number: str) -> bool:
+    """An opt-out binds even for the owner: the carrier rule has no staff exemption."""
+    from spatalk.text.service import is_opted_out
+
+    return await is_opted_out(ctx.sf, tenant_id, number)
+
+
+@jobs.register_handler("deliver.sms")
+async def _deliver_sms(payload: dict, ctx: jobs.JobContext) -> None:
+    """One tracked item to one staff mobile, with the two reply keywords in the body.
+
+    A missing environment variable is a configuration gap and is logged, not retried. A
+    missing ``sms_from_number`` is different: the tenant cannot text at all, and a silent
+    skip would leave the team believing an item had been delivered, so it raises and the
+    job dead-letters where the job-health alert will find it.
+    """
+    to_env = payload.get("to_env") or ""
+    to = os.environ.get(to_env, "")
+    if not to:
+        logger.warning("staff sms number env {} not set; skipping", to_env)
+        return
+    item = await ctx.ledger.get(payload["item_id"])
+    cfg = await ctx.registry.get(payload["tenant_id"])
+    if await _staff_number_opted_out(ctx, cfg.id, to):
+        logger.warning(
+            "staff number for {} is opted out of texts; item #{} not sent by sms", cfg.id, item.id
+        )
+        return
+    if not cfg.sms_from_number:
+        raise RuntimeError(
+            f"tenant {cfg.id} has no sms_from_number; item #{item.id} cannot be texted to staff"
+        )
+    text = build_sms_text(
+        item,
+        cfg,
+        build_links(ctx.settings, item),
+        ctx.clock.now(),
+        bool(payload.get("escalation")),
+    )
+    await ctx.sms.send(cfg.sms_from_number, to, text)
+    await record_usage(
+        ctx.sf, cfg.id, item.conversation_id, "sms", "telnyx", "sms_out", sms_segments(text)
+    )
+
+
+async def _digest_sms(
+    ctx: jobs.JobContext, cfg: TenantConfig, dest: Destination, open_items: int
+) -> None:
+    """The morning digest as one text: how many are open, and how to see them.
+
+    The detail stays behind ``LIST`` rather than arriving unbidden as six segments.
+    """
+    to = destination_address(dest)
+    if not to:
+        logger.warning("staff sms number env {} not set; skipping", dest.address_env)
+        return
+    if not cfg.sms_from_number:
+        logger.warning("tenant {} has no sms_from_number; digest not texted", cfg.id)
+        return
+    if await _staff_number_opted_out(ctx, cfg.id, to):
+        logger.warning("staff number for {} is opted out of texts; digest not sent", cfg.id)
+        return
+    text = SMS_DIGEST_TEXT.format(name=cfg.name, n=open_items)
+    await ctx.sms.send(cfg.sms_from_number, to, text)
+    await record_usage(ctx.sf, cfg.id, None, "sms", "telnyx", "sms_out", sms_segments(text))

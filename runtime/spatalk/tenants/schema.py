@@ -133,7 +133,10 @@ class Lexicons(BaseModel, frozen=True):
 
 
 class Destination(BaseModel, frozen=True):
-    kind: Literal["slack", "email", "webhook", "whatsapp"]
+    # --- sms staff delivery (plan S) ---
+    # "sms" is the kind the founder chose on 2026-09-02: a tracked item lands on the owner's
+    # own mobile from the tenant's Telnyx number. "whatsapp" stays here, dormant.
+    kind: Literal["slack", "email", "webhook", "whatsapp", "sms"]
     webhook_env: str | None = None      # slack / webhook: env var NAME holding the URL
     address: str | None = None          # email
     # --- whatsapp (plan W) ---
@@ -153,6 +156,10 @@ class Destination(BaseModel, frozen=True):
             raise ValueError("email destination needs address or address_env")
         if self.kind == "whatsapp" and not self.address_env:
             raise ValueError("whatsapp destination needs address_env")
+        # --- sms staff delivery (plan S) ---
+        # An owner's mobile is personal data, so it is named, never written (S1).
+        if self.kind == "sms" and not self.address_env:
+            raise ValueError("sms destination needs address_env")
         return self
 
 

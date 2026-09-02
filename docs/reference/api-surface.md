@@ -132,6 +132,7 @@ Runtime `runtime/.env`:
 | INSTAGRAM_APP_ID, INSTAGRAM_APP_SECRET, FACEBOOK_APP_ID, FACEBOOK_APP_SECRET, INSTAGRAM_WEBHOOK_VERIFY_TOKEN, META_TOKEN_ENCRYPTION_KEY, META_GRAPH_VERSION | D | social |
 | WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_ACCESS_TOKEN, WHATSAPP_APP_SECRET, WHATSAPP_VERIFY_TOKEN, WHATSAPP_TEMPLATE_ITEM, WHATSAPP_TEMPLATE_DIGEST, WHATSAPP_TEMPLATE_LANG | W1 | WhatsApp staff delivery |
 | `<TENANT>_WHATSAPP_STAFF` per tenant | W1 | the staff E.164 a `whatsapp` destination names; never written into a bundle |
+| `<TENANT>_STAFF_SMS` per tenant | S1 | the owner E.164 an `sms` destination names; tracked items and the digest are texted to it from `sms_from_number`; never written into a bundle |
 | OPS_EMAIL, OPS_SMS_NUMBER, SENTRY_DSN, LOG_FORMAT, GIT_COMMIT | E7 | operations |
 | R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_ENDPOINT, R2_BUCKET | E2 | backups (WAL-G reads them as AWS_* in `walg.env`) |
 

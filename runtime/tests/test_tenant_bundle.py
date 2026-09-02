@@ -67,3 +67,17 @@ def test_bundle_whatsapp_destination_names_an_env_var_not_a_phone_number():
     assert wa[0].address_env == "SKINCENTRIX_WHATSAPP_STAFF"
     assert wa[0].address is None
     assert wa[0].address_env.isupper() and not any(c.isdigit() for c in wa[0].address_env)
+
+
+def test_bundle_sms_destination_names_an_env_var_and_carries_a_messaging_number():
+    """sms staff delivery plan, Task S1: the owner mobile is named; the from-number is not."""
+    from spatalk.tenants.bundle import load_bundle
+    cfg = load_bundle(BUNDLE)
+    sms = [d for d in cfg.delivery.destinations if d.kind == "sms"]
+    assert sms, "skincentrix has no sms destination"
+    assert sms[0].address_env == "SKINCENTRIX_STAFF_SMS" and sms[0].address is None
+    assert sms[0].address_env.isupper() and not any(c.isdigit() for c in sms[0].address_env)
+    # The tenant messaging number is the clinic's own, so it belongs in the bundle.
+    assert cfg.sms_from_number == "+12899170079"
+    # The whatsapp destination from the earlier plan is dormant, not removed.
+    assert any(d.kind == "whatsapp" for d in cfg.delivery.destinations)
