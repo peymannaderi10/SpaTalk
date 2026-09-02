@@ -1,7 +1,7 @@
 # portal Task C2: Organizations, memberships, invitations
 
 Status: done with deviations
-Commit: <pending>
+Commit: d47a61e
 Tests: `cd portal && npm run test:unit` -> 11/11; `cd portal && wasp test client run` -> 7/7; `cd portal/e2e-tests && npx playwright test` -> 16/16 (green twice in a row); full portal suite (unit 11 + client 7 + e2e 16 + `wasp build` + `npx tsc -p tsconfig.src.json`) -> 34/34 tests and both checks
 Interfaces produced: Prisma `Organization`, `Membership`, `Invitation`, enum `OrgRole` (migration `20260902084427_organizations`); `requireUser`, `requireAdmin`, `requireOrgAccess`, `requireOrgAccessBySlug`, `requireOrgOwner`, `requireOrgOwnerBySlug` in `src/organizations/access.ts`; operations `createOrganization`, `listMyOrganizations`, `getOrganization`, `inviteMember`, `getInvitation`, `acceptInvitation`, `removeMember`; routes `/invite/:token`, `/app/:orgSlug`, `/app/:orgSlug/settings/people`; components `OrgSwitcher`, `PendingInvitationRedirect`, `InvitePage`, `OrgHomePage`, `PeoplePage`; npm script `test:unit`
 
