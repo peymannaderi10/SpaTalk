@@ -12,6 +12,7 @@ import base64
 import binascii
 import hmac
 import json
+import re
 import time
 
 from fastapi import APIRouter, HTTPException, Request
@@ -30,9 +31,35 @@ from spatalk.text.service import (
 router = APIRouter()
 
 SIGNATURE_TOLERANCE_SECONDS = 300
-STOP_WORDS = {"stop", "unsubscribe", "cancel", "end", "quit", "stopall"}
+# The CTIA opt-out set, matched on the first word of the normalised message so that "STOP.",
+# "STOP ALL" and "stop texting me" all unsubscribe the sender.
+STOP_WORDS = {"stop", "stopall", "unsubscribe", "cancel", "end", "quit"}
+# A short message that merely *contains* one of these is an opt-out too ("please stop",
+# "unsubscribe me"). A longer sentence is not: "can you stop by the clinic" is a question
+# for the front desk, and silencing that person would be the worse failure of the two.
+SHORT_STOP_WORDS = {"stop", "unsubscribe"}
+SHORT_STOP_MAX_WORDS = 3
 START_WORDS = {"start", "unstop", "yes"}
 HELP_WORDS = {"help", "info"}
+_NON_WORD = re.compile(r"[^a-z0-9]+")
+
+
+def normalise_keyword(text: str) -> list[str]:
+    """Lowercase, drop punctuation, collapse whitespace: the words a keyword match sees.
+
+    A phone keyboard capitalises and adds a full stop on its own, so the raw string is never
+    what the carrier rule is about.
+    """
+    return _NON_WORD.sub(" ", text.lower()).split()
+
+
+def is_optout(words: list[str]) -> bool:
+    """True when these normalised words are an unsubscribe request."""
+    if not words:
+        return False
+    if words[0] in STOP_WORDS:
+        return True
+    return len(words) <= SHORT_STOP_MAX_WORDS and not SHORT_STOP_WORDS.isdisjoint(words)
 
 
 def verify_telnyx_signature(
@@ -85,22 +112,26 @@ async def _send(ctx, cfg, to: str, text: str) -> None:
     await ctx.sms.send(cfg.sms_from_number, to, text)
 
 
-async def _keyword_reply(ctx, cfg, sender: str, word: str) -> bool:
+async def _keyword_reply(ctx, cfg, sender: str, text: str) -> bool:
     """Answer STOP, START and HELP from fixed wording. True when the message was a keyword.
 
     These three replies are the carrier-required confirmations, so they go out even to a
     number that is opted out; nothing else ever does.
     """
     now = ctx.clock.now()
-    if word in STOP_WORDS:
+    words = normalise_keyword(text)
+    if is_optout(words):
         await add_optout(ctx.sf, cfg.id, sender)
         await _send(ctx, cfg, sender, render_script("optout_confirm", cfg, now, urgent=False))
         return True
-    if word in START_WORDS:
+    # START and HELP are opt-in and informational, so they stay a whole-message match: only
+    # the punctuation and the casing are forgiven, never a sentence that contains the word.
+    single = words[0] if len(words) == 1 else ""
+    if single in START_WORDS:
         await remove_optout(ctx.sf, cfg.id, sender)
         await _send(ctx, cfg, sender, render_script("help_text", cfg, now, urgent=False))
         return True
-    if word in HELP_WORDS:
+    if single in HELP_WORDS:
         await _send(ctx, cfg, sender, render_script("help_text", cfg, now, urgent=False))
         return True
     return False
@@ -135,8 +166,7 @@ async def inbound_sms(request: Request):
         return {"ok": True, "ignored": "duplicate"}
 
     cfg = await ctx.registry.get(tenant_id)
-    word = text.strip().lower()
-    if sender and await _keyword_reply(ctx, cfg, sender, word):
+    if sender and await _keyword_reply(ctx, cfg, sender, text):
         return {"ok": True, "handled": "keyword"}
 
     # A staff phone is not a customer: `#4821 on my way` relays to that item's conversation

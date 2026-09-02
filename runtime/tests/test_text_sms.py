@@ -51,7 +51,7 @@ async def _build(sf, registry, fixed_clock, llm, **setting_overrides):
     cfg = await registry.get("skincentrix")
     await registry.import_config(cfg.model_copy(update={"sms_from_number": SMS_FROM}), "test")
     registry.invalidate("skincentrix")
-    settings = Settings(secret_key="s3cret", **setting_overrides)
+    settings = Settings(_env_file=None, secret_key="s3cret", **setting_overrides)
     ctx = jobs.JobContext(
         sf=sf,
         clock=fixed_clock,
@@ -233,3 +233,140 @@ async def test_a_long_reply_is_sent_as_two_messages(sf, registry, fixed_clock):
     assert r.status_code == 200
     assert len(ctx.sms.sent) == 2
     assert all(len(body) <= 300 for _, _, body in ctx.sms.sent)
+
+
+# ----- opt-out keyword matching (QA gate B, finding 2) --------------------------------
+#
+# The carrier rule is not an exact string match. A phone keyboard adds a full stop on its
+# own, CTIA lists STOP ALL and STOPALL beside STOP, and people write "please stop". All of
+# those must unsubscribe the sender before the model ever sees the message. What must *not*
+# unsubscribe anybody is an ordinary sentence that happens to carry the word: "can you stop
+# by the clinic" is a question for the front desk, not an opt-out.
+
+OPT_OUT_PHRASINGS = [
+    "STOP",
+    "stop",
+    " STOP ",
+    "STOP.",
+    "stop!",
+    "Stop, please",
+    "STOP ALL",
+    "stop all",
+    "stopall",
+    "STOPALL",
+    "Please stop",
+    "please stop!",
+    "stop texting me",
+    "UNSUBSCRIBE",
+    "unsubscribe.",
+    "unsubscribe me",
+    "Unsubscribe me please",
+    "CANCEL",
+    "cancel!",
+    "END",
+    "end.",
+    "QUIT",
+    "quit!",
+]
+
+NOT_OPT_OUT_PHRASINGS = [
+    "can you stop by the clinic",
+    "Do I have to stop using retinol before my peel?",
+    "I need to cancel my appointment on Friday, is that ok?",
+    "When does your promotion end this month?",
+    "The elevator will quit working during the renovation, right?",
+    "Please do not stop sending me appointment reminders.",
+    "What time do you open today?",
+]
+
+OPTOUT_CONFIRM = (
+    "You've been unsubscribed from Skincentrix texts. Reply START to opt back in."
+)
+
+
+@pytest.mark.parametrize("phrasing", OPT_OUT_PHRASINGS)
+async def test_an_optout_phrasing_unsubscribes_before_the_brain(client, sf, phrasing):
+    from spatalk.models import SmsOptout
+    c, ctx = client
+    r = await _post(c, _event(text=phrasing, msg_id=f"m-out-{phrasing}"),
+                    {"X-Edge-Key": EDGE_KEY})
+    assert r.status_code == 200
+    assert ctx.llm.calls == [], f"{phrasing!r} reached the model"
+    assert ctx.sms.sent == [(SMS_FROM, CALLER, OPTOUT_CONFIRM)]
+    async with sf() as s:
+        rows = list((await s.scalars(select(SmsOptout))).all())
+    assert [(x.tenant_id, x.phone) for x in rows] == [("skincentrix", CALLER)]
+
+
+@pytest.mark.parametrize("phrasing", NOT_OPT_OUT_PHRASINGS)
+async def test_a_sentence_that_merely_mentions_stopping_is_not_an_optout(client, sf, phrasing):
+    from spatalk.models import SmsOptout
+    c, ctx = client
+    r = await _post(c, _event(text=phrasing, msg_id=f"m-in-{phrasing}"),
+                    {"X-Edge-Key": EDGE_KEY})
+    assert r.status_code == 200
+    assert len(ctx.llm.calls) == 1, f"{phrasing!r} never reached the model"
+    assert OPTOUT_CONFIRM not in [body for _, _, body in ctx.sms.sent]
+    async with sf() as s:
+        assert (await s.scalars(select(SmsOptout))).all() == []
+
+
+@pytest.mark.parametrize("phrasing", ["START", "start.", " Start ", "start!", "UNSTOP",
+                                      "unstop.", "yes", "YES!"])
+async def test_a_start_phrasing_removes_the_optout(client, sf, phrasing):
+    from spatalk.models import SmsOptout
+    c, ctx = client
+    await _post(c, _event(text="STOP.", msg_id=f"m-pre-{phrasing}"), {"X-Edge-Key": EDGE_KEY})
+    ctx.sms.sent.clear()
+    r = await _post(c, _event(text=phrasing, msg_id=f"m-start-{phrasing}"),
+                    {"X-Edge-Key": EDGE_KEY})
+    assert r.status_code == 200
+    assert ctx.llm.calls == []
+    assert ctx.sms.sent[0][2].startswith("Skincentrix: reply with your question")
+    async with sf() as s:
+        assert (await s.scalars(select(SmsOptout))).all() == []
+
+
+@pytest.mark.parametrize("phrasing", ["HELP", "help.", " Help ", "help!", "INFO", "info?"])
+async def test_a_help_phrasing_answers_from_the_script(client, phrasing):
+    c, ctx = client
+    r = await _post(c, _event(text=phrasing, msg_id=f"m-help-{phrasing}"),
+                    {"X-Edge-Key": EDGE_KEY})
+    assert r.status_code == 200
+    assert ctx.llm.calls == []
+    assert ctx.sms.sent[0][2].startswith("Skincentrix: reply with your question")
+
+
+async def test_the_brain_is_never_called_for_an_opted_out_number(client, sf):
+    """The reply path: once "Please stop." is in the table, nothing this number sends is
+    answered and nothing reaches the model."""
+    c, ctx = client
+    await _post(c, _event(text="Please stop.", msg_id="m-quiet"), {"X-Edge-Key": EDGE_KEY})
+    assert ctx.llm.calls == []
+    ctx.sms.sent.clear()
+    for i, text in enumerate(["What time do you open today?", "Can I book a facial?"]):
+        r = await _post(c, _event(text=text, msg_id=f"m-after-{i}"), {"X-Edge-Key": EDGE_KEY})
+        assert r.status_code == 200
+    assert ctx.llm.calls == []
+    assert ctx.sms.sent == []
+
+
+async def test_no_followup_or_textback_reaches_an_opted_out_number(sf, registry, fixed_clock):
+    """The two send paths that run later: a queued follow-up and a queued missed-call
+    text-back both re-read the opt-out table when the job runs."""
+    from spatalk import jobs
+    app, ctx = await _build(sf, registry, fixed_clock, _llm("Sure. What day works for you?"),
+                            edge_shared_key=EDGE_KEY)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="https://api.test") as c:
+        await _post(c, _event(text="I would like to book something.", msg_id="m-book"),
+                    {"X-Edge-Key": EDGE_KEY})
+        assert len(ctx.llm.calls) == 1
+        await _post(c, _event(text="STOP ALL", msg_id="m-stopall"), {"X-Edge-Key": EDGE_KEY})
+    await jobs.enqueue(sf, "sms.textback", {"tenant_id": "skincentrix", "to": CALLER})
+    ctx.sms.sent.clear()
+    fixed_clock.advance(hours=2)
+    for _ in range(6):
+        if not await jobs.run_once(sf, ctx):
+            break
+    assert ctx.sms.sent == []
+    assert len(ctx.llm.calls) == 1
