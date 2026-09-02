@@ -1,6 +1,6 @@
 # runtime-voice-ledger Task 10: Scheduler: escalation of breached items and daily digest
 Status: done with deviations
-Commit: PENDING
+Commit: b9e22f53a4bce0cbf008769f769fabb74f5be38c
 Tests: `uv run pytest tests/test_scheduler.py -v` -> 2/2; full suite `uv run pytest -q` -> 74 passed, 3 errors. The three errors are the pre-existing `tests/test_http_actions.py` collection errors on `spatalk.http.app`, the file Task 14 creates; they were already the state of the tree at Task 9 (72 passed, the same 3 errors) and this task added the 2 new passes. `uv run ruff check spatalk tests` -> `All checks passed!` (`scenarios/` does not exist until Task 15, so it was omitted from the lint invocation).
 Interfaces produced: `escalate_breached(ctx) -> int`, `send_digests(ctx) -> int`, `run_scheduler_forever(ctx, interval_seconds=60.0)` in `spatalk/ledger/scheduler.py`
 Deviations:
