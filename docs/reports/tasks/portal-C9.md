@@ -1,7 +1,7 @@
 # portal Task C9: Containerise the portal and route it through Caddy
 
 Status: done with deviations
-Commit: c85ab4ff3efbebb3b536a9d37a18e9e506736eb1
+Commit: cf826fbcf9bc0d0ee37d752b059fd40d8589cbe8
 Tests: `cd portal && npx vitest run -c vitest.server.config.ts src/ops/containers.server.test.ts` -> 22/22 (new); full portal suite -> 244/244 (`npm run test:unit` 108, `wasp test client run` 70, `cd e2e-tests && npx playwright test` 66) plus `wasp build` and `npx tsc -p tsconfig.src.json --noEmit` clean; runtime suite -> 464 passed, 1 skipped, `uv run ruff check spatalk tests scenarios` clean
 Interfaces produced: `portal/Dockerfile.server`, `portal/Dockerfile.web`, `portal/.dockerignore`; Compose services `portal-server` and `portal-web` in `runtime/docker-compose.yml`; Caddy sites `{$APP_HOST}` -> `portal-web:80` and `{$APP_API_HOST}` -> `portal-server:3001`; env `APP_HOST`, `APP_API_HOST` (runtime `.env`), build arg `REACT_APP_API_URL=https://${APP_API_HOST}`; CI step `docker compose build portal-server portal-web`
 
