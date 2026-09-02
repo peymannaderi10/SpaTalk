@@ -50,6 +50,7 @@
     "vitest": "^4.1.9"
   },
   "scripts": {
-    "e2e": "npm --prefix e2e-tests run e2e"
+    "e2e": "npm --prefix e2e-tests run e2e",
+    "test:unit": "vitest run -c vitest.server.config.ts"
   }
 }

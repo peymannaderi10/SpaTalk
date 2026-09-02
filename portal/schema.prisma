@@ -23,6 +23,65 @@ model User {
   subscriptionStatus        String?         // 'active', 'cancel_at_period_end', 'past_due', 'deleted'
   subscriptionPlan          String?         // 'frontdesk'
   datePaid                  DateTime?
+
+  memberships               Membership[]
+}
+
+/// A client of the agency. `runtimeTenantId` is the runtime's tenant slug: it
+/// is the only handle the portal keeps on runtime data, which it reads and
+/// writes over /internal.
+model Organization {
+  id                        String          @id @default(uuid())
+  createdAt                 DateTime        @default(now())
+
+  name                      String
+  slug                      String          @unique
+  runtimeTenantId           String          @unique
+
+  stripeCustomerId          String?         @unique
+  subscriptionStatus        String?         // 'active', 'cancel_at_period_end', 'past_due', 'deleted'
+  subscriptionPlan          String?         // 'frontdesk'
+
+  memberships               Membership[]
+  invitations               Invitation[]
+}
+
+/// Who may see an organisation, and what they may do in it. An OWNER changes
+/// settings and billing; STAFF see everything and act on tracked items.
+model Membership {
+  id                        String          @id @default(uuid())
+  createdAt                 DateTime        @default(now())
+
+  userId                    String
+  user                      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organizationId            String
+  organization              Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  role                      OrgRole
+
+  @@unique([userId, organizationId])
+  @@index([organizationId])
+}
+
+/// A single-use invitation to join an organisation. It expires seven days
+/// after it is created and is spent the moment it is accepted.
+model Invitation {
+  id                        String          @id @default(uuid())
+  createdAt                 DateTime        @default(now())
+
+  email                     String
+  organizationId            String
+  organization              Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  role                      OrgRole
+  token                     String          @unique
+  expiresAt                 DateTime
+  acceptedAt                DateTime?
+
+  @@index([organizationId, email])
+}
+
+enum OrgRole {
+  OWNER
+  STAFF
 }
 
 model DailyStats {

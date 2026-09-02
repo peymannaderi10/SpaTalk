@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { Outlet, useLocation } from "react-router";
 import { routes } from "wasp/client/router";
+import { PendingInvitationRedirect } from "../organizations/PendingInvitationRedirect";
 import { Toaster } from "../client/components/ui/toaster";
 import "./Main.css";
 import { NavBar } from "./components/NavBar/NavBar";
@@ -26,6 +27,7 @@ export function App() {
 
   return (
     <>
+      <PendingInvitationRedirect />
       <div className="bg-background text-foreground min-h-screen">
         {isAdminDashboard ? (
           <Outlet />

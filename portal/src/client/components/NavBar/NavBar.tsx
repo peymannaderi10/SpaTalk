@@ -10,6 +10,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "../../../client/components/ui/sheet";
+import { OrgSwitcher } from "../../../organizations/OrgSwitcher";
 import { throttleWithTrailingInvocation } from "../../../shared/utils";
 import { UserDropdown } from "../../../user/UserDropdown";
 import { UserMenuItems } from "../../../user/UserMenuItems";
@@ -108,6 +109,7 @@ function NavBarDesktopUserDropdown({ isScrolled }: { isScrolled: boolean }) {
 
   return (
     <div className="hidden items-center justify-end gap-3 lg:flex lg:flex-1">
+      {user && <OrgSwitcher />}
       <ul className="flex items-center justify-center gap-2 sm:gap-4">
         <DarkModeSwitcher />
       </ul>

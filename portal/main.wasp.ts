@@ -12,6 +12,7 @@ import { analyticsSpec } from "./src/analytics/analytics.wasp";
 import { authConfig, authSpec } from "./src/auth/auth.wasp";
 import { head } from "./src/client/head.wasp";
 import { paymentSpec } from "./src/payment/payment.wasp";
+import { organizationsSpec } from "./src/organizations/organizations.wasp";
 import { emailSender } from "./src/server/emailSender.wasp";
 import { userSpec } from "./src/user/user.wasp";
 
@@ -35,6 +36,7 @@ export default app({
     route("NotFoundRoute", "*", page(NotFoundPage)),
     authSpec,
     userSpec,
+    organizationsSpec,
     paymentSpec,
     analyticsSpec,
     adminSpec,
