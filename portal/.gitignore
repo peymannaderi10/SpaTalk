@@ -1,0 +1,7 @@
+node_modules/
+.wasp/
+
+# Dotenv files hold secrets; only the examples are committed.
+.env
+.env.*
+!.env.*.example

@@ -173,20 +173,48 @@ Why: Instagram comment replies and DMs. Standard Access covers Skincentrix's own
 - uptimerobot.com free: HTTP monitor on `https://api.spatalk.ca/healthz` every 5 minutes, alert to your phone.
 - sentry.io developer plan: create a Python project, copy `SENTRY_DSN`. The operations plan wires it.
 
+## One database, two schemas
+
+The portal and the runtime share one Postgres database. The runtime owns the
+`runtime` schema and migrates it with Alembic; the portal owns `public` and
+migrates it with Prisma; Wasp's job queue owns `pgboss`. Both migration tools
+were run against the same database in both orders on 2026-09-02 and neither
+touched the other's schema, so one database is the standard and `DATABASE_URL`
+is the same database for both planes (different URL schemes: the runtime uses
+`postgresql+asyncpg://`, the portal `postgresql://`).
+
+Two rules follow, and they matter:
+
+- **Never run `prisma migrate reset` or `wasp db reset` against this database.**
+  Reset drops every schema Prisma can see, including `runtime`. To start the
+  portal's tables over, point `DATABASE_URL` at a scratch database first.
+- Take the nightly backup of the whole database, not of one schema.
+
+If a future Prisma or Alembic release breaks the arrangement, the fallback is a
+second database on the same server: create it with
+
+```
+docker compose exec -T db psql -U spatalk -c "CREATE DATABASE spatalk_portal OWNER spatalk"
+```
+
+and point only the portal's `DATABASE_URL` at `spatalk_portal`. Nothing else
+changes: the portal reaches runtime data over `/internal`, never over SQL.
+
 ## Where every variable goes
 
 Runtime: `runtime/.env` on the VPS (copy from `runtime/.env.example`). Portal: `portal/.env.server` and `portal/.env.client`. Worker: `edge/sms-worker/.dev.vars` and `wrangler secret put`. CI: GitHub Actions secrets.
 
 | Variable | File | From step | Needed for morning call |
 |---|---|---|---|
-| `DATABASE_URL` | runtime, portal | Compose default `postgresql+asyncpg://spatalk:spatalk@db:5432/spatalk` (portal uses `postgresql://…`) | yes |
+| `DATABASE_URL` | runtime, portal | Compose default `postgresql+asyncpg://spatalk:spatalk@db:5432/spatalk`; the portal uses the same database with the `postgresql://` scheme (see "One database, two schemas" below) | yes |
 | `SECRET_KEY`, `INTERNAL_API_KEY` | runtime | step 0 | yes |
 | `PUBLIC_BASE_URL`, `MEDIA_WS_HOST`, `API_HOST`, `MEDIA_HOST` | runtime | step 2 | yes |
 | `TELNYX_API_KEY`, `TELNYX_PUBLIC_KEY` | runtime, worker | step 3 | yes |
 | `SONIOX_API_KEY`, `STT_PROVIDER` | runtime | step 4 | yes |
 | `INWORLD_API_KEY`, `INWORLD_VOICE`, `INWORLD_MODEL`, `TTS_PROVIDER` | runtime | step 5 | yes |
 | `GOOGLE_API_KEY`, `LLM_MODEL` | runtime, CI | step 6 | yes |
-| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM` | runtime, portal | step 7 | email only |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM` | runtime | step 7 | email only |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `MAIL_FROM` | portal | step 7 | email only |
 | `SLACK_SIGNING_SECRET`, `SLACK_BOT_TOKEN`, `SKINCENTRIX_SLACK_WEBHOOK` | runtime | step 8 | yes |
 | `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY` | runtime | step 1 | widget only |
 | `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_ENDPOINT`, `R2_BUCKET` | runtime (WAL-G) | step 1 | backups only |
