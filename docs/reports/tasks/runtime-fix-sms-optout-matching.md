@@ -1,7 +1,7 @@
 # QA gate B fix: sms-optout-matching
 
 Status: done with deviations
-Commit: <filled below>
+Commit: a79c47b
 Tests: `cd runtime && uv run pytest -q tests/test_text_sms.py -k optout` -> 40/40 (20 deselected);
 `uv run pytest -q tests/test_text_sms.py` -> 60/60; full suite `uv run pytest -q` -> 591 passed,
 1 skipped; `uv run ruff check spatalk tests scenarios` -> All checks passed.
