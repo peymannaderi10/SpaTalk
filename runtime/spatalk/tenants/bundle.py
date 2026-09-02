@@ -10,27 +10,40 @@ from .schema import TenantConfig
 FILES = ("tenant.yaml", "services.yaml", "knowledge.md", "scripts.yaml", "guard.yaml")
 
 
+def config_from_texts(texts: dict[str, str], source: str = "bundle") -> TenantConfig:
+    """The bundle rules applied to the five files' contents, whatever carried them here.
+
+    `load_bundle` reads them from a directory; the portal uploads them to
+    `POST /internal/tenants/from-bundle` (portal plan, Task C3). Both land here, so the
+    two routes cannot drift apart.
+    """
+    missing = [f for f in FILES if f not in texts]
+    if missing:
+        raise ValueError(f"bundle {source} missing {missing}")
+    try:
+        tenant = yaml.safe_load(texts["tenant.yaml"]) or {}
+        services = yaml.safe_load(texts["services.yaml"]) or {}
+        scripts = yaml.safe_load(texts["scripts.yaml"]) or {}
+        guard = yaml.safe_load(texts["guard.yaml"]) or {}
+        data = {
+            **tenant,
+            "services": services["services"],
+            "scripts": scripts,
+            "lexicons": guard,
+            "knowledge": texts["knowledge.md"],
+        }
+        return TenantConfig.model_validate(data)
+    except Exception as e:  # pydantic ValidationError is a ValueError subclass
+        raise ValueError(f"invalid bundle {source}: {e}") from e
+
+
 def load_bundle(path: Path) -> TenantConfig:
     path = Path(path)
     missing = [f for f in FILES if not (path / f).exists()]
     if missing:
         raise ValueError(f"bundle {path} missing {missing}")
-    tenant = yaml.safe_load((path / "tenant.yaml").read_text(encoding="utf-8"))
-    services = yaml.safe_load((path / "services.yaml").read_text(encoding="utf-8"))
-    scripts = yaml.safe_load((path / "scripts.yaml").read_text(encoding="utf-8"))
-    guard = yaml.safe_load((path / "guard.yaml").read_text(encoding="utf-8")) or {}
-    knowledge = (path / "knowledge.md").read_text(encoding="utf-8")
-    data = {
-        **tenant,
-        "services": services["services"],
-        "scripts": scripts,
-        "lexicons": guard,
-        "knowledge": knowledge,
-    }
-    try:
-        return TenantConfig.model_validate(data)
-    except Exception as e:  # pydantic ValidationError is a ValueError subclass
-        raise ValueError(f"invalid bundle {path}: {e}") from e
+    texts = {f: (path / f).read_text(encoding="utf-8") for f in FILES}
+    return config_from_texts(texts, source=str(path))
 
 
 def config_to_json(cfg: TenantConfig) -> dict:

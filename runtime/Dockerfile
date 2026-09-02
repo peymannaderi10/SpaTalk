@@ -5,5 +5,8 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 WORKDIR /app
 COPY . .
 RUN uv pip install --system --no-cache .
+# The deployed revision, reported by /healthz so the portal's health page can name it.
+ARG GIT_COMMIT=""
+ENV GIT_COMMIT=$GIT_COMMIT
 EXPOSE 8000
 CMD ["spatalk", "serve", "--host", "0.0.0.0", "--port", "8000"]

@@ -42,6 +42,14 @@ class Settings(BaseSettings):
     turnstile_site_key: str = ""
     turnstile_secret_key: str = ""
 
+    # --- portal control plane (portal plan, Task C3) ---
+    # The shared key the portal presents on every /internal call. Empty means the internal
+    # API refuses everyone: it fails closed, never open.
+    internal_api_key: str = ""
+    # The deployed revision, set by the Dockerfile and reported by /healthz so the agency
+    # admin page can say what is running.
+    git_commit: str = ""
+
     # --- human takeover (text-channels plan, Task B5) ---
     # With a bot token, item delivery opens a Slack thread per conversation and staff can
     # reply in it. Without one, delivery stays on the incoming webhook and there is no thread.

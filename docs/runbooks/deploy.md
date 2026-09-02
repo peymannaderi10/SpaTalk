@@ -30,7 +30,7 @@ Edit the bundle, `spatalk tenant import tenants/<id>`, no restart needed (30-sec
 
 ## Checks
 
-`curl https://api.<domain>/healthz` returns `{"ok":true,"tenants":["skincentrix"]}`.
+`curl -s https://api.<domain>/healthz | jq -c '{ok,tenants}'` returns `{"ok":true,"tenants":["skincentrix"]}`. The whole response also carries `config_versions` (the config version each tenant is running) and `commit` (the image's `GIT_COMMIT`).
 `docker compose logs -f app` while calling the number.
 
 ## First real call

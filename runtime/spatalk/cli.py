@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
 
 import httpx
@@ -58,6 +59,23 @@ def items_list(tenant_id: str):
             f"#{it.id} {it.state:<12} {it.urgency:<6} {it.type:<28} "
             f"due {it.due_at:%Y-%m-%d %H:%M} {it.contact_name or ''} {it.contact_phone or ''}"
         )
+
+
+@app.command()
+def openapi(internal: bool = True, out: str = ""):
+    """Print the runtime's OpenAPI document (default: only the portal's `/internal` API).
+
+    `docs/contracts/runtime-internal.openapi.json` is this output; the portal generates its
+    typed client from that file, so regenerating it is how a contract change is declared.
+    """
+    from spatalk.http.internal import openapi_document
+
+    document = json.dumps(openapi_document(internal_only=internal), indent=2) + "\n"
+    if out:
+        Path(out).write_text(document, encoding="utf-8")
+        typer.echo(f"wrote {out}")
+    else:
+        typer.echo(document, nl=False)
 
 
 @app.command()

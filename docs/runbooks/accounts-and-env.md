@@ -237,7 +237,7 @@ The complete variable list with the plan that introduces each one is in `docs/re
 1. On the VPS: `cd spatalk/runtime && docker compose up -d --build && docker compose exec app alembic upgrade head`.
 2. `docker compose exec app spatalk tenant import tenants/skincentrix`.
 3. `docker compose exec app spatalk numbers add +1905XXXXXXX skincentrix voice` and the toll-free as `sms`.
-4. `curl https://api.spatalk.ca/healthz` should return `{"ok":true,"tenants":["skincentrix"]}`.
+4. `curl -s https://api.spatalk.ca/healthz | jq -c '{ok,tenants}'` should return `{"ok":true,"tenants":["skincentrix"]}`; the full response also lists `config_versions` and the deployed `commit`.
 5. Go back to Telnyx and confirm the TeXML application's Voice URL is reachable (Telnyx shows a green check after the first webhook). Call the local number from your phone and run the first-call checklist in `docs/runbooks/deploy.md`.
 6. Edge worker (SMS fallback): on your laptop, `cd edge/sms-worker && npm ci && npx wrangler login && npx wrangler secret put EDGE_SHARED_KEY` (repeat for `TELNYX_PUBLIC_KEY`, `TELNYX_API_KEY`), set `RUNTIME_URL` in `wrangler.toml`, `npx wrangler deploy`. Then point the Telnyx messaging profile's webhook at the Worker URL instead of the runtime, and run `docker compose exec app spatalk edge sync-texts`.
 7. Portal: fill `portal/.env.server` on the VPS, `docker compose up -d --build portal-server portal-web`, open `https://app.spatalk.ca`, sign up with the email in `ADMIN_EMAILS`, verify, and create the Skincentrix organisation from `/admin/tenants/new`.

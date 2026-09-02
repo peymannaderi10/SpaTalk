@@ -1,0 +1,257 @@
+{
+  "_note": "Rates verified 2026-09-01 from research-1b (voice) and research-1c (SMS). USD unless noted. Entries marked _unverified come from secondary sources.",
+  "usd_to_cad": 1.3896,
+  "ceilings_cad": {
+    "voice_min_target": 0.03,
+    "voice_min_ceiling": 0.04,
+    "text_conv_target": 0.15,
+    "text_conv_ceiling": 0.25,
+    "outbound_msg_target": 0.01,
+    "outbound_msg_ceiling": 0.02,
+    "fixed": {
+      "1": 60,
+      "10": 150,
+      "25": 400
+    }
+  },
+  "assumptions": {
+    "avg_call_minutes": 3.0,
+    "agent_speaking_fraction": 0.5,
+    "chars_per_spoken_minute": 825,
+    "turns_per_minute": 3.0,
+    "input_tokens_uncached_per_turn": 600,
+    "input_tokens_cached_per_turn": 5000,
+    "output_tokens_per_turn": 60
+  },
+  "assumptions_text": {
+    "turns_per_conversation": 5,
+    "outbound_msgs": 4,
+    "inbound_msgs": 4
+  },
+  "assumptions_volume": {
+    "calls_per_month": 250,
+    "sms_convs_per_month": 150,
+    "chat_convs_per_month": 100,
+    "outbound_msgs_per_month": 300
+  },
+  "per_tenant_fixed_cad": 4.5,
+  "telephony": {
+    "telnyx_ca_conservative": {
+      "inbound_per_min": 0.0095,
+      "stream_per_min": 0.0035,
+      "record_per_min": 0.0,
+      "_note": "0.002 API fee + 0.0075 CA DID inbound (secondary) + 0.0035 WebSocket streaming; recording off"
+    },
+    "telnyx_low": {
+      "inbound_per_min": 0.0052,
+      "stream_per_min": 0.0035,
+      "record_per_min": 0.0,
+      "_note": "0.002 API fee + 0.0032 'starting at' inbound + streaming"
+    },
+    "plivo_ca": {
+      "inbound_per_min": 0.0075,
+      "stream_per_min": 0.0,
+      "record_per_min": 0.0,
+      "_note": "streaming and recording included; PoPs unstated"
+    },
+    "twilio_ca": {
+      "inbound_per_min": 0.0085,
+      "stream_per_min": 0.0044,
+      "record_per_min": 0.0,
+      "_note": "no Canadian edge"
+    }
+  },
+  "stt": {
+    "soniox_rt": {
+      "per_min": 0.002,
+      "_note": "no training by default, RT audio not stored"
+    },
+    "assemblyai_streaming": {
+      "per_min": 0.0025,
+      "_note": "training ON by default; paid accounts opt out"
+    },
+    "speechmatics_rt": {
+      "per_min": 0.0022,
+      "_unverified": "page does not separate batch vs RT"
+    },
+    "deepgram_flux_regular": {
+      "per_min": 0.0077,
+      "_note": "regular price; assume MIP opt-out forfeits the 0.0065 promo (unverified)"
+    },
+    "deepgram_flux_promo": {
+      "per_min": 0.0065
+    },
+    "deepgram_nova3_regular": {
+      "per_min": 0.0077
+    }
+  },
+  "tts": {
+    "inworld_tts2_flash": {
+      "per_1m_chars": 15.0,
+      "_note": "no training; 25ms TTFB claim (vendor)"
+    },
+    "azure_neural": {
+      "per_1m_chars": 16.0,
+      "_unverified": "secondary source"
+    },
+    "polly_neural": {
+      "per_1m_chars": 16.0
+    },
+    "google_neural2": {
+      "per_1m_chars": 16.0,
+      "_unverified": "secondary source"
+    },
+    "deepgram_aura2": {
+      "per_1m_chars": 30.0
+    },
+    "rime_mist_v3": {
+      "per_1m_chars": 30.0
+    },
+    "elevenlabs_flash": {
+      "per_1m_chars": 50.0
+    }
+  },
+  "llm": {
+    "gemini_25_flash_lite": {
+      "in": 0.1,
+      "cached_in": 0.01,
+      "out": 0.4,
+      "_ttft_s": 0.29
+    },
+    "gemini_25_flash": {
+      "in": 0.3,
+      "cached_in": 0.03,
+      "out": 2.5,
+      "_ttft_s": 0.43
+    },
+    "gpt41_nano": {
+      "in": 0.1,
+      "cached_in": 0.025,
+      "out": 0.4,
+      "_ttft_s": 0.7
+    },
+    "gpt41_mini": {
+      "in": 0.4,
+      "cached_in": 0.1,
+      "out": 1.6
+    },
+    "groq_gptoss_20b": {
+      "in": 0.075,
+      "cached_in": 0.075,
+      "out": 0.3,
+      "_ttft_s": 0.78
+    },
+    "cerebras_gptoss_120b": {
+      "in": 0.35,
+      "cached_in": 0.35,
+      "out": 0.75,
+      "_ttft_s": 0.47
+    },
+    "claude_haiku_45": {
+      "in": 1.0,
+      "cached_in": 0.1,
+      "out": 5.0,
+      "_ttft_s": 0.75
+    }
+  },
+  "sms": {
+    "telnyx_ca_tollfree": {
+      "out_per_msg": 0.0055,
+      "carrier_out_per_msg": 0.007,
+      "in_per_msg": 0.0055,
+      "carrier_in_per_msg": 0.007,
+      "_unverified": "Telnyx publishes US toll-free 0.0055 + carrier fee; Canadian carrier fee assumed ~0.007 (Twilio CA outbound pass-through avg). Confirm in Telnyx portal."
+    },
+    "twilio_ca_tollfree": {
+      "out_per_msg": 0.0083,
+      "carrier_out_per_msg": 0.008,
+      "in_per_msg": 0.0083,
+      "carrier_in_per_msg": 0.015,
+      "_note": "Twilio CA page: 0.0083 each way; carrier pass-through out ~0.0067-0.0087, in 0.0089-0.0323 (avg ~0.015, agent flagged re-check)"
+    }
+  },
+  "voice_stacks": {
+    "A  founder suggestion at today's real prices (Telnyx + Flux + Aura-2 + Gemini Flash)": {
+      "tel": "telnyx_ca_conservative",
+      "stt": "deepgram_flux_regular",
+      "tts": "deepgram_aura2",
+      "llm": "gemini_25_flash"
+    },
+    "B  RECOMMENDED (Telnyx + Soniox + Inworld Flash + Gemini 2.5 Flash)": {
+      "tel": "telnyx_ca_conservative",
+      "stt": "soniox_rt",
+      "tts": "inworld_tts2_flash",
+      "llm": "gemini_25_flash",
+      "recommended": true
+    },
+    "B2 same but Deepgram Flux for native end-of-turn": {
+      "tel": "telnyx_ca_conservative",
+      "stt": "deepgram_flux_regular",
+      "tts": "inworld_tts2_flash",
+      "llm": "gemini_25_flash"
+    },
+    "B3 same but Flash-Lite LLM": {
+      "tel": "telnyx_ca_conservative",
+      "stt": "soniox_rt",
+      "tts": "inworld_tts2_flash",
+      "llm": "gemini_25_flash_lite"
+    },
+    "C  cheapest (Plivo + Soniox + Inworld + Flash-Lite)": {
+      "tel": "plivo_ca",
+      "stt": "soniox_rt",
+      "tts": "inworld_tts2_flash",
+      "llm": "gemini_25_flash_lite"
+    },
+    "D  expensive reference (Twilio + Nova-3 + ElevenLabs + Haiku 4.5)": {
+      "tel": "twilio_ca",
+      "stt": "deepgram_nova3_regular",
+      "tts": "elevenlabs_flash",
+      "llm": "claude_haiku_45"
+    }
+  },
+  "text_stacks": {
+    "Telnyx CA toll-free + Gemini 2.5 Flash": {
+      "sms": "telnyx_ca_tollfree",
+      "llm": "gemini_25_flash",
+      "recommended": true
+    },
+    "Twilio CA toll-free + Gemini 2.5 Flash": {
+      "sms": "twilio_ca_tollfree",
+      "llm": "gemini_25_flash"
+    }
+  },
+  "fixed_cad": {
+    "1": {
+      "ovh_vps2_bhs_app_db": 13.7,
+      "ovh_7day_backup": 1.8,
+      "ovh_vps1_staging_canary": 7.3,
+      "r2_or_b2_storage": 0.0,
+      "domain": 1.21,
+      "ses_email": 0.5,
+      "cloudflare_free": 0.0,
+      "uptime_monitor": 0.0
+    },
+    "10": {
+      "ovh_vps4_bhs_app": 37.9,
+      "ovh_7day_backup": 1.8,
+      "do_managed_pg_1gb_toronto": 21.05,
+      "ovh_vps1_staging_canary": 7.3,
+      "r2_or_b2_storage": 0.83,
+      "domain": 1.21,
+      "ses_email": 2.0,
+      "cloudflare_free": 0.0
+    },
+    "25": {
+      "ovh_vps4_bhs_app_x2": 75.8,
+      "ovh_7day_backup_x2": 3.6,
+      "do_managed_pg_2vcpu_toronto": 84.63,
+      "ovh_vps1_staging_canary": 7.3,
+      "r2_or_b2_storage": 4.17,
+      "domain": 1.21,
+      "ses_email": 5.0,
+      "cloudflare_pro_optional": 34.74
+    }
+  },
+  "_per_tenant_fixed_note": "local DID ~1 USD + toll-free ~1-2 USD + SMS add-on 0.10 USD, x1.37",
+  "_fx_source": "Bank of Canada FXUSDCAD daily average 2026-09-01"
+}
