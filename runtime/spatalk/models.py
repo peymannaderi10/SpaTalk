@@ -320,3 +320,29 @@ class WhatsAppWindow(Base):
     tenant_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     phone: Mapped[str] = mapped_column(String(32), primary_key=True)
     last_inbound_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+# --- operations (operations plan, Task E9) ---------------------------------------------
+
+
+class ProviderInvoice(Base):
+    """What a provider actually billed for one month, in Canadian dollars.
+
+    The metered estimate in `spatalk.rates` is a model built on published prices, two of
+    which the research could not verify (spec §10 weakness 1). The only thing that settles
+    it is the invoice, so the founder types each one in and the monthly reconciliation
+    compares the two. Unique on `(provider, month)` because a corrected invoice replaces the
+    figure rather than adding a second one; nothing here is a running total.
+    """
+
+    __tablename__ = "provider_invoices"
+    __table_args__ = (UniqueConstraint("provider", "month"),)
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    # The name as `usage_events.provider` spells it, so the two sides join by eye.
+    provider: Mapped[str] = mapped_column(String(40))
+    # `YYYY-MM`, a UTC calendar month: the window providers bill on.
+    month: Mapped[str] = mapped_column(String(7))
+    amount_cad: Mapped[float] = mapped_column(Numeric(12, 2))
+    entered_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )

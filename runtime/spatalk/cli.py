@@ -20,11 +20,15 @@ numbers = typer.Typer()
 items = typer.Typer()
 edge = typer.Typer()
 texml = typer.Typer()          # carrier-side TeXML the founder pastes (operations plan, E1)
+invoices = typer.Typer()       # what each provider actually billed (operations plan, E9)
+cost = typer.Typer()           # metered cost against those invoices (operations plan, E9)
 app.add_typer(tenant, name="tenant")
 app.add_typer(numbers, name="numbers")
 app.add_typer(items, name="items")
 app.add_typer(edge, name="edge")
 app.add_typer(texml, name="texml")
+app.add_typer(invoices, name="invoices")
+app.add_typer(cost, name="cost")
 
 
 def _ctx():
@@ -165,3 +169,43 @@ def texml_failover_bin(tenant_id: str):
     ctx = _ctx()
     cfg = asyncio.run(ctx.registry.get(tenant_id))
     typer.echo(failover_bin(cfg, ctx.clock.now()))
+
+
+# --- monthly cost reconciliation (operations plan, Task E9) -------------------
+# The metered estimate is a model built on published prices, two of which the research
+# could not verify. The invoice is the fact, and it arrives as an email to a human, so a
+# human types it in: `spatalk invoices add telnyx 2026-08 41.50`. `cost report` then puts
+# the two side by side and prints the drift.
+
+
+@invoices.command("add")
+def invoices_add(provider: str, month: str, amount_cad: float):
+    """Record what one provider billed for one month, in Canadian dollars."""
+    from spatalk.ops import cost_report as ops_cost
+
+    ctx = _ctx()
+    asyncio.run(ops_cost.add_invoice(ctx.sf, provider, month, amount_cad, now=ctx.clock.now()))
+    typer.echo(f"{provider} {month}: CA${amount_cad:,.2f}")
+
+
+@cost.command("report")
+def cost_report_cmd(month: str):
+    """Print the month's metered cost per provider and per tenant against the invoices."""
+    from spatalk.ops import cost_report as ops_cost
+
+    ctx = _ctx()
+    report = asyncio.run(ops_cost.cost_report(ctx, month))
+    for provider in ops_cost.providers_by_drift(report):
+        drift = report["drift_pct"][provider]
+        estimated = ops_cost.format_cad(report["per_provider_estimate"][provider])
+        invoiced = ops_cost.format_cad(report["invoices"][provider])
+        typer.echo(
+            f"{provider:<20} estimated {estimated:>14}  invoiced {invoiced:>14}"
+            + (f"  drift {drift:+.1f}%" if drift is not None else "")
+        )
+    for tenant_id, costs in sorted(report["per_tenant"].items()):
+        typer.echo(
+            f"{tenant_id:<20} cost {ops_cost.format_cad(costs['total']):>14}"
+            f"  price {ops_cost.format_cad(report['price_cad']):>14}"
+            f"  margin {report['per_tenant_margin_pct'][tenant_id]:.2f}%"
+        )

@@ -16,6 +16,8 @@ from spatalk.ops import alerts
 from spatalk.ops import retention
 # Operations plan, Task E4: importing this also registers the ops.nightly_audit handler.
 from spatalk.ops import nightly_audit
+# Operations plan, Task E9: importing this also registers the ops.cost_report handler.
+from spatalk.ops import cost_report
 # Instagram plan, Task D1: importing this also registers the social.refresh_tokens handler.
 from spatalk.social.meta_oauth import ensure_daily_refresh_scheduled
 from spatalk.text.takeover import hand_back_stale
@@ -115,6 +117,41 @@ async def ensure_nightly_audit_scheduled(ctx: jobs.JobContext) -> bool:
     return True
 
 
+# --- operations (operations plan, Task E9) ---------------------------------------------
+
+# An hour after the nightly audit, on the first of the month only. UTC for the same reason
+# the other two are: the window being reconciled is a provider's calendar month, not a
+# clinic's (`spatalk/ops/cost_report.py`).
+MONTHLY_COST_REPORT_UTC_HOUR = 5
+
+
+async def ensure_monthly_cost_report_scheduled(ctx: jobs.JobContext) -> bool:
+    """Queue the cost report once a month, from 05:00 UTC on the first, for the month past.
+
+    The marker is the same as the nightly jobs': a queued job of this kind whose `run_at`
+    falls on or after this month's boundary. That makes the check "has this month's report
+    been queued", so every later day of the month is a no-op even after a restart.
+    """
+    now = ctx.clock.now().astimezone(timezone.utc)
+    boundary = now.replace(
+        day=1, hour=MONTHLY_COST_REPORT_UTC_HOUR, minute=0, second=0, microsecond=0
+    )
+    if now < boundary:
+        return False
+    async with ctx.sf() as s:
+        already = await s.scalar(
+            select(func.count(Job.id)).where(
+                Job.kind == cost_report.RUN_KIND, Job.run_at >= boundary
+            )
+        )
+    if already:
+        return False
+    month = cost_report.previous_month(now)
+    await jobs.enqueue(ctx.sf, cost_report.RUN_KIND, {"month": month}, run_at=now)
+    logger.info("queued {} for {}", cost_report.RUN_KIND, month)
+    return True
+
+
 # --- operations (operations plan, Task E7) ---------------------------------------------
 
 # The alert conditions are re-derived on a five-minute cadence, not on every 60 s pass: the
@@ -163,6 +200,8 @@ async def run_scheduler_forever(ctx: jobs.JobContext, interval_seconds: float = 
             await ensure_nightly_retention_scheduled(ctx)
             # Re-judge yesterday's bands and scan its transcripts, nightly (Task E4).
             await ensure_nightly_audit_scheduled(ctx)
+            # Reconcile last month's metered cost against the invoices, monthly (Task E9).
+            await ensure_monthly_cost_report_scheduled(ctx)
             # A dead job, a queue that stopped draining, a scheduler that stalled (Task E7).
             await ensure_alert_conditions_checked(ctx)
             # Last, and only on a pass that got this far: the tick is the claim that a whole
