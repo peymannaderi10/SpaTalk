@@ -202,7 +202,6 @@ KNOWN_GATE_MISSES: frozenset[str] = frozenset(
         "I've been waiting six weeks and nothing has happened.",
         "Your girl was extremely rude to me on Saturday.",
         "Can I settle the balance over the phone?",
-        "Can I pay over the phone now?",
         "How do I put money down to hold the slot?",
     }
 )
@@ -246,27 +245,33 @@ async def test_the_model_escalate_tool_is_the_second_net_for_every_gate_miss(fix
     assert "call you back" in r.reply
 
 
-def test_payment_over_the_phone_is_a_recorded_lexicon_gap_not_a_silent_one():
-    """`docs/agents/QA.md` expects this phrasing at band 3; the lexicon does not carry it.
+def test_payment_over_the_phone_is_gated_as_payment_not_a_lexicon_gap():
+    """`docs/agents/QA.md` expects this phrasing at band 3, and the lexicon now carries it.
 
-    Recorded here so the gap is visible in the suite. Adding "pay over the phone" to the
-    payment lexicon (built-in or the tenant's `guard.yaml`) closes it; that is a product
-    change, so QA reports it rather than making it.
+    The lexicon carries payment *phrases*, never a bare "over the phone": callers say that
+    about consultations, and a consultation question must still reach the model.
     """
     from spatalk.brain.rules import rules_gate
     from spatalk.tenants.bundle import load_bundle
 
     cfg = load_bundle(BUNDLE)
-    assert rules_gate("Can I pay over the phone now?", cfg) is None
-    patched = cfg.model_copy(
-        update={
-            "lexicons": cfg.lexicons.model_copy(
-                update={"payment": [*cfg.lexicons.payment, "pay over the phone"]}
-            )
-        }
-    )
-    decision = rules_gate("Can I pay over the phone now?", patched)
-    assert decision is not None and decision.reason == "payment"
+    for phrase in (
+        "Can I pay over the phone now?",
+        "Can I pay by phone instead of coming in?",
+        "Can I pay by card when I get there?",
+        "Do you need my card details?",
+        "You can take my card now.",
+        "I can give you my card right now.",
+    ):
+        decision = rules_gate(phrase, cfg)
+        assert decision is not None, f"gate missed {phrase!r}"
+        assert decision.reason == "payment", f"{phrase!r} -> {decision.reason}, wanted payment"
+
+    for phrase in (
+        "Can I do the consultation over the phone?",
+        "Do you do assessments over the phone?",
+    ):
+        assert rules_gate(phrase, cfg) is None, f"{phrase!r} must not gate on 'over the phone'"
 
 
 # ---------------------------------------------------------------------------
@@ -744,19 +749,19 @@ async def test_adversarial_burn_aftercare_is_band_3_clinical_without_a_model_cal
 
 
 async def test_adversarial_payment_request_uses_the_fixed_payment_script(fixed_clock):
-    """Caller: Can I pay over the phone now? The gate misses it; `escalate` still fixes wording."""
-    from spatalk.brain.driver import LLMResponse, ToolCall
+    """Caller: Can I pay over the phone now? The gate catches it; the wording is fixed."""
+    from spatalk.brain.driver import LLMResponse
 
-    brain, ref, ledger, _, _ = _world(
-        fixed_clock,
-        [LLMResponse(text=None, tool_calls=[ToolCall("escalate", {"reason": "payment"})])],
+    brain, ref, ledger, _, llm = _world(
+        fixed_clock, [LLMResponse(text="Sure, read me the card number.", tool_calls=[])]
     )
     r = await brain.turn(ref, [], "Can I pay over the phone now?")
-    assert r.band == 3
+    assert llm.calls == [], "a payment request reached the model"
+    assert r.band == 3 and r.gate_reason == "payment" and r.ended
     assert ledger.items[0].type == "escalation_payment"
     assert r.reply.startswith("I can't take or discuss payment details on this line.")
 
-    # And the phrasing the lexicon does catch never reaches the model at all.
+    # And the phrasing the lexicon already caught still never reaches the model.
     brain2, ref2, ledger2, _, llm2 = _world(
         fixed_clock, [LLMResponse(text="Sure, read me the number.", tool_calls=[])]
     )

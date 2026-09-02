@@ -34,7 +34,8 @@ DEFAULT_LEXICONS: dict[str, list[str]] = {
                  "after the treatment", "fever", "dizzy", "scar", "scarring", "peeling"],
     "complaint": ["complaint", "complain", "unhappy", "refund", "terrible", "awful", "lawyer", "sue", "legal action"],
     "payment": ["credit card", "card number", "visa", "mastercard", "pay now", "make a payment", "payment",
-                "invoice", "charge me", "charged", "billing"],
+                "invoice", "charge me", "charged", "billing", "pay over the phone", "pay by phone",
+                "pay by card", "card details", "take my card", "give you my card"],
 }
 # Volunteered context: not a gate. The request proceeds; the conversation and item are flagged so staff read the transcript.
 HEALTH_CONTEXT_DEFAULT: list[str] = [
