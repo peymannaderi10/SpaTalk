@@ -6,8 +6,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    database_url: str = "postgresql+asyncpg://spatalk:spatalk@localhost:5432/spatalk"
-    test_database_url: str = "postgresql+asyncpg://spatalk:spatalk@localhost:5432/spatalk_test"
+    database_url: str = "postgresql+asyncpg://spatalk:spatalk@localhost:5434/spatalk"
+    test_database_url: str = "postgresql+asyncpg://spatalk:spatalk@localhost:5434/spatalk_test"
     public_base_url: str = "http://localhost:8000"
     media_ws_host: str = "localhost:8000"
     secret_key: str = "dev-secret-change-me"
