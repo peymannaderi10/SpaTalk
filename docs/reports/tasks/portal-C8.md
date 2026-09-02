@@ -1,7 +1,7 @@
 # portal Task C8: Portal CI and contract drift check
 
 Status: done with deviations
-Commit: <filled in below>
+Commit: 99d13c8
 Tests: `cd portal && npm run test:unit` -> 86/86 (15 new, all in `src/ci/workflow.server.test.ts`); full portal suite -> 222/222 (`npm run test:unit` 86, `wasp test client run` 70, `cd e2e-tests && npx playwright test` 66) plus `wasp build` and `npx tsc -p tsconfig.src.json --noEmit` clean; `cd runtime && uv run pytest tests/test_contract_snapshot.py -q` -> 5/5
 Interfaces produced: `npm run check:client` (portal/package.json); job `portal` in `.github/workflows/ci.yml`; `docs/contracts/README.md`; `portal/src/ci/workflow.server.test.ts`
 
@@ -105,9 +105,12 @@ and the stale client, `npm run test:unit` reported `14 failed | 72 passed`.
   behaviours are asserted against the files instead, and every command the job runs was run
   locally. This is the honest limit of this task: **the workflow has not been executed by GitHub
   Actions.** What was executed: the drift check (both failing and passing), the seed command in
-  its `env`-prefixed CI form, `wasp db migrate-dev`'s already-applied state, `wasp build`,
-  `npx tsc --noEmit`, `npm run test:unit`, `wasp test client run` and the full Playwright suite
-  against a live runtime.
+  its `env`-prefixed CI form, `wasp build`, `npx tsc --noEmit`, `npm run test:unit`,
+  `wasp test client run` and the full Playwright suite against a live runtime. `wasp db
+  migrate-dev` was *not* run here on purpose: this machine's portal database is the same
+  database as the runtime's, and Prisma's answer to drift is an offer to reset every schema it
+  can see (C1's report). On a CI runner the database is empty and the migrations are committed,
+  so it only applies them; stdin is `/dev/null` so a prompt fails the job instead of hanging.
 - **`portal/src/runtime/client.ts` regenerated**, which is a Task C4 file. Unavoidable: it was
   drifted from the contract (above) and the check whose whole purpose is to fail on that would
   have failed on a clean checkout. Regenerated with the committed `npm run gen:client`, not by
