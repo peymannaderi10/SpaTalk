@@ -10,6 +10,7 @@ import { serverEnvValidationSchema } from "./src/env" with { type: "ref" };
 import { adminSpec } from "./src/admin/admin.wasp";
 import { analyticsSpec } from "./src/analytics/analytics.wasp";
 import { authConfig, authSpec } from "./src/auth/auth.wasp";
+import { clientPagesSpec } from "./src/client/pages.wasp";
 import { head } from "./src/client/head.wasp";
 import { paymentSpec } from "./src/payment/payment.wasp";
 import { organizationsSpec } from "./src/organizations/organizations.wasp";
@@ -37,6 +38,7 @@ export default app({
     authSpec,
     userSpec,
     organizationsSpec,
+    clientPagesSpec,
     paymentSpec,
     analyticsSpec,
     adminSpec,

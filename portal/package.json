@@ -25,6 +25,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^0.525.0",
+    "openapi-fetch": "^0.14.0",
     "prettier": "3.1.1",
     "prettier-plugin-tailwindcss": "^0.7.2",
     "react": "^19.2.1",
@@ -51,6 +52,7 @@
   },
   "scripts": {
     "e2e": "npm --prefix e2e-tests run e2e",
+    "gen:client": "npx --yes openapi-typescript@7.13.0 ../docs/contracts/runtime-internal.openapi.json -o src/runtime/client.ts",
     "test:unit": "vitest run -c vitest.server.config.ts"
   }
 }

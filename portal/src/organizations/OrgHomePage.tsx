@@ -46,6 +46,21 @@ export function OrgHomePage({ user }: { user: AuthUser }) {
         <Fact label="Runtime tenant" value={org.runtimeTenantId} />
         <Fact label="People" value={String(org.members.length)} />
       </dl>
+      <nav className="mt-8 flex flex-wrap gap-4 text-sm">
+        <Link className="underline" to={`/app/${org.slug}/overview`}>
+          Overview
+        </Link>
+        <Link className="underline" to={`/app/${org.slug}/conversations`}>
+          Conversations
+        </Link>
+        <Link className="underline" to={`/app/${org.slug}/requests`}>
+          Requests
+        </Link>
+        <Link className="underline" to={`/app/${org.slug}/settings`}>
+          Settings
+        </Link>
+      </nav>
+
       <p className="text-muted-foreground mt-6 text-sm">
         Signed in as {user.email ?? user.id}.
       </p>

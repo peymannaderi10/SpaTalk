@@ -1,4 +1,5 @@
 import { defineConfig, devices } from "@playwright/test";
+import { RUNTIME_KEY, RUNTIME_URL } from "./tests/runtime";
 import { AGENCY_ADMIN_EMAIL } from "./tests/utils";
 
 /**
@@ -19,6 +20,12 @@ export default defineConfig({
    * that on Vite compiling pages on demand, so the budget is raised.
    */
   timeout: 120 * 1000,
+
+  /**
+   * Seeds one tenant, four conversations, four tracked items and a day of usage
+   * into the runtime, and refuses to start the suite if no runtime answers.
+   */
+  globalSetup: require.resolve("./global-setup"),
 
   use: {
     baseURL: "http://localhost:3000",
@@ -47,6 +54,11 @@ export default defineConfig({
       // Pinned so the organisation tests do not depend on whatever the local
       // .env.server holds: this address signs up as the agency admin.
       ADMIN_EMAILS: AGENCY_ADMIN_EMAIL,
+      // The client pages read every tenant, conversation, item and usage number
+      // from the runtime, so the server has to be pointed at the same one the
+      // tests seeded and assert against.
+      RUNTIME_INTERNAL_URL: RUNTIME_URL,
+      RUNTIME_INTERNAL_KEY: RUNTIME_KEY,
     },
     url: "http://localhost:3000",
     reuseExistingServer: false,
