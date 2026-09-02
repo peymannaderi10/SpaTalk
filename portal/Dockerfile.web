@@ -1,0 +1,42 @@
+# The portal's client: static files behind Caddy (portal plan, Task C9).
+#
+# The client is a Vite build over Wasp's generated SDK, so `wasp build` has to
+# run first even though nothing from the server image is reused. The address of
+# the Wasp server is compiled into the bundle (`REACT_APP_*` is Wasp's client
+# env prefix), which is why it is a build argument and not an environment
+# variable: rebuilding is how the client learns a new API host.
+#
+# Build context: `portal/` (see `runtime/docker-compose.yml`).
+
+FROM node:24.14.1-bookworm-slim AS builder
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates openssl python3 build-essential \
+    && rm -rf /var/lib/apt/lists/*
+RUN npm install -g @wasp.sh/wasp-cli@0.25.0
+WORKDIR /portal
+COPY . .
+# See `Dockerfile.server`: `wasp install` sets up the internal packages the
+# project depends on by path and runs npm install, which `wasp build` requires.
+RUN wasp install
+RUN wasp build
+
+ARG REACT_APP_API_URL
+ENV REACT_APP_API_URL=${REACT_APP_API_URL}
+# Wasp's Vite plugin forces the output directory (`.wasp/out/web-app/build`),
+# validates that REACT_APP_API_URL is a URL, type-checks `src/`, and prerenders
+# `/privacy` and `/pricing` into their own `index.html`.
+RUN npx vite build
+
+FROM caddy:2-alpine AS production
+COPY --from=builder /portal/.wasp/out/web-app/build /srv
+# The whole site: the prerendered pages by path, everything else the SPA shell.
+# Wasp's SSR plugin names that shell `200.html`; a missing asset therefore
+# returns the app, which is what a client-side router needs.
+RUN printf '%s\n' \
+    ':80 {' \
+    '    root * /srv' \
+    '    encode gzip' \
+    '    try_files {path} {path}/index.html /200.html' \
+    '    file_server' \
+    '}' > /etc/caddy/Caddyfile
+EXPOSE 80

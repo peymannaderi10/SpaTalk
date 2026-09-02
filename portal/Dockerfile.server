@@ -1,0 +1,64 @@
+# The portal's Wasp server (portal plan, Task C9).
+#
+# Wasp 0.25 generates its own Dockerfile at `portal/.wasp/out/Dockerfile`, but
+# its build context is the generated `.wasp/out` directory, which exists only
+# after someone has run `wasp build` on the machine. This file builds from the
+# committed source instead, so a deploy stays `git pull && docker compose up -d
+# --build`: the VPS needs Docker and nothing else. The production stage below
+# follows the generated Dockerfile step for step; when Wasp's changes, this one
+# is what to re-read against it.
+#
+# Build context: `portal/` (see `runtime/docker-compose.yml`).
+
+# Wasp's generated server declares `engines: { node: ">=24.14.1" }` with
+# `engineStrict`, and pinning the patch keeps CI and the VPS on one Node.
+# Debian rather than Alpine: the Wasp CLI ships a glibc binary for arm64, and
+# Prisma's engines want a real libssl.
+FROM node:24.14.1-bookworm-slim AS builder
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates openssl python3 build-essential \
+    && rm -rf /var/lib/apt/lists/*
+# The exact CLI version Task C1 built the app with.
+RUN npm install -g @wasp.sh/wasp-cli@0.25.0
+WORKDIR /portal
+COPY . .
+# `wasp install` writes the internal packages this project depends on by path
+# (`@wasp.sh/spec` at `.wasp/spec`) and runs npm install; without it `wasp build`
+# stops at "Missing or stale dependencies in project". On a developer machine
+# `wasp start` has already done it, and `.wasp/` is not in the build context.
+RUN wasp install
+# Generates `.wasp/out` and the Prisma client. PORTAL_EMAIL_PROVIDER is
+# deliberately never set: Wasp bakes the email provider in at compile time and
+# refuses the Dummy one for a production build, so this image sends over SMTP.
+RUN wasp build
+# Rolls the generated server and the user code into `.wasp/out/server/bundle`.
+RUN cd .wasp/out/server && npm run bundle
+# npm hoists the server's dependencies to the workspace root, so this directory
+# may not exist; the COPY in the next stage needs it to.
+RUN mkdir -p .wasp/out/server/node_modules
+
+FROM node:24.14.1-bookworm-slim AS production
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates openssl \
+    && rm -rf /var/lib/apt/lists/*
+ENV NODE_ENV=production
+WORKDIR /portal
+# The workspace root holds the Prisma client and CLI (the migration on start
+# needs both) and every dependency the bundle left external.
+COPY --from=builder /portal/node_modules ./node_modules
+COPY --from=builder /portal/.wasp/out/server/node_modules ./.wasp/out/server/node_modules
+COPY --from=builder /portal/.wasp/out/server/bundle ./.wasp/out/server/bundle
+COPY --from=builder /portal/.wasp/out/server/package.json ./.wasp/out/server/package.json
+# The schema and the committed migrations, for `prisma migrate deploy`.
+COPY --from=builder /portal/.wasp/out/db ./.wasp/out/db
+
+# Where Caddy sends `{$APP_API_HOST}`.
+ENV PORT=3001
+EXPOSE 3001
+WORKDIR /portal/.wasp/out/server
+# The portal owns the `public` schema and migrates it itself on start, which is
+# the one place it differs from the runtime (whose `runtime` schema is created
+# by an explicit `alembic upgrade head`). `migrate deploy` only applies
+# committed migrations: it never prompts and never resets a schema, which
+# matters because the runtime's schema lives in the same database.
+CMD ["sh", "-c", "npx prisma migrate deploy --schema=../db/schema.prisma && npm run start"]

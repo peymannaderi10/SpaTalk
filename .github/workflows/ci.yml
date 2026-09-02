@@ -133,6 +133,14 @@ jobs:
       # the verification links out of its output.
       - run: wasp build
         working-directory: portal
+      # Task C9's done criterion. Both images build the portal from the
+      # committed source — `wasp build` runs inside them — so this proves the
+      # deploy path a VPS takes, where `.wasp/` does not exist.
+      - name: the portal container images
+        run: docker compose build portal-server portal-web
+        working-directory: runtime
+        env:
+          APP_API_HOST: app-api.example.com
       - run: npx tsc -p tsconfig.src.json --noEmit
         working-directory: portal
       - run: npm run test:unit

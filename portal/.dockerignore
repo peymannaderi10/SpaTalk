@@ -1,0 +1,20 @@
+# What `docker compose build portal-server portal-web` must not send to the
+# daemon. Both images build the app from the committed source: `.wasp/` and
+# `node_modules/` are generated inside the image, and the host's copies are
+# gigabytes of the wrong platform's binaries.
+node_modules
+**/node_modules
+e2e-tests/node_modules
+.wasp
+
+# Secrets. The server's environment arrives at run time through Compose's
+# `env_file`; an image that carried `.env.server` would carry the Stripe key
+# and the internal key in a layer.
+.env
+.env.*
+!.env.*.example
+
+# Test output.
+e2e-tests/test-results
+e2e-tests/playwright-report
+e2e-tests/mail-sink.log

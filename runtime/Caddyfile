@@ -4,3 +4,12 @@
 {$MEDIA_HOST} {
     reverse_proxy app:8000
 }
+# The portal (Task C9): the built client on one host, its Wasp server on the
+# other. They are two sites because the client is static files and the server
+# holds the session cookie, the Stripe webhook and the Google OAuth callback.
+{$APP_HOST} {
+    reverse_proxy portal-web:80
+}
+{$APP_API_HOST} {
+    reverse_proxy portal-server:3001
+}

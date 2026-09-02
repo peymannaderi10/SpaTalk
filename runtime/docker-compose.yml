@@ -26,6 +26,38 @@ services:
     depends_on:
       db: { condition: service_healthy }
     restart: unless-stopped
+  # The portal (portal plan, Task C9). Two images built from `../portal`: the
+  # Wasp server, and the built client served by a Caddy of its own. Neither
+  # publishes a port; the Caddy below is the only way in.
+  portal-server:
+    build:
+      context: ../portal
+      dockerfile: Dockerfile.server
+    # The portal's own secrets. Optional for the same reason as `app`'s: a clean
+    # checkout has no `.env.server`, and `docker compose up -d db` must still work.
+    env_file:
+      - path: ../portal/.env.server
+        required: false
+    environment:
+      # Prisma's URL for the same database the runtime uses, reached inside the
+      # compose network. The runtime owns the `runtime` schema, the portal owns
+      # `public`; `.env.server` carries the developer machine's `localhost:5434`
+      # form, so it is overridden here exactly as it is for `app`.
+      DATABASE_URL: postgresql://spatalk:spatalk@db:5432/spatalk
+      PORT: "3001"
+    depends_on:
+      db: { condition: service_healthy }
+    restart: unless-stopped
+  portal-web:
+    build:
+      context: ../portal
+      dockerfile: Dockerfile.web
+      args:
+        # Compiled into the client bundle, so a new API host means a rebuild.
+        # The default is only there to keep `docker compose build` and `config`
+        # working on a checkout with no `.env`; production sets APP_API_HOST.
+        REACT_APP_API_URL: https://${APP_API_HOST:-app-api.localhost}
+    restart: unless-stopped
   caddy:
     image: caddy:2-alpine
     env_file:
@@ -33,7 +65,7 @@ services:
         required: false
     ports: ["80:80", "443:443"]
     volumes: ["./Caddyfile:/etc/caddy/Caddyfile:ro", "caddy_data:/data", "caddy_config:/config"]
-    depends_on: [app]
+    depends_on: [app, portal-web, portal-server]
     restart: unless-stopped
 volumes:
   pgdata:

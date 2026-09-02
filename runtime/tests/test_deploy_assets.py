@@ -44,7 +44,10 @@ def test_dockerignore_keeps_the_local_venv_and_env_out_of_the_image():
 
 def test_compose_has_db_app_and_caddy_wired_together():
     services = _compose()["services"]
-    assert set(services) == {"db", "app", "caddy"}
+    # The portal's two containers joined the project in portal plan Task C9; the
+    # detail of how they are built is asserted from the portal's own suite
+    # (`portal/src/ops/containers.server.test.ts`).
+    assert set(services) == {"db", "app", "portal-server", "portal-web", "caddy"}
     app = services["app"]
     assert app["build"] == "."
     # `.env` must be optional or `docker compose config` / `up -d db` fail on a clean
@@ -59,7 +62,7 @@ def test_compose_has_db_app_and_caddy_wired_together():
     assert "./Caddyfile:/etc/caddy/Caddyfile:ro" in caddy["volumes"]
     # Caddy substitutes {$API_HOST} and {$MEDIA_HOST} from its own environment.
     assert caddy["env_file"] == [{"path": ".env", "required": False}]
-    assert caddy["depends_on"] == ["app"]
+    assert caddy["depends_on"] == ["app", "portal-web", "portal-server"]
     assert services["db"]["healthcheck"]["test"] == ["CMD-SHELL", "pg_isready -U spatalk"]
 
 
@@ -67,9 +70,15 @@ def test_caddyfile_proxies_both_hosts_to_the_app_container():
     text = (RUNTIME / "Caddyfile").read_text(encoding="utf-8")
     assert "{$API_HOST}" in text and "{$MEDIA_HOST}" in text
     assert len(re.findall(r"reverse_proxy app:8000", text)) == 2
+    # The portal is two more sites on the same Caddy (portal plan, Task C9).
+    assert "{$APP_HOST}" in text and "{$APP_API_HOST}" in text
+    assert "reverse_proxy portal-web:80" in text
+    assert "reverse_proxy portal-server:3001" in text
     env_example = (RUNTIME / ".env.example").read_text(encoding="utf-8")
     assert re.search(r"^API_HOST=", env_example, re.M)
     assert re.search(r"^MEDIA_HOST=", env_example, re.M)
+    assert re.search(r"^APP_HOST=", env_example, re.M)
+    assert re.search(r"^APP_API_HOST=", env_example, re.M)
 
 
 def test_no_secret_is_baked_into_a_deployment_artefact():
