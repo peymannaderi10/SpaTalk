@@ -40,6 +40,7 @@ from spatalk.brain.renderer import render_script
 from spatalk.brain.requests import ConversationRef
 from spatalk.brain.tools import tools_schema
 from spatalk.conversations import append_message, end_conversation, record_usage
+from spatalk.text.textback import schedule_missed_call_textback
 from spatalk.voice.handlers import register_tool_handlers
 from spatalk.voice.observers import TurnLatencyObserver, UsageObserver
 from spatalk.voice.processors import OutputGuardProcessor, RulesGateProcessor
@@ -199,6 +200,8 @@ async def run_call(websocket: WebSocket, token: str, ctx) -> None:
 
 async def _finalize(ctx, session: VoiceSession, context: LLMContext) -> None:
     cid, tenant_id = session.ref.conversation_id, session.cfg.id
+    # Whether the caller ever said anything: the missed-call decision below turns on it.
+    had_user_speech = False
     for m in context.messages:
         role = m.get("role") if isinstance(m, dict) else getattr(m, "role", None)
         content = m.get("content") if isinstance(m, dict) else getattr(m, "content", None)
@@ -212,6 +215,7 @@ async def _finalize(ctx, session: VoiceSession, context: LLMContext) -> None:
                 for p in content
             )
         )
+        had_user_speech = had_user_speech or (role == "user" and bool(text.strip()))
         await append_message(ctx.sf, cid, role, text)
     seconds = (
         (datetime.now(timezone.utc) - session.started_at).total_seconds()
@@ -240,6 +244,9 @@ async def _finalize(ctx, session: VoiceSession, context: LLMContext) -> None:
         ctx.sf, cid, band=session.band, latency_ms=session.latencies_ms,
         health_context=session.ref.health_context,
     )
+    # Missed-call text-back (text-channels plan, Task B3). Last, so a caller who hung up
+    # early is offered a text only after the call itself is fully recorded.
+    await schedule_missed_call_textback(ctx, session, had_user_speech, seconds)
     if session.latencies_ms:
         s = sorted(session.latencies_ms)
         logger.info(
