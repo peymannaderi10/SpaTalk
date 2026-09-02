@@ -1,7 +1,7 @@
 # portal Task C1: Clone open-saas, strip it, and settle the database question
 
 Status: done with deviations
-Commit: <filled in by the follow-up docs commit>
+Commit: 6c4738c61214026561826ca2d8de5495dec6b74f
 Tests: `cd portal/e2e-tests && npx playwright test` -> 9/9; `cd portal && wasp build` -> success; full portal suite (build + e2e) -> 10/10 checks
 Interfaces produced: routes `/`, `/login`, `/signup`, `/request-password-reset`, `/password-reset`, `/email-verification`, `/app`, `/account`, `/pricing`, `/checkout`, `/privacy`, `/admin`, `/admin/users`, api `POST /payments-webhook`; env contract in `portal/.env.server.example` (`DATABASE_URL`, `JWT_SECRET`, `WASP_WEB_CLIENT_URL`, `WASP_SERVER_URL`, `ADMIN_EMAILS`, `PORTAL_EMAIL_PROVIDER`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `MAIL_FROM`, `MAIL_FROM_NAME`, `STRIPE_API_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID_FRONTDESK`, `STRIPE_CUSTOMER_PORTAL_URL`, `RUNTIME_INTERNAL_URL`, `RUNTIME_INTERNAL_KEY`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`)
 
