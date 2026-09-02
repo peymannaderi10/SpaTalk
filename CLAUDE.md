@@ -11,6 +11,7 @@ Multi-tenant AI front desk for appointment-based clinics: answers phone, SMS, we
 - Build orchestration and agent briefs: `docs/agents/`.
 - Provider facts and prices: `docs/research/`. Cost model: `python docs/research/costmodel.py docs/research/rates.json`.
 - Founder runbooks: `docs/runbooks/`.
+- Roadmap and competitive map (what is built, parked or out of scope): `docs/roadmap.md`.
 
 ## Repository layout
 
