@@ -1,8 +1,8 @@
 # text-channels Task B5: Human takeover through Slack threads and staff SMS
 
 Status: done with deviations
-Commit: (implementation, tests and this report; the hash is recorded by the docs commit that
-follows, the convention set by runtime-A8 through A16 and text-channels B1 to B4)
+Commit: 3d5239d (implementation, tests and this report; the hash is recorded by the docs
+commit that follows, the convention set by runtime-A8 through A16 and text-channels B1 to B4)
 Tests: `uv run pytest tests/test_takeover.py tests/test_slack_events.py -q` -> 29/29 (27 of
 them seen failing first as `ImportError` on the missing modules, before a line of the feature
 existed; the two later additions are covered below); full runtime suite `uv run pytest -q` ->
