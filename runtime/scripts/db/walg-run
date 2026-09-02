@@ -1,0 +1,27 @@
+#!/bin/sh
+# WAL-G, run the way this container needs it. Two jobs beyond `exec wal-g "$@"`:
+#
+# 1. Succeed, doing nothing, when no object store is configured. `archive_mode`
+#    cannot be changed without a restart, so a developer machine or a CI box with
+#    no `walg.env` would otherwise pile up WAL it can never archive and retry the
+#    same segment forever. With no WALG_S3_PREFIX there is nowhere to put a
+#    segment, and pretending otherwise is the only dishonest option.
+# 2. Give cron an environment. Cron jobs inherit nothing from the container, so
+#    the entrypoint snapshots the WAL-G variables to /var/run/walg/env and this
+#    wrapper sources them. Postgres itself already has them; sourcing twice is
+#    harmless.
+set -eu
+
+WALG_ENV_SNAPSHOT="${WALG_ENV_SNAPSHOT:-/var/run/walg/env}"
+if [ -r "$WALG_ENV_SNAPSHOT" ]; then
+    set -a
+    . "$WALG_ENV_SNAPSHOT"
+    set +a
+fi
+
+if [ -z "${WALG_S3_PREFIX:-}" ]; then
+    echo "walg-run: no WALG_S3_PREFIX (walg.env absent), skipping: wal-g $*" >&2
+    exit 0
+fi
+
+exec wal-g "$@"

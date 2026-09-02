@@ -1,10 +1,21 @@
 services:
   db:
-    image: postgres:16-alpine
+    # Postgres 16 plus WAL-G, built from `scripts/db` (operations plan, Task E2).
+    # Tagged because `scripts/restore-drill.sh` starts its throwaway container from
+    # this exact image.
+    build:
+      context: ./scripts/db
+    image: spatalk-db:16
     environment:
       POSTGRES_USER: spatalk
       POSTGRES_PASSWORD: spatalk
       POSTGRES_DB: spatalk
+    # The R2 credentials WAL-G archives with. Optional for the same reason `app`'s
+    # `.env` is: a clean checkout has none, and with the file absent the archive
+    # command and the backup cron are no-ops (`scripts/db/walg-run`).
+    env_file:
+      - path: ./scripts/db/walg.env
+        required: false
     ports: ["5434:5432"]
     volumes: ["pgdata:/var/lib/postgresql/data", "./scripts/init-test-db.sql:/docker-entrypoint-initdb.d/10-test-db.sql:ro"]
     healthcheck:
@@ -67,7 +78,45 @@ services:
     volumes: ["./Caddyfile:/etc/caddy/Caddyfile:ro", "caddy_data:/data", "caddy_config:/config"]
     depends_on: [app, portal-web, portal-server]
     restart: unless-stopped
+
+  # --- restore drill only (operations plan, Task E2) ---------------------------
+  # MinIO stands in for Cloudflare R2 so the backup tooling can be exercised with no
+  # cloud account and no credentials. Both services are behind the `drill` profile
+  # and start only when it is asked for:
+  #
+  #   docker compose --profile drill up -d minio minio-setup
+  #   bash scripts/restore-drill.sh --walg-env scripts/db/walg.env \
+  #        --source-url postgresql://spatalk:spatalk@db:5432/spatalk
+  #
+  # See docs/runbooks/backups.md. The monthly drill against the real R2 is a founder
+  # step in that runbook; nothing here ever talks to R2.
+  minio:
+    profiles: ["drill"]
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    command: server /data --console-address ":9001"
+    environment:
+      # Local drill credentials, the same class of value as this file's Postgres
+      # password. Nothing outside the compose network can reach them: no port is
+      # published.
+      MINIO_ROOT_USER: spatalkdrill
+      MINIO_ROOT_PASSWORD: spatalkdrill
+    volumes: ["miniodata:/data"]
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  minio-setup:
+    profiles: ["drill"]
+    image: minio/mc:RELEASE.2025-08-13T08-35-41Z
+    depends_on:
+      minio: { condition: service_healthy }
+    entrypoint: >
+      sh -c "mc alias set drill http://minio:9000 spatalkdrill spatalkdrill &&
+             mc mb --ignore-existing drill/spatalk-backups &&
+             mc ls drill/spatalk-backups"
 volumes:
   pgdata:
   caddy_data:
   caddy_config:
+  miniodata:

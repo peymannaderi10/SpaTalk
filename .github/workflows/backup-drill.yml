@@ -1,0 +1,148 @@
+name: backup-drill
+
+# The failable check for Task E2: back up a database that holds real runtime rows,
+# write more rows, restore the whole thing somewhere else, and count what came back.
+# MinIO stands in for Cloudflare R2, so this proves the tooling and the schedule,
+# never the R2 credentials -- those are exercised by the monthly manual drill in
+# docs/runbooks/backups.md.
+on:
+  schedule:
+    # Mondays at 06:17 UTC. Off the hour so it does not queue behind everyone else's.
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+jobs:
+  drill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # Deliberately not secrets: MinIO here is a container on a throwaway network
+      # with no published port, and the point of the job is that it needs no account.
+      DRILL_ACCESS_KEY: spatalkdrill
+      DRILL_SECRET_KEY: spatalkdrill
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: the database image, with WAL-G in it
+        run: docker build -t spatalk-db:16 runtime/scripts/db
+
+      - name: MinIO standing in for R2
+        run: |
+          set -euxo pipefail
+          docker network create drill
+          docker run -d --name minio --network drill \
+            -e MINIO_ROOT_USER="$DRILL_ACCESS_KEY" -e MINIO_ROOT_PASSWORD="$DRILL_SECRET_KEY" \
+            minio/minio:RELEASE.2025-09-07T16-13-09Z server /data
+          for _ in $(seq 1 30); do
+            if docker exec minio mc ready local >/dev/null 2>&1; then break; fi
+            sleep 2
+          done
+          docker run --rm --network drill --entrypoint sh minio/mc:RELEASE.2025-08-13T08-35-41Z -c \
+            "mc alias set drill http://minio:9000 $DRILL_ACCESS_KEY $DRILL_SECRET_KEY &&
+             mc mb --ignore-existing drill/spatalk-backups"
+
+      - name: the WAL-G environment both containers read
+        run: |
+          set -euxo pipefail
+          cat > walg.env <<EOF
+          AWS_ACCESS_KEY_ID=$DRILL_ACCESS_KEY
+          AWS_SECRET_ACCESS_KEY=$DRILL_SECRET_KEY
+          AWS_ENDPOINT=http://minio:9000
+          AWS_REGION=auto
+          AWS_S3_FORCE_PATH_STYLE=true
+          WALG_S3_PREFIX=s3://spatalk-backups/pg
+          WALG_COMPRESSION_METHOD=brotli
+          PGHOST=/var/run/postgresql
+          PGUSER=spatalk
+          PGDATABASE=spatalk
+          EOF
+
+      - name: the source database, archiving to MinIO
+        run: |
+          set -euxo pipefail
+          docker run -d --name source --network drill --env-file walg.env \
+            -e POSTGRES_USER=spatalk -e POSTGRES_PASSWORD=spatalk -e POSTGRES_DB=spatalk \
+            -p 5432:5432 spatalk-db:16
+          for _ in $(seq 1 60); do
+            if docker exec source pg_isready -q -U spatalk; then break; fi
+            sleep 2
+          done
+          docker exec source psql -U spatalk -d spatalk -tAc "show archive_command"
+
+      - uses: astral-sh/setup-uv@v3
+      - name: the runtime schema, from the same migrations production runs
+        working-directory: runtime
+        env:
+          DATABASE_URL: postgresql+asyncpg://spatalk:spatalk@localhost:5432/spatalk
+        run: |
+          set -euxo pipefail
+          uv venv --python 3.12
+          uv pip install -e "."
+          uv run alembic upgrade head
+
+      - name: seed a clinic's worth of rows
+        run: |
+          set -euxo pipefail
+          docker exec -i source psql -U spatalk -d spatalk -v ON_ERROR_STOP=1 \
+            -f /dev/stdin <<'SQL'
+          insert into runtime.tenants (id, name) values ('drill', 'Drill Clinic');
+          insert into runtime.conversations (id, tenant_id, channel, controller, health_context,
+                                             started_at)
+          select gen_random_uuid(), 'drill', 'sms', 'ai', false, now() from generate_series(1, 3);
+          insert into runtime.messages (conversation_id, role, text, created_at)
+          select id, 'user', 'before the base backup', now() from runtime.conversations;
+          insert into runtime.items (tenant_id, type, urgency, preferred_window, channel,
+                                     health_context, state, due_at, owner, created_at)
+          select 'drill', 'callback', 'normal', '{}'::jsonb, 'sms', false, 'open',
+                 now() + interval '3 hours', 'owner@example.com', now()
+          from generate_series(1, 4);
+          SQL
+
+      - name: the base backup
+        run: docker exec -u postgres source walg-run backup-push /var/lib/postgresql/data
+
+      - name: rows written after the backup, which only archived WAL can bring back
+        run: |
+          set -euxo pipefail
+          docker exec source psql -U spatalk -d spatalk -v ON_ERROR_STOP=1 -c "
+            insert into runtime.items (tenant_id, type, urgency, preferred_window, channel,
+                                       health_context, state, due_at, owner, created_at)
+            select 'drill', 'question', 'urgent', '{}'::jsonb, 'sms', false, 'open',
+                   now() + interval '15 minutes', 'owner@example.com', now()
+            from generate_series(1, 2);
+            insert into runtime.messages (conversation_id, role, text, created_at)
+            select id, 'assistant', 'after the base backup', now() from runtime.conversations;"
+          # Close the segment holding those rows and wait for it to reach MinIO: an
+          # unarchived segment is exactly the data loss this drill exists to catch.
+          switched=$(docker exec source psql -U spatalk -d spatalk -tAc \
+            "select pg_walfile_name(pg_switch_wal())" | tr -d '[:space:]')
+          for _ in $(seq 1 60); do
+            failed=$(docker exec source psql -U spatalk -d spatalk -tAc \
+              "select failed_count from pg_stat_archiver" | tr -d '[:space:]')
+            if [ "$failed" != "0" ]; then
+              docker exec source cat /var/log/walg.log || true
+              echo "the archiver is failing"; exit 1
+            fi
+            last=$(docker exec source psql -U spatalk -d spatalk -tAc \
+              "select coalesce(last_archived_wal, '') from pg_stat_archiver" | tr -d '[:space:]')
+            if [[ -n "$last" && ! "$last" < "$switched" ]]; then break; fi
+            sleep 2
+          done
+          docker exec source psql -U spatalk -d spatalk -tAc \
+            "select archived_count, failed_count, last_archived_wal from pg_stat_archiver"
+
+      - name: restore it somewhere else and count what came back
+        run: |
+          set -euxo pipefail
+          bash runtime/scripts/restore-drill.sh \
+            --walg-env "$PWD/walg.env" \
+            --network drill \
+            --source-url postgresql://spatalk:spatalk@source:5432/spatalk \
+            --expect-items 6
+
+      - name: what the containers said, when it fails
+        if: failure()
+        run: |
+          docker logs source | tail -n 100 || true
+          docker exec source cat /var/log/walg.log || true
+          docker logs minio | tail -n 40 || true

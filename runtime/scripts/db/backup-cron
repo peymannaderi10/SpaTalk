@@ -1,0 +1,13 @@
+# WAL-G schedule for the SpaTalk database, installed as /etc/cron.d/spatalk-backup.
+# Times are the container's clock, which is UTC. Both jobs go through `walg-run`, so
+# on a machine with no walg.env they log a line and exit 0.
+SHELL=/bin/sh
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# A base backup every night at 03:30 UTC (22:30 or 23:30 in the clinic's timezone),
+# before the retention job at 03:00 UTC the next night touches anything.
+30 3 * * * postgres walg-run backup-push /var/lib/postgresql/data >> /var/log/walg.log 2>&1
+
+# Sundays at 04:30 UTC: keep the last seven base backups and the WAL they need,
+# delete everything older. R2 charges for what is stored, not for what is deleted.
+30 4 * * 0 postgres walg-run delete retain FULL 7 --confirm >> /var/log/walg.log 2>&1

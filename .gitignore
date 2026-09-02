@@ -11,3 +11,7 @@ node_modules/
 .wasp/
 .dev.vars
 runtime/.observer.lock
+
+# WAL-G credentials for the database container (operations plan, Task E2).
+# The committed file is runtime/scripts/db/walg.env.example.
+walg.env

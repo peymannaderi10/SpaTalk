@@ -46,8 +46,16 @@ def test_compose_has_db_app_and_caddy_wired_together():
     services = _compose()["services"]
     # The portal's two containers joined the project in portal plan Task C9; the
     # detail of how they are built is asserted from the portal's own suite
-    # (`portal/src/ops/containers.server.test.ts`).
-    assert set(services) == {"db", "app", "portal-server", "portal-web", "caddy"}
+    # (`portal/src/ops/containers.server.test.ts`). The restore drill's MinIO joined
+    # in operations Task E2 behind the `drill` profile, so it is not one of the
+    # services `docker compose up` starts; `tests/test_ops_backup_drill.py` owns it.
+    assert {name for name, svc in services.items() if not svc.get("profiles")} == {
+        "db",
+        "app",
+        "portal-server",
+        "portal-web",
+        "caddy",
+    }
     app = services["app"]
     assert app["build"] == "."
     # `.env` must be optional or `docker compose config` / `up -d db` fail on a clean
