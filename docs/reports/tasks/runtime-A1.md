@@ -1,0 +1,17 @@
+# runtime-voice-ledger Task 1: Repository scaffold, dependencies, settings, database container, import smoke test
+Status: done with deviations
+Commit: the single commit whose message is "chore: scaffold runtime project with settings, clock and pipecat import smoke test" (hash reported to the orchestrator; a hash cannot be written into the commit that carries it)
+Tests: `uv run pytest tests/test_smoke_imports.py -q` -> 22/22; full suite `uv run pytest -q` -> 22/22
+Interfaces produced: `spatalk.settings.Settings`, `spatalk.settings.get_settings()`, `spatalk.clock.Clock`, `spatalk.clock.SystemClock`, `spatalk.clock.FixedClock(at)` (with `.now()` and `.advance(**timedelta_kwargs)`)
+Deviations:
+- Did not run `git init -b main` or rewrite `.gitignore` (Step 1) because the repository was already initialised on `main` and `.gitignore` already covers `.venv/`, `__pycache__/`, `*.pyc`, `.env`, `.pytest_cache/`, `.ruff_cache/`, `runtime/.promptfoo/`, `node_modules/` plus portal/edge entries; evidence: `git log --oneline | head -2` -> `5e4f42c chore: enforce LF line endings`, `168e90f docs: build package (...)`.
+- Added `[tool.ruff.lint] select = ["E4", "E7", "E9", "F"]` to `runtime/pyproject.toml` because the installed ruff (0.16.5) enables a much larger default rule set than the plan assumed, and it flagged plan-verbatim code (UP017 in `clock.py`/`conftest.py`, I001 on the two multi-line `from pipecat...import (...)` blocks the plan gives verbatim in the smoke test). Pinning the historical default keeps `ruff check` version-stable for every later task that pastes plan code; evidence: `uv run ruff check spatalk tests --output-format concise` -> `spatalk\clock.py:11:29: UP017`, `tests\test_smoke_imports.py:35:5: I001` ... `Found 4 errors.` before the pin, `All checks passed!` after.
+- `runtime/spatalk/clock.py` imports `timedelta` at module top instead of inside `FixedClock.advance` (behaviour identical); `runtime/tests/conftest.py` omits the plan's unused `import asyncio` (F401 otherwise). No interface change.
+- Committed `runtime/uv.lock` (not in the plan's file list) because `uv run` operates in project mode here and resolves the environment from that lock; committing it keeps every engineer's venv identical. Install path stays `uv pip install -e ".[dev]"`.
+Notes for neighbours:
+- Pipecat 1.8.1 is installed and every import path and symbol the plan relies on exists unchanged, including `pipecat.turns.user_mute.mute_until_first_bot_complete_user_mute_strategy.MuteUntilFirstBotCompleteUserMuteStrategy`, `GoogleLLMService.Settings` and `GoogleLLMService.ThinkingConfig`. Task 13 needs no import fix-ups.
+- `docker compose up -d db` from `runtime/` creates both `spatalk` and `spatalk_test` (via `runtime/scripts/init-test-db.sql`); Task 7's database fixtures can assume `spatalk_test` exists. Container name `runtime-db-1`, volume `runtime_pgdata`.
+- `pytest.ini_options` sets `asyncio_mode = "auto"` and `testpaths = ["tests"]`; run pytest from `runtime/`. Do not add an `event_loop` fixture.
+- `tests/conftest.py` exposes the `fixed_clock` fixture (2026-09-01 18:00 UTC = Tuesday 14:00 America/Toronto) and defaults `TEST_DATABASE_URL`. Task 7 appends database fixtures to this file.
+- Lint command for now is `uv run ruff check spatalk tests`; add `scenarios` once Task 15 creates it. If a later task needs a rule outside `E4/E7/E9/F`, widen the `select` list rather than relying on ruff's defaults.
+Blocked on: n/a
