@@ -18,6 +18,8 @@ from spatalk.ledger.scheduler import run_scheduler_forever
 from spatalk.settings import Settings, get_settings
 from spatalk.sms import TelnyxSms
 from spatalk.tenants.registry import TenantRegistry
+from spatalk.text import sms as text_sms
+from spatalk.text.service import make_text_llm
 from spatalk.voice import texml
 from spatalk.voice.pipeline import run_call
 
@@ -39,6 +41,8 @@ def build_context(settings: Settings) -> jobs.JobContext:
         delivery=HttpSlackEmailDelivery(settings),
         settings=settings,
         sms=TelnyxSms(settings.telnyx_api_key),
+        # Text channels (Task B2): the shared TextConversationService drives this client.
+        llm=make_text_llm(settings),
     )
 
 
@@ -76,6 +80,7 @@ def create_app(ctx: jobs.JobContext, start_background: bool = True) -> FastAPI:
     attach_router(app, texml.router)
     attach_router(app, actions.router)
     attach_router(app, slack.router)
+    attach_router(app, text_sms.router)   # text channels (Task B2)
 
     @app.get("/healthz")
     async def healthz():

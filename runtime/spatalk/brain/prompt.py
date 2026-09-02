@@ -6,6 +6,13 @@ from zoneinfo import ZoneInfo
 from spatalk.brain.hours import BusinessCalendar, _clock
 from spatalk.tenants.schema import WEEKDAYS, TenantConfig
 
+# Per-channel length and formatting rules (text-channels plan, Task B2). Voice has its own
+# "at most two sentences" rule in the hard rules below.
+CHANNEL_RULES = {
+    "sms": "Reply in under 300 characters, plain text, no lists.",
+    "chat": "Reply in under 500 characters, plain text.",
+}
+
 DAY_NAMES = {
     "mon": "Monday",
     "tue": "Tuesday",
@@ -47,6 +54,8 @@ def build_system_prompt(cfg: TenantConfig, channel: str, now: datetime) -> str:
         if channel == "voice"
         else "a text conversation"
     )
+    channel_rule = CHANNEL_RULES.get(channel, "")
+    channel_note = ("\n- " + channel_rule) if channel_rule else ""
     next_open_note = (
         ""
         if status == "open"
@@ -68,7 +77,7 @@ HARD RULES
 - Never give medical advice, never discuss symptoms, never take payment details. Use escalate instead.
 - If the caller mentions a health condition, medication, pregnancy or a past procedure while asking for something routine, do not ask about it, do not comment on it, and do not advise. Continue with their request; the team will see the context. If they ask whether a treatment is suitable or safe for them, say the team will confirm that, and file it with capture_request (kind question).
 - Keep replies to at most two sentences. Ask for the caller's name and best number in one question when you need them.
-- When the caller is done, call end_conversation; do not say goodbye yourself.
+- When the caller is done, call end_conversation; do not say goodbye yourself.{channel_note}
 
 HOURS: {_hours_text(cfg)}
 

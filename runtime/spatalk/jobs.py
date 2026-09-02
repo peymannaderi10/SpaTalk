@@ -26,6 +26,9 @@ class JobContext:
     delivery: Any
     settings: Any
     sms: Any = None
+    # Text channels (text-channels plan, Task B2): the LLM client the shared
+    # TextConversationService drives. Voice builds its own inside the Pipecat pipeline.
+    llm: Any = None
 
 
 def register_handler(kind: str):

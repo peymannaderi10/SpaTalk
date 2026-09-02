@@ -54,7 +54,7 @@ class Conversation(Base):
     __tablename__ = "conversations"
     __table_args__ = (
         Index("ix_conv_tenant_started", "tenant_id", "started_at"),
-        Index("ix_conv_lookup", "tenant_id", "channel", "external_ref"),
+        Index("ix_conv_lookup", "tenant_id", "channel", "external_ref", "last_message_at"),
     )
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[str] = mapped_column(ForeignKey("runtime.tenants.id"))
@@ -67,6 +67,17 @@ class Conversation(Base):
     latency_ms: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # --- text channels (text-channels plan, Task B2) ---
+    # Last inbound or outbound message: the 24-hour window that decides find-or-create.
+    last_message_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # A text conversation the assistant ended; a new message starts a new conversation.
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # The single follow-up, ever. A column, not a scheduler's memory.
+    followup_sent_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # Link to a related conversation (SMS text-back -> the voice conversation it followed).
+    external_session: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
 
 class Message(Base):
@@ -157,3 +168,40 @@ class AuditLog(Base):
     record_type: Mapped[str] = mapped_column(String(32))
     record_id: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+# --- text channels (text-channels plan, Task B2) ---------------------------------------
+
+
+class InboundMessage(Base):
+    """Dedup key for every inbound provider event. The primary key is the dedup."""
+
+    __tablename__ = "inbound_messages"
+    provider_message_id: Mapped[str] = mapped_column(String(200), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64))
+    channel: Mapped[str] = mapped_column(String(16))
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class SmsOptout(Base):
+    """A number that must never receive a send from this tenant again, until START."""
+
+    __tablename__ = "sms_optouts"
+    tenant_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    phone: Mapped[str] = mapped_column(String(32), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class Textback(Base):
+    """One missed-call text-back per caller per day (text-channels plan, Task B3)."""
+
+    __tablename__ = "textbacks"
+    __table_args__ = (Index("ix_textback_lookup", "tenant_id", "phone", "sent_at"),)
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64))
+    phone: Mapped[str] = mapped_column(String(32))
+    sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

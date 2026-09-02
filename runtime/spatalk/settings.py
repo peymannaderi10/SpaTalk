@@ -30,6 +30,12 @@ class Settings(BaseSettings):
     mail_from: str = "frontdesk@localhost"
     slack_signing_secret: str = ""
 
+    # --- text channels (text-channels plan, Task B2) ---
+    # Shared secret the edge worker presents on forwarded webhooks.
+    edge_shared_key: str = ""
+    # Telnyx account public key (base64), used when no edge worker fronts the webhook.
+    telnyx_public_key: str = ""
+
 
 @lru_cache
 def get_settings() -> Settings:

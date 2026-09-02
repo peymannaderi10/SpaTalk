@@ -565,12 +565,13 @@ def test_every_script_that_mentions_the_team_states_a_time():
 # reference  Every runtime-plan table and index exists after `alembic upgrade head`
 # ---------------------------------------------------------------------------
 
-# (table, index columns, unique) as printed in docs/reference/data-model.md for the tables
-# this plan creates. Columns added by later plans (last_message_at, slack_ts) are excluded.
+# (table, index columns, unique) as printed in docs/reference/data-model.md. Columns a later
+# plan adds appear here once that plan has added them: the find-or-create index reached its
+# documented four-column form in the text-channels plan, Task B2; slack_ts arrives with B5.
 EXPECTED_INDEXES: tuple[tuple[str, tuple[str, ...], bool], ...] = (
     ("tenant_config_versions", ("tenant_id", "version"), True),
     ("conversations", ("tenant_id", "started_at"), False),
-    ("conversations", ("tenant_id", "channel", "external_ref"), False),
+    ("conversations", ("tenant_id", "channel", "external_ref", "last_message_at"), False),
     ("messages", ("conversation_id", "id"), False),
     ("items", ("tenant_id", "state", "due_at"), False),
     ("items", ("due_at",), False),
@@ -581,10 +582,12 @@ EXPECTED_INDEXES: tuple[tuple[str, tuple[str, ...], bool], ...] = (
 )
 
 
-def _documented_tables() -> set[str]:
+def _documented_tables(only_task_7: bool = True) -> set[str]:
     doc = (DOCS / "reference" / "data-model.md").read_text(encoding="utf-8")
     return {
-        name for name, tag in re.findall(r"^### (\w+) \[([^\]]+)\]", doc, re.M) if "Task 7" in tag
+        name
+        for name, tag in re.findall(r"^### (\w+) \[([^\]]+)\]", doc, re.M)
+        if "Task 7" in tag or not only_task_7
     }
 
 
@@ -647,7 +650,10 @@ async def test_alembic_head_creates_every_documented_table_and_index():
         documented = _documented_tables()
         assert documented, "no Task 7 tables found in docs/reference/data-model.md"
         assert documented <= tables, f"missing after upgrade head: {sorted(documented - tables)}"
-        assert tables - documented == {"alembic_version"}, sorted(tables - documented)
+        # Later plans add their own tables; every one of them must still be documented in
+        # data-model.md, so the schema may never contain a table the reference does not name.
+        every = _documented_tables(only_task_7=False)
+        assert tables - every == {"alembic_version"}, sorted(tables - every)
 
         found = {(t, _index_columns(d), "UNIQUE INDEX" in d) for t, d in rows}
         for want in EXPECTED_INDEXES:
