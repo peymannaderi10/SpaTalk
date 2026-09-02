@@ -39,6 +39,8 @@ class ActionLinks:
     ack_url: str
     resolve_url: str
     transcript_url: str
+    ack_token: str
+    resolve_token: str
 
 
 def build_links(settings, item: Item) -> ActionLinks:
@@ -46,7 +48,7 @@ def build_links(settings, item: Item) -> ActionLinks:
     ack = sign_action(settings.secret_key, item.id, "ack", item.tenant_id)
     res = sign_action(settings.secret_key, item.id, "resolve", item.tenant_id)
     tr = sign_action(settings.secret_key, item.id, "transcript", item.tenant_id)
-    return ActionLinks(f"{base}/a/{ack}", f"{base}/a/{res}", f"{base}/a/{tr}")
+    return ActionLinks(f"{base}/a/{ack}", f"{base}/a/{res}", f"{base}/a/{tr}", ack, res)
 
 
 def _summary(item: Item, cfg: TenantConfig, now: datetime) -> list[str]:
@@ -102,13 +104,13 @@ def build_slack_blocks(
                 {
                     "type": "button",
                     "action_id": "ack",
-                    "value": str(item.id),
+                    "value": links.ack_token,
                     "text": {"type": "plain_text", "text": "Acknowledge"},
                 },
                 {
                     "type": "button",
                     "action_id": "resolve",
-                    "value": str(item.id),
+                    "value": links.resolve_token,
                     "style": "primary",
                     "text": {"type": "plain_text", "text": "Resolve"},
                 },

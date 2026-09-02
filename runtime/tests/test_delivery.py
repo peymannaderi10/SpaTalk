@@ -16,8 +16,8 @@ async def test_item_delivery_enqueues_per_destination_and_sends(sf, registry, fi
         await schedule_item_delivery(sf, item, cfg_)
     ledger = PgLedger(sf, fixed_clock, on_created=on_created)
     ref = ConversationRef(conversation_id=cid, tenant=cfg, channel="voice", caller_phone="+19055550101")
-    await ledger.create_item(ref, ItemDraft(type="callback", urgency="normal",
-                                            contact=ContactInfo(name="Dana", phone="+19055550101")))
+    rec = await ledger.create_item(ref, ItemDraft(type="callback", urgency="normal",
+                                                  contact=ContactInfo(name="Dana", phone="+19055550101")))
     ctx = jobs.JobContext(sf=sf, clock=fixed_clock, registry=registry, ledger=ledger, delivery=delivery, settings=settings)
     assert await jobs.run_once(sf, ctx) == 2
     assert len(delivery.emails) == 1 and delivery.emails[0][0] == "info@skincentrix.com"
@@ -26,6 +26,13 @@ async def test_item_delivery_enqueues_per_destination_and_sends(sf, registry, fi
     blocks = delivery.slack[0][1]
     action_ids = [e["action_id"] for b in blocks if b["type"] == "actions" for e in b["elements"]]
     assert action_ids == ["ack", "resolve"]
+    from spatalk.ledger.links import verify_action
+    values = [e["value"] for b in blocks if b["type"] == "actions" for e in b["elements"]]
+    assert all(not v.isdigit() for v in values)
+    claims = [verify_action(settings.secret_key, v) for v in values]
+    assert [cl.action for cl in claims] == ["ack", "resolve"]
+    assert {cl.tenant_id for cl in claims} == {"skincentrix"}
+    assert {cl.item_id for cl in claims} == {rec.id}
 
 
 def test_email_and_blocks_contain_no_free_text_from_caller(fixed_clock):
@@ -37,8 +44,13 @@ def test_email_and_blocks_contain_no_free_text_from_caller(fixed_clock):
     item = SimpleNamespace(id=5, type="reschedule", urgency="normal", service_id="facial", contact_name="Dana",
                            contact_phone="+19055550101", contact_email=None, preferred_window={"date": "any", "part_of_day": "morning"},
                            channel="voice", due_at=fixed_clock.now(), state="open", conversation_id=None)
-    links = ActionLinks("https://a/ack", "https://a/res", "https://a/t")
+    from spatalk.ledger.links import sign_action
+    ack_token = sign_action("s", 5, "ack", cfg.id)
+    resolve_token = sign_action("s", 5, "resolve", cfg.id)
+    links = ActionLinks("https://a/ack", "https://a/res", "https://a/t", ack_token, resolve_token)
     subject, body = build_email(item, cfg, links)
     assert "reschedule" in subject.lower() and "Dana" in body and "morning" in body
     blocks = build_slack_blocks(item, cfg, links)
     assert any("Dana" in str(b) for b in blocks)
+    values = [e["value"] for b in blocks if b["type"] == "actions" for e in b["elements"]]
+    assert values == [ack_token, resolve_token]

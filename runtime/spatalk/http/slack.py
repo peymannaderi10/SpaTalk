@@ -4,9 +4,11 @@ import json
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
+from itsdangerous import BadSignature
 from slack_sdk.signature import SignatureVerifier
 
 from spatalk.ledger.delivery import build_links, build_slack_blocks
+from spatalk.ledger.links import verify_action
 
 router = APIRouter()
 
@@ -22,13 +24,23 @@ async def interactions(request: Request):
     payload = json.loads(form["payload"])
     action = payload["actions"][0]
     actor = payload.get("user", {}).get("username") or payload.get("user", {}).get("id", "slack")
-    item_id = int(action["value"])
-    if action["action_id"] == "ack":
-        item = await ctx.ledger.acknowledge(item_id, actor)
-    elif action["action_id"] == "resolve":
-        item = await ctx.ledger.resolve(item_id, actor)
-    else:
+    # The button value is the only thing that authorises the click: a signed claim naming the
+    # item, the action and the tenant. action_id is presentation only and is never trusted.
+    try:
+        claim = verify_action(ctx.settings.secret_key, str(action.get("value", "")))
+    except BadSignature:
+        raise HTTPException(status_code=401)
+    if claim.action not in ("ack", "resolve"):
         raise HTTPException(status_code=400)
+    item = await ctx.ledger.get(claim.item_id)
+    if item is None:
+        raise HTTPException(status_code=404)
+    if item.tenant_id != claim.tenant_id:
+        raise HTTPException(status_code=403)
+    if claim.action == "ack":
+        item = await ctx.ledger.acknowledge(claim.item_id, actor)
+    else:
+        item = await ctx.ledger.resolve(claim.item_id, actor)
     if item is None:
         raise HTTPException(status_code=404)
     cfg = await ctx.registry.get(item.tenant_id)
