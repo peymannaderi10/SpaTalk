@@ -2,7 +2,7 @@
 
 Status: done with deviations
 
-Commit: PENDING
+Commit: 22eedd7
 
 Tests: `uv run --no-sync pytest -q tests/test_ops_model_check.py` -> **35/35**;
 `uv run --no-sync pytest -q tests/test_driver.py` -> 6 passed, 2 skipped (both live vendor
