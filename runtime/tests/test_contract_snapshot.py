@@ -45,6 +45,10 @@ def test_the_generated_document_covers_every_endpoint_the_portal_needs():
         "/internal/items/{item_id}/acknowledge",
         "/internal/items/{item_id}/resolve",
         "/internal/schema/tenant-config",
+        # The Integrations page (instagram plan, Task D4).
+        "/internal/tenants/{tenant_id}/integrations",
+        "/internal/tenants/{tenant_id}/integrations/{provider}",
+        "/internal/tenants/{tenant_id}/integrations/{provider}/connect-url",
         "/internal/health",
         "/internal/rates",
         "/internal/audit",

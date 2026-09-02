@@ -911,6 +911,168 @@ async def select_messenger_page(request: Request, tenant_id: str, body: Messenge
     )
 
 
+# --- social integrations, portal side (instagram plan, Task D4) ------------------------
+
+# The two providers the runtime has adapters for, in the order the portal draws its cards.
+SOCIAL_PROVIDERS = ("instagram", "messenger")
+
+
+class IntegrationOut(BaseModel):
+    """What the portal may know about a connected Meta account.
+
+    Never the token: not the plaintext, not the ciphertext, not its length. The portal has
+    no use for it and no way to keep it as safely as the runtime does.
+    """
+
+    provider: str
+    connected: bool
+    # This runtime has an app id and secret for the provider; without them Connect is a
+    # button that could only fail, so the portal shows why instead.
+    configured: bool
+    external_id: str | None = None
+    display_name: str | None = None
+    token_expires_at: datetime | None = None
+    scopes: list[str] = []
+    needs_reconnect: bool = False
+    connected_by: str | None = None
+    connected_at: datetime | None = None
+
+
+class ConnectUrlOut(BaseModel):
+    """Where to send the browser to connect, and how long that link is good for."""
+
+    url: str
+    expires_in: int
+
+
+class IntegrationRemoved(BaseModel):
+    """`disconnected` is the row; `unsubscribed` is whether Meta agreed to stop sending."""
+
+    provider: str
+    disconnected: bool
+    unsubscribed: bool
+
+
+def _provider(provider: str) -> str:
+    if provider not in SOCIAL_PROVIDERS:
+        raise HTTPException(status_code=404, detail=f"unknown provider {provider}")
+    return provider
+
+
+def _provider_configured(settings, provider: str) -> bool:
+    if provider == "instagram":
+        return bool(settings.instagram_app_id and settings.instagram_app_secret)
+    return bool(settings.facebook_app_id and settings.facebook_app_secret)
+
+
+@router.get("/tenants/{tenant_id}/integrations", response_model=list[IntegrationOut])
+async def tenant_integrations(request: Request, tenant_id: str):
+    """One row per provider, connected or not, so the page can draw both cards."""
+    from spatalk.social.meta_oauth import integration_for
+
+    ctx = _ctx(request)
+    await _tenant_config(ctx, tenant_id)
+    out: list[IntegrationOut] = []
+    for provider in SOCIAL_PROVIDERS:
+        row = await integration_for(ctx.sf, tenant_id, provider)
+        configured = _provider_configured(ctx.settings, provider)
+        if row is None:
+            out.append(IntegrationOut(provider=provider, connected=False, configured=configured))
+            continue
+        out.append(
+            IntegrationOut(
+                provider=provider,
+                connected=True,
+                configured=configured,
+                external_id=row.external_id,
+                display_name=row.display_name,
+                token_expires_at=row.token_expires_at,
+                scopes=list(row.scopes or []),
+                needs_reconnect=bool(row.needs_reconnect),
+                connected_by=row.connected_by,
+                connected_at=row.created_at,
+            )
+        )
+    return out
+
+
+@router.get(
+    "/tenants/{tenant_id}/integrations/{provider}/connect-url", response_model=ConnectUrlOut
+)
+async def integration_connect_url(
+    request: Request,
+    tenant_id: str,
+    provider: str,
+    return_to: str | None = None,
+    x_actor: ActorHeader = None,
+):
+    """The Meta authorisation URL, with a signed state carrying the tenant and `return_to`.
+
+    The state is what makes this safe to hand out: `/instagram/callback` will only store an
+    account against the tenant this key-holder named, and will only bounce the browser back
+    to the address signed here. It is minted per click, because it is good for fifteen
+    minutes and a settings page can sit open for longer than that.
+    """
+    from spatalk.social.meta_oauth import (
+        STATE_MAX_AGE,
+        build_instagram_start_url,
+        build_page_start_url,
+        sign_state,
+    )
+
+    ctx = _ctx(request)
+    await _tenant_config(ctx, tenant_id)
+    provider = _provider(provider)
+    if return_to and not return_to.startswith(("http://", "https://")):
+        raise HTTPException(status_code=400, detail="return_to must be an http or https url")
+    if not _provider_configured(ctx.settings, provider):
+        raise HTTPException(
+            status_code=409, detail=f"{provider} is not configured on this service"
+        )
+    state = sign_state(ctx.settings.secret_key, tenant_id, return_to)
+    url = (
+        build_instagram_start_url(ctx.settings, state)
+        if provider == "instagram"
+        else build_page_start_url(ctx.settings, state)
+    )
+    await write_audit(
+        ctx.sf, portal_actor(x_actor), "integration_connect_started", "tenant", tenant_id
+    )
+    return ConnectUrlOut(url=url, expires_in=STATE_MAX_AGE)
+
+
+@router.delete("/tenants/{tenant_id}/integrations/{provider}", response_model=IntegrationRemoved)
+async def disconnect_integration(
+    request: Request, tenant_id: str, provider: str, x_actor: ActorHeader = None
+):
+    """Disconnect: Meta stops sending, then the row and its token go.
+
+    The order matters. Unsubscribing needs the token, so it happens first; it is best
+    effort, and a Meta that refuses does not trap a tenant in a connection they have asked
+    to end. The answer says which of the two happened.
+    """
+    from spatalk.social.meta_oauth import (
+        delete_integration,
+        integration_for,
+        unsubscribe_integration,
+    )
+
+    ctx = _ctx(request)
+    await _tenant_config(ctx, tenant_id)
+    provider = _provider(provider)
+    row = await integration_for(ctx.sf, tenant_id, provider)
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"{tenant_id} has no {provider} connection")
+    unsubscribed = await unsubscribe_integration(
+        ctx.settings, row, getattr(ctx, "graph", None)
+    )
+    disconnected = await delete_integration(ctx.sf, tenant_id, provider)
+    await write_audit(ctx.sf, portal_actor(x_actor), "integration_disconnect", "tenant", tenant_id)
+    return IntegrationRemoved(
+        provider=provider, disconnected=disconnected, unsubscribed=unsubscribed
+    )
+
+
 # --- the contract ---------------------------------------------------------------------
 
 

@@ -1240,6 +1240,220 @@
           }
         }
       }
+    },
+    "/internal/tenants/{tenant_id}/integrations": {
+      "get": {
+        "tags": [
+          "internal"
+        ],
+        "summary": "Tenant Integrations",
+        "description": "One row per provider, connected or not, so the page can draw both cards.",
+        "operationId": "tenant_integrations_internal_tenants__tenant_id__integrations_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tenant Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/IntegrationOut"
+                  },
+                  "title": "Response Tenant Integrations Internal Tenants  Tenant Id  Integrations Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/tenants/{tenant_id}/integrations/{provider}/connect-url": {
+      "get": {
+        "tags": [
+          "internal"
+        ],
+        "summary": "Integration Connect Url",
+        "description": "The Meta authorisation URL, with a signed state carrying the tenant and `return_to`.\n\nThe state is what makes this safe to hand out: `/instagram/callback` will only store an\naccount against the tenant this key-holder named, and will only bounce the browser back\nto the address signed here. It is minted per click, because it is good for fifteen\nminutes and a settings page can sit open for longer than that.",
+        "operationId": "integration_connect_url_internal_tenants__tenant_id__integrations__provider__connect_url_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tenant Id"
+            }
+          },
+          {
+            "name": "provider",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Provider"
+            }
+          },
+          {
+            "name": "return_to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Return To"
+            }
+          },
+          {
+            "name": "X-Actor",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Actor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectUrlOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/tenants/{tenant_id}/integrations/{provider}": {
+      "delete": {
+        "tags": [
+          "internal"
+        ],
+        "summary": "Disconnect Integration",
+        "description": "Disconnect: Meta stops sending, then the row and its token go.\n\nThe order matters. Unsubscribing needs the token, so it happens first; it is best\neffort, and a Meta that refuses does not trap a tenant in a connection they have asked\nto end. The answer says which of the two happened.",
+        "operationId": "disconnect_integration_internal_tenants__tenant_id__integrations__provider__delete",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tenant Id"
+            }
+          },
+          {
+            "name": "provider",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Provider"
+            }
+          },
+          {
+            "name": "X-Actor",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Actor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationRemoved"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1394,6 +1608,25 @@
           "created_at"
         ],
         "title": "ConfigVersionOut"
+      },
+      "ConnectUrlOut": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "expires_in": {
+            "type": "integer",
+            "title": "Expires In"
+          }
+        },
+        "type": "object",
+        "required": [
+          "url",
+          "expires_in"
+        ],
+        "title": "ConnectUrlOut",
+        "description": "Where to send the browser to connect, and how long that link is good for."
       },
       "ConversationDetail": {
         "properties": {
@@ -1663,6 +1896,124 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "IntegrationOut": {
+        "properties": {
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "connected": {
+            "type": "boolean",
+            "title": "Connected"
+          },
+          "configured": {
+            "type": "boolean",
+            "title": "Configured"
+          },
+          "external_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Id"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "token_expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Token Expires At"
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Scopes",
+            "default": []
+          },
+          "needs_reconnect": {
+            "type": "boolean",
+            "title": "Needs Reconnect",
+            "default": false
+          },
+          "connected_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connected By"
+          },
+          "connected_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connected At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "provider",
+          "connected",
+          "configured"
+        ],
+        "title": "IntegrationOut",
+        "description": "What the portal may know about a connected Meta account.\n\nNever the token: not the plaintext, not the ciphertext, not its length. The portal has\nno use for it and no way to keep it as safely as the runtime does."
+      },
+      "IntegrationRemoved": {
+        "properties": {
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "disconnected": {
+            "type": "boolean",
+            "title": "Disconnected"
+          },
+          "unsubscribed": {
+            "type": "boolean",
+            "title": "Unsubscribed"
+          }
+        },
+        "type": "object",
+        "required": [
+          "provider",
+          "disconnected",
+          "unsubscribed"
+        ],
+        "title": "IntegrationRemoved",
+        "description": "`disconnected` is the row; `unsubscribed` is whether Meta agreed to stop sending."
       },
       "ItemOut": {
         "properties": {

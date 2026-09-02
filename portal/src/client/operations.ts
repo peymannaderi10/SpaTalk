@@ -1,7 +1,9 @@
-import { HttpError } from "wasp/server";
+import { config, HttpError } from "wasp/server";
 import {
   type AcknowledgeItem,
+  type DisconnectIntegration,
   type GetTenantConversations,
+  type GetTenantIntegrations,
   type GetTenantOverview,
   type GetTenantRequests,
   type GetTenantSettings,
@@ -9,6 +11,8 @@ import {
   type ResolveItem,
   type RollBackTenantConfig,
   type SaveTenantConfig,
+  type SelectMessengerPage,
+  type StartIntegrationConnect,
 } from "wasp/server/operations";
 import * as z from "zod";
 import {
@@ -514,4 +518,149 @@ export const rollBackTenantConfig: RollBackTenantConfig<
       }),
     "these settings",
   );
+};
+
+// --- integrations ----------------------------------------------------------
+
+/**
+ * Instagram and Facebook Page connections (instagram plan, Task D4).
+ *
+ * The portal stores nothing about them and never speaks to Meta: it reads the
+ * status from the runtime, and a Connect is a runtime-signed authorisation URL
+ * the browser is sent to. No token, encrypted or otherwise, crosses this
+ * boundary — the runtime does not return one and this page has no use for one.
+ */
+export type Integration = Schema["IntegrationOut"];
+
+export type Integrations = {
+  role: OrgAccess["role"];
+  integrations: Integration[];
+};
+
+const providerArgs = slugArgs.extend({
+  provider: z.enum(["instagram", "messenger"]),
+});
+
+export const getTenantIntegrations: GetTenantIntegrations<
+  z.infer<typeof slugArgs>,
+  Integrations
+> = async (rawArgs, context) => {
+  const { slug } = ensureArgsSchemaOrThrowHttpError(slugArgs, rawArgs);
+  const { api, tenantId, access } = await session(context, slug);
+
+  const integrations = await runtimeCall(
+    () =>
+      api.GET("/internal/tenants/{tenant_id}/integrations", {
+        params: { path: { tenant_id: tenantId } },
+      }),
+    "the connected accounts",
+  );
+
+  return { role: access.role, integrations: integrations as Integration[] };
+};
+
+/**
+ * Where Meta sends the browser once the account is connected: this
+ * organisation's own settings page, built here rather than taken from the
+ * client, so the only address the runtime will ever sign is one of ours.
+ */
+function settingsReturnUrl(slug: string, provider: string): string {
+  const base = config.frontendUrl.replace(/\/$/, "");
+  return `${base}/app/${encodeURIComponent(slug)}/settings?connected=${provider}`;
+}
+
+export const startIntegrationConnect: StartIntegrationConnect<
+  z.infer<typeof providerArgs>,
+  { url: string; expiresIn: number }
+> = async (rawArgs, context) => {
+  const args = ensureArgsSchemaOrThrowHttpError(providerArgs, rawArgs);
+  // Connecting an account is the owner's decision, and the URL is minted per
+  // click because the runtime's signed state is good for fifteen minutes.
+  const { api, tenantId } = await ownerSession(context, args.slug);
+
+  const answer = await runtimeCall(
+    () =>
+      api.GET(
+        "/internal/tenants/{tenant_id}/integrations/{provider}/connect-url",
+        {
+          params: {
+            path: { tenant_id: tenantId, provider: args.provider },
+            query: { return_to: settingsReturnUrl(args.slug, args.provider) },
+          },
+        },
+      ),
+    "the connection link",
+  );
+
+  return { url: answer.url, expiresIn: answer.expires_in };
+};
+
+export const disconnectIntegration: DisconnectIntegration<
+  z.infer<typeof providerArgs>,
+  Integrations
+> = async (rawArgs, context) => {
+  const args = ensureArgsSchemaOrThrowHttpError(providerArgs, rawArgs);
+  const { api, tenantId, access } = await ownerSession(context, args.slug);
+
+  await runtimeCall(
+    () =>
+      api.DELETE("/internal/tenants/{tenant_id}/integrations/{provider}", {
+        params: { path: { tenant_id: tenantId, provider: args.provider } },
+      }),
+    "that connection",
+  );
+
+  // The card is redrawn from the runtime, never from what the button assumed.
+  const integrations = await runtimeCall(
+    () =>
+      api.GET("/internal/tenants/{tenant_id}/integrations", {
+        params: { path: { tenant_id: tenantId } },
+      }),
+    "the connected accounts",
+  );
+
+  return { role: access.role, integrations: integrations as Integration[] };
+};
+
+const pageSelectArgs = slugArgs.extend({
+  pending: z.string().min(1).max(256),
+  pageId: z.string().min(1).max(64),
+});
+
+/**
+ * Finish a Page connection when the owner administers more than one Page.
+ *
+ * The runtime parked the Pages behind an opaque, single-use handle for fifteen
+ * minutes (instagram plan, Task D3) because the OAuth code cannot be exchanged
+ * twice; this is the choice landing back on it. A refused handle means the
+ * connection has to be started again, and the runtime says so.
+ */
+export const selectMessengerPage: SelectMessengerPage<
+  z.infer<typeof pageSelectArgs>,
+  Integrations
+> = async (rawArgs, context) => {
+  const args = ensureArgsSchemaOrThrowHttpError(pageSelectArgs, rawArgs);
+  const { api, tenantId, access } = await ownerSession(context, args.slug);
+
+  await runtimeCall(
+    () =>
+      api.POST(
+        "/internal/tenants/{tenant_id}/integrations/messenger/select",
+        {
+          params: { path: { tenant_id: tenantId } },
+          body: { pending: args.pending, page_id: args.pageId },
+        },
+      ),
+    "that Page",
+  );
+
+  const integrations = await runtimeCall(
+    () =>
+      api.GET("/internal/tenants/{tenant_id}/integrations", {
+        params: { path: { tenant_id: tenantId } },
+      }),
+    "the connected accounts",
+  );
+
+  return { role: access.role, integrations: integrations as Integration[] };
 };

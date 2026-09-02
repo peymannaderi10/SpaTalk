@@ -9,6 +9,7 @@ import { Button } from "./components/ui/button";
 import { OrgShell, Problem, type Org } from "./OrgShell";
 import { DeliveryTab } from "./settings/DeliveryTab";
 import { HoursTab } from "./settings/HoursTab";
+import { IntegrationsTab } from "./settings/Integrations";
 import { KnowledgeTab } from "./settings/KnowledgeTab";
 import { NumbersTab } from "./settings/NumbersTab";
 import { type Draft } from "./settings/schemaFields";
@@ -34,6 +35,7 @@ const TABS = [
   "Scripts",
   "Delivery",
   "Numbers",
+  "Integrations",
   "Versions",
 ] as const;
 
@@ -199,6 +201,9 @@ function Body({ org }: { org: Org }) {
         {tab === "Delivery" && <DeliveryTab {...tabProps} />}
         {tab === "Numbers" && (
           <NumbersTab config={draft} numbers={data.numbers} />
+        )}
+        {tab === "Integrations" && (
+          <IntegrationsTab slug={org.slug} readOnly={readOnly} />
         )}
         {tab === "Versions" && (
           <VersionsPanel

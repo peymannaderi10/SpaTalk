@@ -345,6 +345,75 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/internal/tenants/{tenant_id}/integrations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Tenant Integrations
+         * @description One row per provider, connected or not, so the page can draw both cards.
+         */
+        get: operations["tenant_integrations_internal_tenants__tenant_id__integrations_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/internal/tenants/{tenant_id}/integrations/{provider}/connect-url": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Integration Connect Url
+         * @description The Meta authorisation URL, with a signed state carrying the tenant and `return_to`.
+         *
+         *     The state is what makes this safe to hand out: `/instagram/callback` will only store an
+         *     account against the tenant this key-holder named, and will only bounce the browser back
+         *     to the address signed here. It is minted per click, because it is good for fifteen
+         *     minutes and a settings page can sit open for longer than that.
+         */
+        get: operations["integration_connect_url_internal_tenants__tenant_id__integrations__provider__connect_url_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/internal/tenants/{tenant_id}/integrations/{provider}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Disconnect Integration
+         * @description Disconnect: Meta stops sending, then the row and its token go.
+         *
+         *     The order matters. Unsubscribing needs the token, so it happens first; it is best
+         *     effort, and a Meta that refuses does not trap a tenant in a connection they have asked
+         *     to end. The answer says which of the two happened.
+         */
+        delete: operations["disconnect_integration_internal_tenants__tenant_id__integrations__provider__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -431,6 +500,16 @@ export interface components {
              */
             created_at: string;
         };
+        /**
+         * ConnectUrlOut
+         * @description Where to send the browser to connect, and how long that link is good for.
+         */
+        ConnectUrlOut: {
+            /** Url */
+            url: string;
+            /** Expires In */
+            expires_in: number;
+        };
         /** ConversationDetail */
         ConversationDetail: {
             conversation: components["schemas"]["ConversationFull"];
@@ -514,6 +593,53 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /**
+         * IntegrationOut
+         * @description What the portal may know about a connected Meta account.
+         *
+         *     Never the token: not the plaintext, not the ciphertext, not its length. The portal has
+         *     no use for it and no way to keep it as safely as the runtime does.
+         */
+        IntegrationOut: {
+            /** Provider */
+            provider: string;
+            /** Connected */
+            connected: boolean;
+            /** Configured */
+            configured: boolean;
+            /** External Id */
+            external_id?: string | null;
+            /** Display Name */
+            display_name?: string | null;
+            /** Token Expires At */
+            token_expires_at?: string | null;
+            /**
+             * Scopes
+             * @default []
+             */
+            scopes: string[];
+            /**
+             * Needs Reconnect
+             * @default false
+             */
+            needs_reconnect: boolean;
+            /** Connected By */
+            connected_by?: string | null;
+            /** Connected At */
+            connected_at?: string | null;
+        };
+        /**
+         * IntegrationRemoved
+         * @description `disconnected` is the row; `unsubscribed` is whether Meta agreed to stop sending.
+         */
+        IntegrationRemoved: {
+            /** Provider */
+            provider: string;
+            /** Disconnected */
+            disconnected: boolean;
+            /** Unsubscribed */
+            unsubscribed: boolean;
         };
         /**
          * ItemOut
@@ -1394,6 +1520,107 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MessengerPageSelected"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    tenant_integrations_internal_tenants__tenant_id__integrations_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IntegrationOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    integration_connect_url_internal_tenants__tenant_id__integrations__provider__connect_url_get: {
+        parameters: {
+            query?: {
+                return_to?: string | null;
+            };
+            header?: {
+                "X-Actor"?: string | null;
+            };
+            path: {
+                tenant_id: string;
+                provider: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectUrlOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    disconnect_integration_internal_tenants__tenant_id__integrations__provider__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Actor"?: string | null;
+            };
+            path: {
+                tenant_id: string;
+                provider: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IntegrationRemoved"];
                 };
             };
             /** @description Validation Error */

@@ -114,6 +114,14 @@ jobs:
         working-directory: runtime
         env:
           DATABASE_URL: postgresql+asyncpg://spatalk:spatalk@localhost:5432/spatalk
+          # The Integrations tab asks this runtime for a Meta authorisation URL, and it
+          # refuses to build one for a provider it has no app for (instagram plan, Task
+          # D4). These are not credentials: nothing in the suite reaches Meta, and the
+          # values only end up inside a URL `integrations.spec.ts` parses.
+          INSTAGRAM_APP_ID: e2e-instagram-app
+          INSTAGRAM_APP_SECRET: e2e-instagram-secret
+          FACEBOOK_APP_ID: e2e-facebook-app
+          FACEBOOK_APP_SECRET: e2e-facebook-secret
         run: |
           nohup uv run spatalk serve --host 127.0.0.1 --port 8000 > runtime-serve.log 2>&1 &
           for _ in $(seq 1 60); do

@@ -615,3 +615,45 @@ async def ensure_daily_refresh_scheduled(sf: async_sessionmaker, clock) -> bool:
         return False
     await jobs.enqueue(sf, REFRESH_JOB, {})
     return True
+
+
+# ----- disconnecting (instagram plan, Task D4) ---------------------------------------------
+
+
+async def unsubscribe_integration(
+    settings, integration: TenantIntegration, client: GraphClient | None = None
+) -> bool:
+    """Tell Meta to stop sending this account's events, before the row goes.
+
+    Best effort by design. Disconnect is the tenant's decision, and it must succeed even
+    when Meta cannot be reached, when the token has already been revoked from the Instagram
+    app, or when the encryption key has been rotated and the stored token can no longer be
+    read: the row is deleted either way and this answers whether the unsubscribe landed. It
+    never raises, and it never puts the token in the log line.
+    """
+    host = INSTAGRAM_GRAPH_BASE if integration.provider == "instagram" else FACEBOOK_GRAPH_BASE
+    try:
+        token = access_token(integration, settings)
+    except Exception as e:  # a rotated key, a corrupted column: nothing left to ask Meta with
+        logger.warning(
+            "cannot read the {} token for {} to unsubscribe: {}",
+            integration.provider,
+            integration.tenant_id,
+            type(e).__name__,
+        )
+        return False
+    api = client if client is not None else HttpGraphClient(host)
+    try:
+        await api.delete(
+            f"/{settings.meta_graph_version}/{integration.external_id}/subscribed_apps",
+            params={"access_token": token},
+        )
+    except Exception as e:
+        logger.warning(
+            "meta refused to unsubscribe {} for {}: {}",
+            integration.provider,
+            integration.tenant_id,
+            e,
+        )
+        return False
+    return True

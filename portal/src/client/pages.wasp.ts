@@ -3,7 +3,9 @@ import { action, page, query, route, type Spec } from "@wasp.sh/spec";
 import { ConversationsPage } from "./ConversationsPage" with { type: "ref" };
 import {
   acknowledgeItem,
+  disconnectIntegration,
   getTenantConversations,
+  getTenantIntegrations,
   getTenantOverview,
   getTenantRequests,
   getTenantSettings,
@@ -11,6 +13,8 @@ import {
   resolveItem,
   rollBackTenantConfig,
   saveTenantConfig,
+  selectMessengerPage,
+  startIntegrationConnect,
 } from "./operations" with { type: "ref" };
 import { OverviewPage } from "./OverviewPage" with { type: "ref" };
 import { RequestsPage } from "./RequestsPage" with { type: "ref" };
@@ -50,6 +54,7 @@ export const clientPagesSpec: Spec = [
   query(getTenantConversations, orgEntities),
   query(getTenantRequests, orgEntities),
   query(getTenantSettings, orgEntities),
+  query(getTenantIntegrations, orgEntities),
 
   // Reading a transcript is an audited act, so it is an action: a query would
   // be cached and the second read would go unrecorded.
@@ -58,4 +63,10 @@ export const clientPagesSpec: Spec = [
   action(resolveItem, orgEntities),
   action(saveTenantConfig, orgEntities),
   action(rollBackTenantConfig, orgEntities),
+
+  // Connecting and disconnecting a Meta account are audited acts the runtime
+  // records, and both are refused to anyone but an owner.
+  action(startIntegrationConnect, orgEntities),
+  action(disconnectIntegration, orgEntities),
+  action(selectMessengerPage, orgEntities),
 ];

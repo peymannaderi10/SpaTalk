@@ -39,10 +39,16 @@ never `skincentrix`, whose version `client.spec.ts` asserts.
 | `RUNTIME_DATABASE_URL` | `postgresql://spatalk:spatalk@localhost:5434/spatalk` | read directly, only to check what the runtime recorded (an audit row, an item's state); nothing in the portal itself connects to the `runtime` schema |
 | `RUNTIME_SEED_COMMAND` | `uv run python ../portal/e2e-tests/seed_runtime.py` | override if `uv` is not how you run the runtime |
 
+`integrations.spec.ts` needs one more thing of that runtime: an Instagram and a
+Facebook app id and secret, any value, because the Integrations tab asks it for
+a connect URL and the runtime refuses to build one for a provider it has no app
+for. Nothing is sent to Meta; the values only end up inside a URL the test
+parses.
+
 On Linux, one runtime is enough:
 
 ```
-cd ../../runtime && INTERNAL_API_KEY=dummy-internal-key uv run spatalk serve --port 8000
+cd ../../runtime && INTERNAL_API_KEY=dummy-internal-key   INSTAGRAM_APP_ID=e2e-instagram-app INSTAGRAM_APP_SECRET=e2e-instagram-secret   FACEBOOK_APP_ID=e2e-facebook-app FACEBOOK_APP_SECRET=e2e-facebook-secret   uv run spatalk serve --port 8000
 ```
 
 ### On Windows, with Wasp in WSL

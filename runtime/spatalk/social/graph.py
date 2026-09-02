@@ -47,6 +47,9 @@ class GraphClient(Protocol):
         params: dict | None = None,
     ) -> dict: ...
 
+    # --- instagram plan, Task D4: disconnecting unsubscribes, which Meta spells DELETE ---
+    async def delete(self, path: str, params: dict | None = None) -> dict: ...
+
 
 async def _resolve(value: Any) -> Any:
     return await value if inspect.isawaitable(value) else value
@@ -84,6 +87,10 @@ class HttpGraphClient:
         params: dict | None = None,
     ) -> dict:
         return await self._request("POST", path, params=params, json=json, data=data)
+
+    # --- instagram plan, Task D4 ---
+    async def delete(self, path: str, params: dict | None = None) -> dict:
+        return await self._request("DELETE", path, params=params)
 
     async def _headers(self) -> dict[str, str]:
         if self._token_getter is None:
@@ -146,6 +153,10 @@ class FakeGraphClient:
         params: dict | None = None,
     ) -> dict:
         return self._answer(GraphCall("POST", path, dict(params or {}), json, data))
+
+    # --- instagram plan, Task D4 ---
+    async def delete(self, path: str, params: dict | None = None) -> dict:
+        return self._answer(GraphCall("DELETE", path, dict(params or {})))
 
     def _answer(self, call: GraphCall) -> dict:
         self.calls.append(call)
