@@ -1,9 +1,8 @@
 # text-channels Task B3: Missed-call text-back
 
 Status: done with deviations
-Commit: the single commit whose message is `feat(text): missed-call text-back, once per caller per
-day` (the hash is recorded by the docs commit that follows, the convention set by runtime-A8
-through A16 and text-channels B1/B2)
+Commit: dc1ca3d (implementation, tests and this report; the hash is recorded by the docs commit
+that follows, the convention set by runtime-A8 through A16 and text-channels B1/B2)
 Tests: `uv run pytest tests/test_textback.py -q` -> 18/18 (17 seen failing first, the 18th
 vacuously green before the module existed); full runtime suite `uv run pytest -q` -> 246 passed,
 1 skipped of 247 (baseline before this task: 228 passed, 1 skipped).
