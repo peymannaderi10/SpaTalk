@@ -13,7 +13,7 @@ All on the runtime unless marked portal or edge. Auth column says what proves th
 | POST /a/{token} | A9 | same | acknowledge or resolve |
 | POST /slack/interactions | A9 | Slack signing secret | button callbacks: ack, resolve, handback |
 | POST /slack/events | B5 | Slack signing secret | url_verification, thread replies from staff |
-| POST /telnyx/sms | B2 | `X-Edge-Key` or Telnyx Ed25519 signature | inbound SMS |
+| POST /telnyx/sms | B2, S2 | `X-Edge-Key` or Telnyx Ed25519 signature | inbound SMS. In order: STOP/START/HELP from fixed wording; then, when the sender is one of `staff_numbers(cfg)`, the staff keywords below; otherwise the customer conversation |
 | GET /widget.js | B4 | none | the chat widget |
 | GET /widget/{tenant_id}/config | B4 | none | name, greeting, Turnstile site key |
 | WS /chat/ws?tenant&session&turnstile | B4 | Turnstile token | web chat |
@@ -25,6 +25,25 @@ All on the runtime unless marked portal or edge. Auth column says what proves th
 | /internal/* | C3, D4, E4 | `X-Internal-Key`, `X-Actor` | portal's only way in; see the portal plan for the full list |
 | edge: POST /telnyx/sms, POST /chat/fallback, PUT /admin/tenant-texts | B1 | Telnyx signature; `X-Edge-Key` | fallback front door |
 | portal: /login, /signup, /invite/:token, /app/:orgSlug/*, /admin/*, /privacy, /payments-webhook | C1 to C6 | Wasp session; Stripe signature | |
+
+## Staff replies on POST /telnyx/sms (S2)
+
+Authorised senders are `spatalk.text.staff.staff_numbers(cfg)`: `delivery.staff_phone_numbers`
+plus the number every `sms` destination's `address_env` resolves to right now. Nothing an
+authorised sender writes reaches the model, and no reply text ever becomes item content.
+
+| Inbound text | Response body | Reply sent from `sms_from_number` |
+|---|---|---|
+| `ACK 4821`, `ok 4821`, `acknowledge #4821` | `{"ok": true, "handled": "staff_ack"}` | `#4821 acknowledged.` |
+| `DONE 4821`, `resolve 4821`, `resolved #4821`, `closed 4821` | `{"handled": "staff_resolve"}` | `#4821 resolved.` |
+| any of those naming an id that is not this tenant's open item | `{"handled": "staff_unknown_item"}` | `No open item #4821.` |
+| `LIST` | `{"handled": "staff_list"}` | count line plus up to five open items with ids |
+| `#4821 on my way` | `{"handled": "staff_relay"}` | the words after the id, verbatim, to that customer |
+| anything else | `{"handled": "staff_help"}` | `scripts.help_text` |
+
+`ack` and `resolve` call the ledger as actor `sms:<E.164>` and write one `audit_log` row
+(`action` `ack` or `resolve`, `record_type` `item`). An id from another tenant, and an id
+already resolved, are both answered `No open item` and change nothing.
 
 ## Provider payload shapes for fixtures
 
@@ -132,7 +151,7 @@ Runtime `runtime/.env`:
 | INSTAGRAM_APP_ID, INSTAGRAM_APP_SECRET, FACEBOOK_APP_ID, FACEBOOK_APP_SECRET, INSTAGRAM_WEBHOOK_VERIFY_TOKEN, META_TOKEN_ENCRYPTION_KEY, META_GRAPH_VERSION | D | social |
 | WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_ACCESS_TOKEN, WHATSAPP_APP_SECRET, WHATSAPP_VERIFY_TOKEN, WHATSAPP_TEMPLATE_ITEM, WHATSAPP_TEMPLATE_DIGEST, WHATSAPP_TEMPLATE_LANG | W1 | WhatsApp staff delivery |
 | `<TENANT>_WHATSAPP_STAFF` per tenant | W1 | the staff E.164 a `whatsapp` destination names; never written into a bundle |
-| `<TENANT>_STAFF_SMS` per tenant | S1 | the owner E.164 an `sms` destination names; tracked items and the digest are texted to it from `sms_from_number`; never written into a bundle |
+| `<TENANT>_STAFF_SMS` per tenant | S1, S2 | the owner E.164 an `sms` destination names; tracked items and the digest are texted to it from `sms_from_number`, and its replies may acknowledge and resolve; never written into a bundle |
 | OPS_EMAIL, OPS_SMS_NUMBER, SENTRY_DSN, LOG_FORMAT, GIT_COMMIT | E7 | operations |
 | R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_ENDPOINT, R2_BUCKET | E2 | backups (WAL-G reads them as AWS_* in `walg.env`) |
 

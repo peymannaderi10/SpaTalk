@@ -42,7 +42,7 @@ tenants/<id>/
 | escalation.after_hours_clinical_contact | string or null | | informational |
 | delivery.destinations[] | list | yes | each: `kind` (`slack`, `email`, `webhook`, `whatsapp` [W1], `sms` [S1]), `webhook_env` (env var name for slack or webhook), `address` (email), `address_env` (env var name holding the value: required for `whatsapp` and `sms`, an alternative to `address` for `email`) [W1] [S1], `channel_id` (Slack channel id when a bot token is used) [B5], `urgent_only` bool |
 | delivery.digest_time_local | `HH:MM` | default 07:30 | |
-| delivery.staff_phone_numbers | list E.164 | default [] | staff who may relay by SMS [B5] |
+| delivery.staff_phone_numbers | list E.164 | default [] | staff who may work the ledger by SMS: `#<id> <words>` relay [B5], and `ACK`/`DONE`/`LIST` [S2]. The number every `sms` destination's `address_env` resolves to is authorised the same way without being listed here [S2] |
 | social.comment_mode | `off` `keyword` `all` | default `keyword` | [D2] |
 | social.comment_keywords | list | default [] | [D2] |
 | social.public_reply_enabled | bool | default false | [D2] |
