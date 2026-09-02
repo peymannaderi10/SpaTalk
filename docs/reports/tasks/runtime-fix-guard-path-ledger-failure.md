@@ -2,7 +2,7 @@
 
 Status: done
 
-Commit: <filled below>
+Commit: 48664fd
 
 Finding fixed: QA gate A, minor — `runtime/spatalk/brain/driver.py:246` and
 `runtime/spatalk/voice/processors.py:93` called `caps.capture(...)` on the guard-block path
