@@ -1,7 +1,7 @@
 # operations plan Task E5: Latency budgets per stage and the SLO check
 
 Status: done with deviations
-Commit: <filled in below after the commit>
+Commit: 63d86a6
 Tests: `uv run pytest -q tests/test_ops_latency.py` -> 34/34;
 full suite `uv run pytest -q` -> **857 passed, 1 failed, 1 skipped** (859 total). The one
 failure is `tests/test_internal_api.py::test_the_packaged_rates_match_the_researched_table`,
