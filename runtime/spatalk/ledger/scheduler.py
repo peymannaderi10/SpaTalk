@@ -12,6 +12,8 @@ from spatalk.ledger.delivery import schedule_item_delivery
 from spatalk.models import Job, Tenant
 # Operations plan, Task E3: importing this also registers the ops.retention handler.
 from spatalk.ops import retention
+# Operations plan, Task E4: importing this also registers the ops.nightly_audit handler.
+from spatalk.ops import nightly_audit
 # Instagram plan, Task D1: importing this also registers the social.refresh_tokens handler.
 from spatalk.social.meta_oauth import ensure_daily_refresh_scheduled
 from spatalk.text.takeover import hand_back_stale
@@ -80,6 +82,37 @@ async def ensure_nightly_retention_scheduled(ctx: jobs.JobContext) -> bool:
     return True
 
 
+# --- operations (operations plan, Task E4) ---------------------------------------------
+
+# An hour after retention, and for the same reason it is not tenant-local: one sweep over
+# every tenant. 03:00 deletes the transcripts, 04:00 audits what is left, which is why a
+# tenant on a `retention_days` of 1 would audit a day whose transcripts have just gone.
+NIGHTLY_AUDIT_UTC_HOUR = 4
+
+
+async def ensure_nightly_audit_scheduled(ctx: jobs.JobContext) -> bool:
+    """Queue the nightly audit at most once per UTC day, from 04:00 UTC.
+
+    Same marker as retention: the queued job's own `run_at`, set from the application clock,
+    so a restarted scheduler cannot be fooled by the database's wall clock drifting.
+    """
+    now = ctx.clock.now().astimezone(timezone.utc)
+    boundary = now.replace(hour=NIGHTLY_AUDIT_UTC_HOUR, minute=0, second=0, microsecond=0)
+    if now < boundary:
+        return False
+    async with ctx.sf() as s:
+        already = await s.scalar(
+            select(func.count(Job.id)).where(
+                Job.kind == nightly_audit.RUN_KIND, Job.run_at >= boundary
+            )
+        )
+    if already:
+        return False
+    await jobs.enqueue(ctx.sf, nightly_audit.RUN_KIND, {}, run_at=now)
+    logger.info("queued {} for {}", nightly_audit.RUN_KIND, now.isoformat())
+    return True
+
+
 async def run_scheduler_forever(ctx: jobs.JobContext, interval_seconds: float = 60.0) -> None:
     while True:
         try:
@@ -91,6 +124,8 @@ async def run_scheduler_forever(ctx: jobs.JobContext, interval_seconds: float = 
             await ensure_daily_refresh_scheduled(ctx.sf, ctx.clock)
             # Hard-delete everything past its retention threshold, nightly (Task E3).
             await ensure_nightly_retention_scheduled(ctx)
+            # Re-judge yesterday's bands and scan its transcripts, nightly (Task E4).
+            await ensure_nightly_audit_scheduled(ctx)
         except Exception as e:  # noqa: BLE001
             logger.exception("scheduler error: {}", e)
         await asyncio.sleep(interval_seconds)

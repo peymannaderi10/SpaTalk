@@ -1087,6 +1087,54 @@
         }
       }
     },
+    "/internal/tenants/{tenant_id}/audit/latest": {
+      "get": {
+        "tags": [
+          "internal"
+        ],
+        "summary": "Tenant Latest Audit",
+        "description": "What the admin health page reads (portal plan C5): last night's audit for a tenant.",
+        "operationId": "tenant_latest_audit_internal_tenants__tenant_id__audit_latest_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tenant Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditLatest"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/internal/health": {
       "get": {
         "tags": [
@@ -1498,6 +1546,54 @@
           "record_id"
         ],
         "title": "AuditIn"
+      },
+      "AuditLatest": {
+        "properties": {
+          "day": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Day"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "report": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report"
+          }
+        },
+        "type": "object",
+        "required": [
+          "day",
+          "created_at",
+          "report"
+        ],
+        "title": "AuditLatest",
+        "description": "The most recent nightly escalation audit for one tenant.\n\nAll three fields are null until the first night has run, so the admin health page can\nrender \"no audit yet\" without treating an empty history as an error."
       },
       "Body_create_tenant_from_bundle_internal_tenants_from_bundle_post": {
         "properties": {

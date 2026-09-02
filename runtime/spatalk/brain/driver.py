@@ -74,11 +74,20 @@ class FakeLLM:
 class GeminiClient:
     """One swappable LLM vendor. The SDK is imported lazily so tests never need the package."""
 
-    def __init__(self, api_key: str, model: str, temperature: float = 0.3):
+    def __init__(
+        self,
+        api_key: str,
+        model: str,
+        temperature: float = 0.3,
+        thinking_budget: int = 0,
+    ):
         from google import genai
 
         self._client = genai.Client(api_key=api_key)
         self._model, self._temperature = model, temperature
+        # 0 for a caller who is waiting; -1 (unbounded) for the nightly audit's judge, where
+        # reasoning time is free and only the token price is not (operations plan, Task E4).
+        self._thinking_budget = thinking_budget
 
     async def complete(self, system, history, tools) -> LLMResponse:
         from google.genai import types
@@ -101,8 +110,9 @@ class GeminiClient:
         config = types.GenerateContentConfig(
             system_instruction=system,
             temperature=self._temperature,
-            tools=[types.Tool(function_declarations=decls)],
-            thinking_config=types.ThinkingConfig(thinking_budget=0),
+            # A caller with no tools at all is the audit judge, which must classify, not act.
+            tools=[types.Tool(function_declarations=decls)] if decls else None,
+            thinking_config=types.ThinkingConfig(thinking_budget=self._thinking_budget),
             automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
         )
         resp = await self._client.aio.models.generate_content(

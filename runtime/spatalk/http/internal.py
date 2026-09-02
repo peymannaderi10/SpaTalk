@@ -42,6 +42,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from spatalk.models import (
     AuditLog,
+    AuditReport,
     Conversation,
     Item,
     Job,
@@ -832,6 +833,40 @@ async def tenant_health(request: Request, tenant_id: str):
         last_sms_at=last_sms,
         config_version=version,
     )
+
+
+# --- operations (operations plan, Task E4) --------------------------------------------
+
+
+class AuditLatest(BaseModel):
+    """The most recent nightly escalation audit for one tenant.
+
+    All three fields are null until the first night has run, so the admin health page can
+    render "no audit yet" without treating an empty history as an error.
+    """
+
+    day: date | None
+    created_at: datetime | None
+    report: dict[str, Any] | None
+
+
+@router.get("/tenants/{tenant_id}/audit/latest", response_model=AuditLatest)
+async def tenant_latest_audit(request: Request, tenant_id: str):
+    """What the admin health page reads (portal plan C5): last night's audit for a tenant."""
+    ctx = _ctx(request)
+    await _tenant_config(ctx, tenant_id)
+    async with ctx.sf() as s:
+        row = (
+            await s.scalars(
+                select(AuditReport)
+                .where(AuditReport.tenant_id == tenant_id)
+                .order_by(AuditReport.day.desc(), AuditReport.id.desc())
+                .limit(1)
+            )
+        ).first()
+    if row is None:
+        return AuditLatest(day=None, created_at=None, report=None)
+    return AuditLatest(day=row.day, created_at=row.created_at, report=row.report)
 
 
 # --- platform ------------------------------------------------------------------------

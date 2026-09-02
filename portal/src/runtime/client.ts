@@ -261,6 +261,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/internal/tenants/{tenant_id}/audit/latest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Tenant Latest Audit
+         * @description What the admin health page reads (portal plan C5): last night's audit for a tenant.
+         */
+        get: operations["tenant_latest_audit_internal_tenants__tenant_id__audit_latest_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/internal/health": {
         parameters: {
             query?: never;
@@ -433,6 +453,23 @@ export interface components {
             record_type: string;
             /** Record Id */
             record_id: string;
+        };
+        /**
+         * AuditLatest
+         * @description The most recent nightly escalation audit for one tenant.
+         *
+         *     All three fields are null until the first night has run, so the admin health page can
+         *     render "no audit yet" without treating an empty history as an error.
+         */
+        AuditLatest: {
+            /** Day */
+            day: string | null;
+            /** Created At */
+            created_at: string | null;
+            /** Report */
+            report: {
+                [key: string]: unknown;
+            } | null;
         };
         /** Body_create_tenant_from_bundle_internal_tenants_from_bundle_post */
         Body_create_tenant_from_bundle_internal_tenants_from_bundle_post: {
@@ -1412,6 +1449,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TenantHealth"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    tenant_latest_audit_internal_tenants__tenant_id__audit_latest_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditLatest"];
                 };
             };
             /** @description Validation Error */

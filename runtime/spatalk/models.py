@@ -277,3 +277,25 @@ class DeletionReceipt(Base):
     count: Mapped[int] = mapped_column(Integer)
     cutoff: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     run_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+# --- operations (operations plan, Task E4) ---------------------------------------------
+
+
+class AuditReport(Base):
+    """One night's escalation audit for one tenant, kept so the finding outlives the email.
+
+    The nightly audit is the only check that can catch a band-3 intent the deterministic
+    gate missed, and its value is entirely in being comparable night to night: the report is
+    a row, not a message in an inbox. Unique on `(day, tenant_id)` because a re-run of the
+    same night replaces its verdict rather than accumulating a second opinion.
+    """
+
+    __tablename__ = "audit_reports"
+    __table_args__ = (UniqueConstraint("day", "tenant_id"),)
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    # The tenant's own local day, not a UTC one: a clinic's Monday is what its owner reads.
+    day: Mapped[date] = mapped_column(Date)
+    tenant_id: Mapped[str] = mapped_column(String(64))
+    report: Mapped[dict] = mapped_column(JSONB, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

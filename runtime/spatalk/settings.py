@@ -86,6 +86,16 @@ class Settings(BaseSettings):
     # lives here because settings.py belongs to this task and D2's webhook needs it.
     instagram_webhook_verify_token: str = ""
 
+    # --- operations (operations plan, Task E4) --------------------------------------------
+    # Where the nightly audit's report and every operational alert are sent. Empty means the
+    # report is still computed and stored; only the email is skipped.
+    ops_email: str = ""
+    # The model that re-judges the day's bands. Flash with thinking enabled, not Pro:
+    # gemini-2.5-pro answers 404 "no longer available to new users" on the founder's Google
+    # AI Studio key (promptfoo run A, 2026-09-02), and a band judgement is an offline call
+    # where reasoning time is free but a per-token price is not.
+    judge_model: str = "gemini-2.5-flash"
+
     # --- hermetic settings (QA gate B, finding 1) -----------------------------------------
     def __init__(self, **values: Any) -> None:
         """Honour SPATALK_NO_ENV_FILE=1 by not reading ``.env`` at all.

@@ -224,10 +224,25 @@ per (tenant, kind) per run, and only when the count is non-zero.
 | cutoff | timestamptz | everything older than this went |
 | run_at | timestamptz | the run's clock, not the database's |
 
-### audit_reports, provider_invoices [operations plan]
+### audit_reports [operations plan, Task E4]
+
+One night's escalation audit for one tenant: the lexicon scan's findings, the judge model's
+disagreements with the recorded bands, and the health-context counts. Kept as a row rather
+than an email so the findings are comparable night to night.
+
+| column | type | notes |
+|---|---|---|
+| id | bigserial PK | |
+| day | date | the tenant's own local day, never a UTC one |
+| tenant_id | text | not a foreign key: a report outlives the tenant it accounts for |
+| report | jsonb | `{tenant_id, lexicon, bands, health_context, blocking}` |
+| created_at | timestamptz | default now |
+
+Unique `(day, tenant_id)`: a second run of the same night replaces its verdict.
+
+### provider_invoices [operations plan, Task E9]
 | table | columns |
 |---|---|
-| audit_reports | id, day date, tenant_id, report jsonb, created_at; unique `(day, tenant_id)` |
 | provider_invoices | id, provider text, month text `YYYY-MM`, amount_cad numeric(12,2), entered_at; unique `(provider, month)` |
 
 ## Schema `public` (portal, Prisma) [portal plan]
