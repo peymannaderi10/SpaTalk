@@ -16,7 +16,7 @@ Substitute your domain for `<domain>` throughout (the accounts runbook assumes `
 4. `docker compose up -d --build` (the first build pulls Torch and ONNX for the Silero VAD and the local smart-turn model, so it takes several minutes and the image is about 3 GB; VPS-2's 80 GB disk is ample, a 20 GB box is not), then `docker compose exec app alembic upgrade head`. The app container never migrates on start-up; the schema is created by this command and nothing else.
 5. `docker compose exec app spatalk tenant import tenants/skincentrix`.
 6. Telnyx: buy one Canadian local number (Mississauga 905 if available). Create a TeXML Application with Voice URL `https://api.<domain>/telnyx/texml` (POST). Assign the number to it. Copy the API key into `.env`.
-7. `docker compose exec app spatalk numbers add +1905XXXXXXX skincentrix voice`, then `docker compose restart app`.
+7. `docker compose exec app spatalk numbers add +1905XXXXXXX skincentrix`, then `docker compose restart app`.
 8. Slack: create an app in the clinic's (or our) workspace, enable Incoming Webhooks and Interactivity with Request URL `https://api.<domain>/slack/interactions`; put the webhook URL in `.env` as `SKINCENTRIX_SLACK_WEBHOOK` and the signing secret as `SLACK_SIGNING_SECRET`.
 9. SES: verify the sending domain in ca-central-1, create SMTP credentials, fill `SMTP_*` and `MAIL_FROM`.
 

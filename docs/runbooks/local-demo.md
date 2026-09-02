@@ -52,7 +52,7 @@ docker compose up -d db
 docker start mailpit 2>/dev/null || docker run -d --name mailpit -p 1025:1025 -p 8025:8025 axllent/mailpit
 uv run alembic upgrade head
 uv run spatalk tenant import tenants/skincentrix
-uv run spatalk numbers add +1905XXXXXXX skincentrix voice      # your Telnyx local number, once
+uv run spatalk numbers add +1905XXXXXXX skincentrix      # your Telnyx local number, once
 ```
 
 Second terminal, start the tunnel and copy its hostname:

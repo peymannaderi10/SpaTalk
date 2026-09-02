@@ -68,7 +68,7 @@ Why: phone numbers, inbound calls with audio streamed to us, SMS.
 6. Numbers → Buy Numbers → type Toll-Free, Canada. Buy one. This is the **SMS** number.
 7. Messaging → Messaging Profiles → Create `spatalk-sms`. Webhook URL: `https://api.spatalk.ca/telnyx/sms` for now (the text-channels plan moves it to a Cloudflare Worker). Assign the toll-free number to this profile.
 8. Messaging → Toll-Free Verification → submit for the toll-free number. Fields: business name and address (use yours, the service provider), business registration number, website, use case "customer care and appointment follow-ups", sample messages (use the booking-link text and the missed-call text from the tenant bundle), opt-in description: "Customers text or call the business first; Canada double opt-in: the first reply asks them to confirm YES". Expect about five business days.
-9. Write down both numbers in E.164 (`+1905…`, `+1888…`). After deploy you run `spatalk numbers add <local> skincentrix voice` and `spatalk numbers add <tollfree> skincentrix sms`, and set `sms_from_number` in the Skincentrix bundle.
+9. Write down both numbers in E.164 (`+1905…`, `+1888…`). After deploy you run `spatalk numbers add <local> skincentrix` and `spatalk numbers add <tollfree> skincentrix --kind sms`, and set `sms_from_number` in the Skincentrix bundle.
 
 Gotcha: until toll-free verification passes, SMS from the toll-free number is silently dropped. For testing, the local number can send SMS to your own phone if you add it to the messaging profile too.
 
@@ -239,7 +239,7 @@ The complete variable list with the plan that introduces each one is in `docs/re
 
 1. On the VPS: `cd spatalk/runtime && docker compose up -d --build && docker compose exec app alembic upgrade head`.
 2. `docker compose exec app spatalk tenant import tenants/skincentrix`.
-3. `docker compose exec app spatalk numbers add +1905XXXXXXX skincentrix voice` and the toll-free as `sms`.
+3. `docker compose exec app spatalk numbers add +1905XXXXXXX skincentrix` and the toll-free with `--kind sms`.
 4. `curl -s https://api.spatalk.ca/healthz | jq -c '{ok,tenants}'` should return `{"ok":true,"tenants":["skincentrix"]}`; the full response also lists `config_versions` and the deployed `commit`.
 5. Go back to Telnyx and confirm the TeXML application's Voice URL is reachable (Telnyx shows a green check after the first webhook). Call the local number from your phone and run the first-call checklist in `docs/runbooks/deploy.md`.
 6. Edge worker (SMS fallback): on your laptop, `cd edge/sms-worker && npm ci && npx wrangler login && npx wrangler secret put EDGE_SHARED_KEY` (repeat for `TELNYX_PUBLIC_KEY`, `TELNYX_API_KEY`), set `RUNTIME_URL` in `wrangler.toml`, `npx wrangler deploy`. Then point the Telnyx messaging profile's webhook at the Worker URL instead of the runtime, and run `docker compose exec app spatalk edge sync-texts`.
