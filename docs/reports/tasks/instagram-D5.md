@@ -1,7 +1,7 @@
 # instagram Task D5: Scenarios, runbook and CI
 
 Status: done with deviations
-Commit: `test(social): instagram scenarios and meta setup runbook` (hash filled in by the
+Commit: `b2d72ac` `test(social): instagram scenarios and meta setup runbook` (hash filled in by the
 follow-up docs commit; a hash cannot be written into the commit that carries it)
 Tests: `uv run pytest tests/test_social_scenarios.py -q` -> 25/25; with the neighbours it
 touches, `uv run pytest tests/test_social_scenarios.py tests/test_text_scenarios.py
