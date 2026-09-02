@@ -1,7 +1,7 @@
 # QA gate B fix: hermetic-settings-in-tests
 
 Status: done with deviations
-Commit: <this commit>
+Commit: c4cd291
 
 ## The defect
 
