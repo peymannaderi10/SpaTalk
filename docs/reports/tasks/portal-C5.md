@@ -1,7 +1,7 @@
 # portal Task C5: Agency admin pages and onboarding wizard
 
 Status: done with deviations
-Commit: <filled below>
+Commit: d103cee
 Tests: `cd portal/e2e-tests && RUNTIME_INTERNAL_URL=… npx playwright test tests/admin.spec.ts` -> 12/12; full portal suite -> 108/108 (`npx playwright test` 42, `wasp test client run` 55, `npm run test:unit` 11), green twice in a row, plus `wasp build` and `npx tsc -p tsconfig.src.json --noEmit` clean
 
 Interfaces produced:
