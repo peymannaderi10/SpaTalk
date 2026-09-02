@@ -1,7 +1,8 @@
 # instagram Task D4: Portal Connect buttons and integration status
 
 Status: done with deviations
-Commit: `<filled by the follow-up docs commit>`
+Commit: `b3f51df` `feat(portal): instagram and messenger connect status` (recorded by the
+follow-up docs commit; a hash cannot be written into the commit that carries it)
 Tests: `uv run pytest tests/test_social_integrations_api.py -q` -> 21/21; `uv run pytest
 tests/test_contract_snapshot.py -q` -> 5/5; full runtime suite `uv run pytest -q` -> 472
 passed, 13 failed (all pre-existing, evidence below), 1 skipped; `uv run ruff check spatalk
