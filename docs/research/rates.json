@@ -263,5 +263,18 @@
     }
   },
   "_per_tenant_fixed_note": "local DID ~1 USD + toll-free ~1-2 USD + SMS add-on 0.10 USD, x1.37",
-  "_fx_source": "Bank of Canada FXUSDCAD daily average 2026-09-01"
+  "_fx_source": "Bank of Canada FXUSDCAD daily average 2026-09-01",
+  "reference_bundles_usd_per_min": {
+    "telnyx_voice_ai_agents_all_in": {
+      "usd_per_min": 0.056,
+      "components": {
+        "voice_engine_stt_tts_orchestration": 0.05,
+        "telephony_local_inbound_us": 0.0032,
+        "llm_kimi_on_telnyx": 0.0032
+      },
+      "cad_per_min_at_fx": 0.0778,
+      "source": "telnyx.com/pricing/voice-ai-agents fetched 2026-09-02 (founder pointer)",
+      "note": "hosted agent; the model loop runs on Telnyx so the output guard, rules gate and template renderer cannot sit between model and speech; 500 concurrent calls, no platform fee, HIPAA included"
+    }
+  }
 }
