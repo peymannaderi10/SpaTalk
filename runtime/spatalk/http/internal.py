@@ -870,6 +870,47 @@ async def post_audit(request: Request, body: AuditIn):
     return Response(status_code=204)
 
 
+# --- social integrations (instagram plan, Task D3) ------------------------------------
+
+
+class MessengerPageSelectIn(BaseModel):
+    """Which Facebook Page the owner picked, and the handle the callback handed them."""
+
+    pending: str
+    page_id: str
+
+
+class MessengerPageSelected(BaseModel):
+    """The connected Page. No token, encrypted or otherwise, ever crosses this boundary."""
+
+    tenant_id: str
+    provider: str
+    external_id: str
+    display_name: str
+
+
+@router.post(
+    "/tenants/{tenant_id}/integrations/messenger/select",
+    response_model=MessengerPageSelected,
+)
+async def select_messenger_page(request: Request, tenant_id: str, body: MessengerPageSelectIn):
+    """Finish a Page connection when the person administers more than one Page.
+
+    `GET /messenger/callback` cannot choose for them and cannot repeat the exchange (the
+    OAuth code is single use), so it parks the Pages behind an opaque handle and sends the
+    browser back to the portal with their names. This is where the choice lands.
+    """
+    from spatalk.social.messenger import select_page
+
+    result = await select_page(_ctx(request), tenant_id, body.pending, body.page_id)
+    return MessengerPageSelected(
+        tenant_id=result.tenant_id,
+        provider=result.provider,
+        external_id=result.external_id,
+        display_name=result.display_name,
+    )
+
+
 # --- the contract ---------------------------------------------------------------------
 
 

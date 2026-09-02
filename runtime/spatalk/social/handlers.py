@@ -7,8 +7,8 @@ that can be retried.
 Three rules shape this module:
 
 * Nothing is sent outside Meta's 24-hour messaging window. Outside it the conversation is
-  closed and a tracked item is filed instead, so a person answers from the Instagram inbox.
-  The assistant never quietly drops a customer.
+  closed and a tracked item is filed instead, so a person answers from the Instagram or Page
+  inbox. The assistant never quietly drops a customer.
 * Public comment replies are fixed tenant wording (``scripts.comment_public_reply``). Only the
   private reply goes through the brain, the guard and the ledger, like every other channel.
 * A retryable Graph failure (429, 5xx) comes back later; any other 4xx is a dead letter with
@@ -33,6 +33,7 @@ from spatalk.models import Conversation, Item, Message
 from spatalk.social.events import ACTIONABLE, SocialEvent
 from spatalk.social.graph import GraphClient, GraphError, HttpGraphClient
 from spatalk.social.meta_oauth import (
+    FACEBOOK_GRAPH_BASE,
     INSTAGRAM_GRAPH_BASE,
     access_token,
     integration_by_external_id,
@@ -47,12 +48,19 @@ from spatalk.text.service import (
 )
 
 IG_EVENT_JOB = "social.ig_event"
+FB_EVENT_JOB = "social.fb_event"
 
 # Meta lets a business answer a person for 24 hours after that person's last message.
 MESSAGING_WINDOW = timedelta(hours=24)
 
 # The channel each provider's conversations use, and the provider each channel sends through.
-PROVIDER_FOR_CHANNEL = {"instagram": "instagram"}
+PROVIDER_FOR_CHANNEL = {"instagram": "instagram", "messenger": "messenger"}
+
+# Instagram and a Facebook Page are the same product with two hosts and two comment edges.
+GRAPH_BASE_FOR_CHANNEL = {
+    "instagram": INSTAGRAM_GRAPH_BASE,
+    "messenger": FACEBOOK_GRAPH_BASE,
+}
 
 
 # ----- from the webhook to the queue -------------------------------------------------------
@@ -148,31 +156,57 @@ async def window_open(
 # ----- talking to Meta -------------------------------------------------------------------
 
 
-def _client(ctx, integration) -> GraphClient:
+def _client(ctx, integration, channel: str) -> GraphClient:
     """The Graph client for a send. Tests inject a fake through ``ctx.graph``."""
     injected = getattr(ctx, "graph", None)
     if injected is not None:
         return injected
     token = access_token(integration, ctx.settings)
-    return HttpGraphClient(INSTAGRAM_GRAPH_BASE, lambda: token)
+    return HttpGraphClient(GRAPH_BASE_FOR_CHANNEL[channel], lambda: token)
 
 
 def _path(ctx, *parts: str) -> str:
     return "/" + "/".join((ctx.settings.meta_graph_version, *parts))
 
 
-async def send_message(ctx, integration, recipient: dict, text: str) -> None:
-    """One Graph send: a direct message, or a private reply to a comment."""
-    await _client(ctx, integration).post(
+def _reply_call(ctx, integration, channel: str, recipient: dict, text: str) -> tuple[str, dict]:
+    """Where one reply goes on this channel, and what the body looks like.
+
+    Instagram answers both a direct message and a comment on the account's ``messages``
+    edge, distinguished by the recipient (``id`` or ``comment_id``). A Page has two separate
+    edges instead: ``messages`` for a conversation, ``private_replies`` on the comment
+    itself. This is the only place that difference exists.
+    """
+    comment_id = recipient.get("comment_id")
+    if channel == "messenger":
+        if comment_id:
+            return _path(ctx, str(comment_id), "private_replies"), {"message": text}
+        return (
+            _path(ctx, integration.external_id, "messages"),
+            {
+                "recipient": recipient,
+                "message": {"text": text},
+                # A Page must say why it is writing; this is always an answer to a person.
+                "messaging_type": "RESPONSE",
+            },
+        )
+    return (
         _path(ctx, integration.external_id, "messages"),
-        json={"recipient": recipient, "message": {"text": text}},
+        {"recipient": recipient, "message": {"text": text}},
     )
 
 
-async def send_public_reply(ctx, integration, comment_id: str, text: str) -> None:
+async def send_message(ctx, integration, channel: str, recipient: dict, text: str) -> None:
+    """One Graph send: a direct message, or a private reply to a comment."""
+    path, body = _reply_call(ctx, integration, channel, recipient, text)
+    await _client(ctx, integration, channel).post(path, json=body)
+
+
+async def send_public_reply(ctx, integration, channel: str, comment_id: str, text: str) -> None:
     """The one public sentence, which is fixed tenant wording and never the model's."""
-    await _client(ctx, integration).post(
-        _path(ctx, comment_id, "replies"), json={"message": text}
+    edge = "comments" if channel == "messenger" else "replies"
+    await _client(ctx, integration, channel).post(
+        _path(ctx, comment_id, edge), json={"message": text}
     )
 
 
@@ -303,8 +337,9 @@ async def _conversation_for_sender(ctx, cfg, provider_channel: str, sender_id: s
 async def close_and_capture(ctx, cfg, channel: str, event: SocialEvent) -> None:
     """Outside the window: say nothing, keep the message, and put a person on it.
 
-    The only contact Instagram gives us is a username, so that is what the item carries. The
-    words stay in the transcript, where free text belongs (there is no free text on an item).
+    The only contact Meta gives us is a username (Instagram) or a display name (a Page), so
+    that is what the item carries. The words stay in the transcript, where free text belongs
+    (there is no free text on an item).
     """
     now = ctx.clock.now()
     conv = await _conversation_for_sender(ctx, cfg, channel, event.sender_id)
@@ -386,20 +421,18 @@ async def answer_inbound(ctx, cfg, integration, event: SocialEvent, channel: str
     if await greeting_due(ctx, conv.id, greeting, len(replies)):
         replies[0] = f"{greeting} {replies[0]}"
     for part in replies:
-        await send_message(ctx, integration, recipient, part)
+        await send_message(ctx, integration, channel, recipient, part)
     return True
 
 
-# ----- the two Instagram event kinds -------------------------------------------------------
+# ----- the two event kinds, on either channel ----------------------------------------------
 
 
-async def _handle_message(ctx, cfg, integration, event: SocialEvent) -> None:
-    await answer_inbound(
-        ctx, cfg, integration, event, "instagram", {"id": event.sender_id}
-    )
+async def _handle_message(ctx, cfg, integration, event: SocialEvent, channel: str) -> None:
+    await answer_inbound(ctx, cfg, integration, event, channel, {"id": event.sender_id})
 
 
-async def _handle_comment(ctx, cfg, integration, event: SocialEvent) -> None:
+async def _handle_comment(ctx, cfg, integration, event: SocialEvent, channel: str) -> None:
     """A comment the tenant's policy says to answer: reply privately, then optionally in public."""
     policy = cfg.social
     if policy.comment_mode == "off":
@@ -411,13 +444,14 @@ async def _handle_comment(ctx, cfg, integration, event: SocialEvent) -> None:
         return
 
     replied = await answer_inbound(
-        ctx, cfg, integration, event, "instagram", {"comment_id": event.comment_id}
+        ctx, cfg, integration, event, channel, {"comment_id": event.comment_id}
     )
     if replied and policy.public_reply_enabled and event.comment_id:
         try:
             await send_public_reply(
                 ctx,
                 integration,
+                channel,
                 event.comment_id,
                 render_script("comment_public_reply", cfg, ctx.clock.now(), urgent=False),
             )
@@ -427,30 +461,41 @@ async def _handle_comment(ctx, cfg, integration, event: SocialEvent) -> None:
             logger.warning("public reply to comment {} failed: {}", event.comment_id, e)
 
 
-@jobs.register_handler(IG_EVENT_JOB)
-async def ig_event(payload: dict, ctx) -> None:
-    """One Instagram event: a direct message, or a comment the tenant's policy answers."""
+async def _social_event(payload: dict, ctx, channel: str) -> None:
+    """One Meta event on either channel: a message, or a comment the policy answers."""
     event = SocialEvent.from_payload(payload["event"])
-    integration = await integration_by_external_id(
-        ctx.sf, "instagram", event.tenant_external_id
-    )
+    provider = PROVIDER_FOR_CHANNEL[channel]
+    integration = await integration_by_external_id(ctx.sf, provider, event.tenant_external_id)
     if integration is None:
         logger.warning(
-            "instagram event for account {} which no tenant has connected",
+            "{} event for account {} which no tenant has connected",
+            provider,
             event.tenant_external_id,
         )
         return
     cfg = await ctx.registry.get(integration.tenant_id)
     try:
         if event.kind == "message":
-            await _handle_message(ctx, cfg, integration, event)
+            await _handle_message(ctx, cfg, integration, event, channel)
         elif event.kind == "comment":
-            await _handle_comment(ctx, cfg, integration, event)
+            await _handle_comment(ctx, cfg, integration, event, channel)
     except GraphError as e:
         if e.retryable:
             raise
         # Meta refused this call and will refuse it again: stop, and keep the reason.
         raise jobs.DeadLetter(f"graph {e.status_code}: {e.body}") from e
+
+
+@jobs.register_handler(IG_EVENT_JOB)
+async def ig_event(payload: dict, ctx) -> None:
+    """One Instagram event: a direct message, or a comment the tenant's policy answers."""
+    await _social_event(payload, ctx, "instagram")
+
+
+@jobs.register_handler(FB_EVENT_JOB)
+async def fb_event(payload: dict, ctx) -> None:
+    """One Facebook Page event: a message, or a feed comment the tenant's policy answers."""
+    await _social_event(payload, ctx, "messenger")
 
 
 # ----- human takeover ----------------------------------------------------------------------
@@ -471,7 +516,7 @@ async def relay_social(ctx, conv, text: str) -> str | None:
     sender_id = conv.external_ref or ""
     if not await window_open(ctx.sf, conv.tenant_id, provider, sender_id, ctx.clock.now()):
         return f"the 24-hour {provider} messaging window has closed"
-    await send_message(ctx, integration, {"id": sender_id}, text)
+    await send_message(ctx, integration, conv.channel, {"id": sender_id}, text)
     await record_usage(
         ctx.sf,
         conv.tenant_id,

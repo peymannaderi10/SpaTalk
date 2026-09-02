@@ -17,6 +17,7 @@ from spatalk.ledger.items import PgLedger
 from spatalk.ledger.scheduler import run_scheduler_forever
 from spatalk.settings import Settings, get_settings
 from spatalk.social import instagram as social_instagram
+from spatalk.social import messenger as social_messenger
 from spatalk.sms import TelnyxSms
 from spatalk.tenants.registry import TenantRegistry
 from spatalk.text import chat as text_chat
@@ -88,6 +89,7 @@ def create_app(ctx: jobs.JobContext, start_background: bool = True) -> FastAPI:
     attach_router(app, text_chat.router)  # web chat widget (Task B4)
     attach_router(app, internal.router)   # the portal's only way in (portal plan, Task C3)
     attach_router(app, social_instagram.router)  # instagram (instagram plan, Task D2)
+    attach_router(app, social_messenger.router)  # facebook page (instagram plan, Task D3)
 
     @app.get("/healthz")
     async def healthz():

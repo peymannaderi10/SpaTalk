@@ -1182,6 +1182,64 @@
           }
         ]
       }
+    },
+    "/internal/tenants/{tenant_id}/integrations/messenger/select": {
+      "post": {
+        "tags": [
+          "internal"
+        ],
+        "summary": "Select Messenger Page",
+        "description": "Finish a Page connection when the person administers more than one Page.\n\n`GET /messenger/callback` cannot choose for them and cannot repeat the exchange (the\nOAuth code is single use), so it parks the Pages behind an opaque handle and sends the\nbrowser back to the portal with their names. This is where the choice lands.",
+        "operationId": "select_messenger_page_internal_tenants__tenant_id__integrations_messenger_select_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tenant Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MessengerPageSelectIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessengerPageSelected"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1849,6 +1907,54 @@
           "created_at"
         ],
         "title": "MessageOut"
+      },
+      "MessengerPageSelectIn": {
+        "properties": {
+          "pending": {
+            "type": "string",
+            "title": "Pending"
+          },
+          "page_id": {
+            "type": "string",
+            "title": "Page Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "pending",
+          "page_id"
+        ],
+        "title": "MessengerPageSelectIn",
+        "description": "Which Facebook Page the owner picked, and the handle the callback handed them."
+      },
+      "MessengerPageSelected": {
+        "properties": {
+          "tenant_id": {
+            "type": "string",
+            "title": "Tenant Id"
+          },
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "external_id": {
+            "type": "string",
+            "title": "External Id"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tenant_id",
+          "provider",
+          "external_id",
+          "display_name"
+        ],
+        "title": "MessengerPageSelected",
+        "description": "The connected Page. No token, encrypted or otherwise, ever crosses this boundary."
       },
       "NumberOut": {
         "properties": {

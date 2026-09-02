@@ -1,0 +1,23 @@
+{
+  "object": "page",
+  "entry": [
+    {
+      "id": "1234567890",
+      "time": 1788285600,
+      "changes": [
+        {
+          "field": "feed",
+          "value": {
+            "item": "comment",
+            "verb": "remove",
+            "comment_id": "1234567890_114",
+            "post_id": "1234567890_222",
+            "created_time": 1788285600,
+            "from": {"id": "9990000000001", "name": "Dana W"},
+            "message": "how much is a facial?"
+          }
+        }
+      ]
+    }
+  ]
+}

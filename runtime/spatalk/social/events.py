@@ -165,7 +165,42 @@ def _messaging_event(entry_id: str, item: dict) -> SocialEvent | None:
     return None
 
 
-def _parse(body: dict, expected_object: str, comment_field: str) -> list[SocialEvent]:
+# --- facebook page feed (instagram plan, Task D3) ---
+def _page_comment_event(
+    entry_id: str, value: dict, entry_time: float | None
+) -> SocialEvent | None:
+    """A comment on a Page post.
+
+    A Page's ``feed`` field carries everything that happens on the Page's own timeline:
+    likes, shares, status edits, comments added, comments deleted. Only a comment somebody
+    just wrote is something to answer, so anything else produces no event at all — it is not
+    even recorded, because there is nothing an adapter would ever do with it.
+    """
+    if value.get("item") != "comment" or value.get("verb") != "add":
+        return None
+    comment_id = value.get("comment_id")
+    author = value.get("from") or {}
+    if not comment_id or not author.get("id"):
+        return None
+    return SocialEvent(
+        kind="comment",
+        tenant_external_id=entry_id,
+        sender_id=str(author["id"]),
+        event_id=str(comment_id),
+        text=value.get("message") or "",
+        comment_id=str(comment_id),
+        # A Page comment hangs off a post, which is this channel's equivalent of a media id.
+        media_id=str(value.get("post_id") or "") or None,
+        timestamp=_utc(value.get("created_time") or entry_time),
+        # Facebook gives a display name where Instagram gives a username. Either way it is
+        # the only piece of contact information the platform hands us for a commenter.
+        username=str(author.get("name") or ""),
+    )
+
+
+def _parse(
+    body: dict, expected_object: str, comment_field: str, comment_builder
+) -> list[SocialEvent]:
     if not isinstance(body, dict) or body.get("object") != expected_object:
         return []
     events: list[SocialEvent] = []
@@ -177,7 +212,7 @@ def _parse(body: dict, expected_object: str, comment_field: str) -> list[SocialE
         for change in entry.get("changes") or []:
             if change.get("field") != comment_field:
                 continue
-            event = _comment_event(entry_id, change.get("value") or {}, entry_time)
+            event = comment_builder(entry_id, change.get("value") or {}, entry_time)
             if event is not None:
                 events.append(event)
         for item in entry.get("messaging") or []:
@@ -189,4 +224,13 @@ def _parse(body: dict, expected_object: str, comment_field: str) -> list[SocialE
 
 def parse_instagram_payload(body: dict) -> list[SocialEvent]:
     """Comments and direct messages on a connected Instagram Business account."""
-    return _parse(body, "instagram", "comments")
+    return _parse(body, "instagram", "comments", _comment_event)
+
+
+def parse_messenger_payload(body: dict) -> list[SocialEvent]:
+    """Messages and feed comments on a connected Facebook Page (instagram plan, Task D3).
+
+    The ``messaging`` array is byte-identical to Instagram's, so it is parsed by the same
+    code; only the comment shape differs, because a Page delivers comments under ``feed``.
+    """
+    return _parse(body, "page", "feed", _page_comment_event)
