@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import time, timezone
+from datetime import datetime, time, timezone
 from zoneinfo import ZoneInfo
 
 from loguru import logger
@@ -10,6 +10,8 @@ from sqlalchemy import func, select
 from spatalk import jobs
 from spatalk.ledger.delivery import schedule_item_delivery
 from spatalk.models import Job, Tenant
+# Operations plan, Task E7: the alert conditions and the scheduler tick.
+from spatalk.ops import alerts
 # Operations plan, Task E3: importing this also registers the ops.retention handler.
 from spatalk.ops import retention
 # Operations plan, Task E4: importing this also registers the ops.nightly_audit handler.
@@ -113,6 +115,41 @@ async def ensure_nightly_audit_scheduled(ctx: jobs.JobContext) -> bool:
     return True
 
 
+# --- operations (operations plan, Task E7) ---------------------------------------------
+
+# The alert conditions are re-derived on a five-minute cadence, not on every 60 s pass: the
+# conditions themselves (a dead job, a queue that has stopped draining) do not change fast
+# enough to be worth five database round trips a minute, and the six-hour dedup means a
+# faster cadence would send no more mail anyway.
+ALERT_CHECK_SECONDS = 300
+
+_LAST_ALERT_CHECK: datetime | None = None
+
+
+def reset_alert_check_state() -> None:
+    """Forget both pieces of process state this module keeps: the throttle and the tick."""
+    global _LAST_ALERT_CHECK
+    _LAST_ALERT_CHECK = None
+    alerts.reset_monitoring_state()
+
+
+async def ensure_alert_conditions_checked(ctx: jobs.JobContext) -> list[str] | None:
+    """Raise every current alert condition, at most once every five minutes.
+
+    Returns the keys that alerted, or None when the throttle skipped the check entirely —
+    which is a different fact from "checked and found nothing wrong".
+    """
+    global _LAST_ALERT_CHECK
+    now = ctx.clock.now()
+    if (
+        _LAST_ALERT_CHECK is not None
+        and (now - _LAST_ALERT_CHECK).total_seconds() < ALERT_CHECK_SECONDS
+    ):
+        return None
+    _LAST_ALERT_CHECK = now
+    return await alerts.check_alert_conditions(ctx)
+
+
 async def run_scheduler_forever(ctx: jobs.JobContext, interval_seconds: float = 60.0) -> None:
     while True:
         try:
@@ -126,6 +163,11 @@ async def run_scheduler_forever(ctx: jobs.JobContext, interval_seconds: float = 
             await ensure_nightly_retention_scheduled(ctx)
             # Re-judge yesterday's bands and scan its transcripts, nightly (Task E4).
             await ensure_nightly_audit_scheduled(ctx)
+            # A dead job, a queue that stopped draining, a scheduler that stalled (Task E7).
+            await ensure_alert_conditions_checked(ctx)
+            # Last, and only on a pass that got this far: the tick is the claim that a whole
+            # pass completed, and `/healthz` publishes it for the uptime monitor to judge.
+            alerts.record_scheduler_tick(ctx.clock.now())
         except Exception as e:  # noqa: BLE001
             logger.exception("scheduler error: {}", e)
         await asyncio.sleep(interval_seconds)

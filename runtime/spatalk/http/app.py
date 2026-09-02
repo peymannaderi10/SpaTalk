@@ -16,6 +16,7 @@ from spatalk.http.ratelimit import install_rate_limits
 from spatalk.ledger.delivery import make_delivery, schedule_item_delivery
 from spatalk.ledger.items import PgLedger
 from spatalk.ledger.scheduler import run_scheduler_forever
+from spatalk.ops import alerts  # monitoring and error reporting (operations plan, Task E7)
 from spatalk.settings import Settings, get_settings
 from spatalk.social import instagram as social_instagram
 from spatalk.social import messenger as social_messenger
@@ -82,6 +83,14 @@ def create_app(ctx: jobs.JobContext, start_background: bool = True) -> FastAPI:
 
     app = FastAPI(title="spatalk runtime", lifespan=lifespan)
     app.state.ctx = ctx
+    # --- monitoring and error reporting (operations plan, Task E7) ---
+    # Both are no-ops unless configured: LOG_FORMAT=json switches loguru to one JSON object
+    # per line, SENTRY_DSN turns on error reporting with the PII scrubbers attached. Some
+    # tests build the app purely to inspect its routes and pass no context at all.
+    if getattr(ctx, "settings", None) is not None:
+        alerts.configure_logging(ctx.settings)
+        alerts.init_sentry(ctx.settings)
+    # --- end monitoring ---
     # --- security hardening (operations plan, Task E8) ---
     # In front of every HTTP route, before any router: per-IP token buckets, 429 with
     # Retry-After. `/healthz`, `/internal/*` and the media socket are not in any bin.
@@ -103,12 +112,18 @@ def create_app(ctx: jobs.JobContext, start_background: bool = True) -> FastAPI:
 
         It says what is running and what configuration each tenant is on; it never
         exposes a caller, a transcript or a key.
+
+        The queue and scheduler fields are the operations plan's Task E7: an uptime monitor
+        that only checks the port cannot tell a serving process from a working one, so it
+        keyword-matches `"ok":true` and `"dead_jobs":0` here instead.
         """
         return {
             "ok": True,
             "tenants": await ctx.registry.list_tenants(),
             "config_versions": await internal.config_versions(ctx.sf),
             "commit": ctx.settings.git_commit,
+            # --- monitoring (operations plan, Task E7) ---
+            **await alerts.health_snapshot(ctx),
         }
 
     @app.websocket("/ws/{token}")

@@ -96,6 +96,18 @@ class Settings(BaseSettings):
     # where reasoning time is free but a per-token price is not.
     judge_model: str = "gemini-2.5-flash"
 
+    # --- operations: monitoring and alerts (operations plan, Task E7) ---------------------
+    # One SMS per incident per six hours, on top of the email. Empty means email only.
+    # The number an alert is sent *from* is the first tenant SMS number the registry knows:
+    # there is one Telnyx account and the runtime owns no separate operations number.
+    ops_sms_number: str = ""
+    # Sentry is initialised only when this is set, and never with PII: phone numbers and
+    # email addresses are masked out of every event and breadcrumb before it leaves.
+    sentry_dsn: str = ""
+    # "json" makes loguru emit one JSON object per line, which is what a log shipper on the
+    # VPS can read. Anything else keeps the human-readable console format.
+    log_format: str = "text"
+
     # --- whatsapp (plan W) ----------------------------------------------------------------
     # One platform number fronts every tenant at MVP: the id Meta assigns the WhatsApp
     # business number, and the token the Cloud API calls carry. Empty means the runtime has
