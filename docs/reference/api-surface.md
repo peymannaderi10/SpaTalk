@@ -121,7 +121,7 @@ Runtime `runtime/.env`:
 | DEEPGRAM_API_KEY | A | bake-off only |
 | GOOGLE_API_KEY, LLM_MODEL | A | always |
 | OPENAI_API_KEY | E6 | second vendor only |
-| JUDGE_MODEL | E4 | nightly audit (defaults to gemini-2.5-pro) |
+| JUDGE_MODEL | E4 | nightly audit (defaults to gemini-2.5-flash, thinking enabled: `thinking_budget=-1`). gemini-2.5-pro is not available on the founder's Google AI Studio key (404 "no longer available to new users", promptfoo run A 2026-09-02), and Flash with thinking on judges band boundaries as well at a fraction of the cost. |
 | SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, MAIL_FROM | A | email delivery |
 | SLACK_SIGNING_SECRET | A | Slack buttons |
 | SLACK_BOT_TOKEN | B5 | threads and takeover |

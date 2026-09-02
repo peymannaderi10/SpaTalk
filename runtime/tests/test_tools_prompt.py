@@ -42,3 +42,19 @@ def test_prompt_states_closed_now_and_honesty_rules():
     assert "$99" in p and "Britannia" in p
     assert "two sentences" in p.lower()
     assert "do not ask about it" in p.lower() and "suitable or safe" in p.lower()
+
+
+def test_prompt_files_questions_about_the_callers_own_appointment():
+    """Account-specific questions are never answered from memory and never refused flatly.
+
+    Real-model finding QA-A1 (docs/reports/promptfoo-run-2026-09-02-A.md): the model replied
+    "I can't confirm appointments" at band 1 with no item. Brief 7.1 puts an account-specific
+    question in band 2: file it and let the system speak the captured wording.
+    """
+    from spatalk.brain.prompt import build_system_prompt
+    p = build_system_prompt(_cfg(), "voice", NOW).lower()
+    assert "existing appointment" in p
+    assert "no access to the appointment calendar" in p
+    assert "never answer from memory" in p
+    assert "never say you cannot help" in p
+    assert "capture_request (kind question)" in p

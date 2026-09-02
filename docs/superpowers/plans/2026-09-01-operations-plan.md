@@ -94,11 +94,11 @@ runtime/tests/test_ops_*.py
 
 ### Task E4: Nightly audit: lexicon scan, band audit with a judge model, health-context stats
 
-**Files:** `spatalk/ops/nightly_audit.py`, `spatalk/models.py` (`audit_reports`), `spatalk/settings.py` (`judge_model="gemini-2.5-pro"`, `ops_email`), `spatalk/ledger/scheduler.py` (nightly at 04:00), `tests/test_ops_nightly_audit.py`
+**Files:** `spatalk/ops/nightly_audit.py`, `spatalk/models.py` (`audit_reports`), `spatalk/settings.py` (`judge_model="gemini-2.5-flash"`, `ops_email`), `spatalk/ledger/scheduler.py` (nightly at 04:00), `tests/test_ops_nightly_audit.py`
 
 **Interfaces:** `lexicon_scan(ctx, day) -> {conversations_with_clinical_terms_not_band3: [ids], count}`; `band_audit(ctx, day, judge: LLMClient) -> {reviewed, disagreements: [{conversation_id, actual_band, judged_band, reason}]}`; `health_context_stats(ctx, day) -> {conversations, flagged, items_flagged}`; `run_nightly_audit(ctx, day) -> AuditReport` stored in `audit_reports(day, tenant_id, report jsonb)` and emailed to `ops_email` with a plain-text summary; blocking finding (any judged band 3 handled as 1 or 2) also raises an alert through `alerts.notify`.
 
-**Behaviour:** the judge prompt receives the transcript and the three band definitions from the brief verbatim and must return JSON `{band, reason}`; `FakeLLM` in tests; conversations with `controller == human` are excluded from the band audit; the report is per tenant; the portal admin health page (portal plan C5) reads the latest report through a new `GET /internal/tenants/{id}/audit/latest`.
+**Behaviour:** the judge runs on `gemini-2.5-flash` with thinking enabled (`ThinkingConfig(thinking_budget=-1)`, unlike the conversational client which sets `0` for latency): gemini-2.5-pro returns 404 "no longer available to new users" on the founder's Google AI Studio key (promptfoo run A, 2026-09-02), and a band judgement is an offline call where reasoning time is free but a per-token price is not. The judge prompt receives the transcript and the three band definitions from the brief verbatim and must return JSON `{band, reason}`; `FakeLLM` in tests; conversations with `controller == human` are excluded from the band audit; the report is per tenant; the portal admin health page (portal plan C5) reads the latest report through a new `GET /internal/tenants/{id}/audit/latest`.
 
 **Tests:** seeded day with one clinical-term conversation at band 1 (found), one at band 3 (not flagged); judge disagreement produces an alert; report persisted and email composed; a day with no conversations produces a zero report and no alert.
 
