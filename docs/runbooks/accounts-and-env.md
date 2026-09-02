@@ -72,13 +72,16 @@ Why: phone numbers, inbound calls with audio streamed to us, SMS.
 
 Gotcha: until toll-free verification passes, SMS from the toll-free number is silently dropped. For testing, the local number can send SMS to your own phone if you add it to the messaging profile too.
 
-## 4. Soniox, speech-to-text (5 minutes)
+## 4. Soniox, speech-to-text and text-to-speech (5 minutes)
 
-1. console.soniox.com → sign up, add a card (no free credits, pay as you go at about $0.002 per minute).
-2. API Keys → Create. Copy `SONIOX_API_KEY`.
-3. Set `STT_PROVIDER=soniox`.
+1. console.soniox.com → sign up, add a card (no free credits; about $0.002 per minute of transcription and about $0.012 per minute of generated speech).
+2. API Keys → Create. Copy `SONIOX_API_KEY`. One key serves both stages.
+3. Set `STT_PROVIDER=soniox` and `TTS_PROVIDER=soniox`, and pick a voice from the TTS docs (voices page) → `SONIOX_VOICE` (for example `Adrian`).
+4. Ask Soniox support, or check the DPA, that the no-training and no-retention terms on their security page cover text-to-speech as well as transcription; the page names audio and transcripts only.
 
-## 5. Inworld, text-to-speech (10 minutes)
+## 5. Inworld, text-to-speech (optional swap, 10 minutes)
+
+Only needed if the week-one bake-off prefers Inworld's voice or latency, or as the fallback vendor.
 
 1. platform.inworld.ai → sign up → create a workspace named `spatalk`.
 2. Settings → API Keys → create a **runtime** key. The portal shows a Base64 "Basic" credential; copy that whole string as `INWORLD_API_KEY`. (If the runtime rejects it, the key is the Base64 of `key:secret`; the portal shows both parts.)
@@ -210,8 +213,8 @@ Runtime: `runtime/.env` on the VPS (copy from `runtime/.env.example`). Portal: `
 | `SECRET_KEY`, `INTERNAL_API_KEY` | runtime | step 0 | yes |
 | `PUBLIC_BASE_URL`, `MEDIA_WS_HOST`, `API_HOST`, `MEDIA_HOST` | runtime | step 2 | yes |
 | `TELNYX_API_KEY`, `TELNYX_PUBLIC_KEY` | runtime, worker | step 3 | yes |
-| `SONIOX_API_KEY`, `STT_PROVIDER` | runtime | step 4 | yes |
-| `INWORLD_API_KEY`, `INWORLD_VOICE`, `INWORLD_MODEL`, `TTS_PROVIDER` | runtime | step 5 | yes |
+| `SONIOX_API_KEY`, `STT_PROVIDER=soniox`, `TTS_PROVIDER=soniox`, `SONIOX_VOICE` | runtime | step 4 | yes |
+| `INWORLD_API_KEY`, `INWORLD_VOICE`, `INWORLD_MODEL` (with `TTS_PROVIDER=inworld`) | runtime | step 5 | optional swap |
 | `GOOGLE_API_KEY`, `LLM_MODEL` | runtime, CI | step 6 | yes |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM` | runtime | step 7 | email only |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `MAIL_FROM` | portal | step 7 | email only |

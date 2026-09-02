@@ -7,8 +7,8 @@ What this gives you: a real phone number that rings into the runtime on your lap
 | Account | Why | Time |
 |---|---|---|
 | Telnyx (portal.telnyx.com) | the phone number and the audio stream | 30 min, plus business verification that can take up to a day: start it now |
-| Soniox (console.soniox.com) | speech to text | 5 min |
-| Inworld (platform.inworld.ai) | text to speech | 10 min |
+| Soniox (console.soniox.com) | speech to text and text to speech, one key | 5 min |
+| Inworld (platform.inworld.ai) | optional: alternative voice for the bake-off | 10 min |
 | Google AI Studio | the model; already in `runtime/.env` | done |
 | Slack (api.slack.com/apps) | optional but the best demo moment: items arrive with Acknowledge and Resolve buttons | 15 min |
 
@@ -25,19 +25,17 @@ Not needed for the demo: OVH, Cloudflare, AWS SES, Stripe, Meta, a domain. Email
 ## One-time setup
 
 1. Telnyx: complete verification, add a card, fund $20. Auth → API Keys → create → `TELNYX_API_KEY`. Numbers → Buy → Canada → Local → 905 → buy one. Voice → TeXML Applications → Create `spatalk-demo` with any placeholder Voice URL for now (you set the real one each demo). Assign the number to it.
-2. Soniox: API key → `SONIOX_API_KEY`.
-3. Inworld: workspace, runtime API key (copy the Base64 "Basic" credential) → `INWORLD_API_KEY`; pick a voice id → `INWORLD_VOICE`.
+2. Soniox: API key → `SONIOX_API_KEY`; pick a TTS voice from their voices page → `SONIOX_VOICE`.
+3. Inworld (optional): workspace, runtime API key (copy the Base64 "Basic" credential) → `INWORLD_API_KEY`; pick a voice id → `INWORLD_VOICE`. Only if you want to compare voices.
 4. Slack (optional): create the app from the manifest in `docs/runbooks/accounts-and-env.md` step 8, install it, create `#skincentrix-frontdesk`, add an incoming webhook to that channel → `SKINCENTRIX_SLACK_WEBHOOK`; Basic Information → Signing Secret → `SLACK_SIGNING_SECRET`.
 5. Append to `runtime/.env` (never commit it):
 
 ```
 TELNYX_API_KEY=...
 SONIOX_API_KEY=...
-INWORLD_API_KEY=...
-INWORLD_VOICE=Ashley
-INWORLD_MODEL=inworld-tts-2
+SONIOX_VOICE=Adrian
 STT_PROVIDER=soniox
-TTS_PROVIDER=inworld
+TTS_PROVIDER=soniox          # inworld or deepgram_aura2 are the swaps; each needs its own key
 SLACK_SIGNING_SECRET=...
 SKINCENTRIX_SLACK_WEBHOOK=https://hooks.slack.com/services/...
 SECRET_KEY=<64 random hex>
