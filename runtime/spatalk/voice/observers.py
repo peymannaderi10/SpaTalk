@@ -9,10 +9,47 @@ from pipecat.frames.frames import (
     MetricsFrame,
     UserStoppedSpeakingFrame,
 )
-from pipecat.metrics.metrics import LLMUsageMetricsData, TTSUsageMetricsData
+from pipecat.metrics.metrics import LLMUsageMetricsData, TTFBMetricsData, TTSUsageMetricsData
 from pipecat.observers.base_observer import BaseObserver, FramePushed
 
 from spatalk.voice.session import VoiceSession
+
+# --- per-stage latency (operations plan, Task E5) ---------------------------------------
+
+# The stage a Pipecat service belongs to, by service, never by pipeline position: the three
+# vendors are swap points (`make_stt`, `make_tts`, `make_llm`), so a report keyed on
+# position would silently stop reporting the moment a provider changed. The named services
+# are the ones those three factories can return today, including the second LLM vendor.
+STAGE_BY_SERVICE: dict[str, str] = {
+    "SonioxSTTService": "stt",
+    "DeepgramFluxSTTService": "stt",
+    "GoogleLLMService": "llm",
+    "OpenAILLMService": "llm",
+    "InworldTTSService": "tts",
+    "DeepgramTTSService": "tts",
+}
+
+# What the fallback looks for, in this order. STT comes first on purpose: "STTService"
+# contains the substring "TTS", so a TTS-first scan files every transcription reading under
+# text-to-speech and the two budgets swap places.
+_STAGE_MARKERS: tuple[tuple[str, str], ...] = (("STT", "stt"), ("TTS", "tts"), ("LLM", "llm"))
+
+
+def stage_for_processor(name: str) -> str | None:
+    """The budgeted stage a processor's metrics belong to, or None when it is not one.
+
+    Pipecat names a processor `<ClassName>#<n>`, so the class is the part before the `#`.
+    An unknown vendor still lands in the right bin through the marker fallback; our own
+    processors (the rules gate, the output guard) match nothing and are not budgeted.
+    """
+    service = name.split("#", 1)[0]
+    if service in STAGE_BY_SERVICE:
+        return STAGE_BY_SERVICE[service]
+    upper = service.upper()
+    for marker, stage in _STAGE_MARKERS:
+        if marker in upper:
+            return stage
+    return None
 
 
 class UsageObserver(BaseObserver):
@@ -36,6 +73,13 @@ class UsageObserver(BaseObserver):
                 )
             elif isinstance(d, TTSUsageMetricsData):
                 self._s.usage["tts_chars"] += float(d.value or 0)
+            elif isinstance(d, TTFBMetricsData):
+                # Operations plan, Task E5: which vendor the caller was waiting on.
+                stage = stage_for_processor(d.processor or "")
+                if stage is not None:
+                    self._s.stage_ttfb_ms.setdefault(stage, []).append(
+                        int(round(float(d.value or 0) * 1000))
+                    )
 
 
 class TurnLatencyObserver(BaseObserver):

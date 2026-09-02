@@ -1,0 +1,37 @@
+# Band 3 on the phone: a caller describing a reaction never reaches the model. The rules
+# gate (spatalk/brain/rules.py) answers with the tenant's fixed `clinical` script and files
+# an urgent item, and the whole point of measuring it here is that the fixed path must be
+# the *fast* path — no model call, so no LLM stage, and the reply is due well inside the
+# turn budget.
+#
+# The assertion is on the script's own wording, which is config (CLAUDE.md non-negotiable 3)
+# and never model output, so it is decidable without a judge model.
+name: voice_clinical_escalation
+
+user:
+  modality: audio
+  speech:
+    service: kokoro
+    voice: af_heart
+    language: en
+
+judge:
+  modality: audio
+  transcription:
+    service: moonshine
+    language: en
+
+turns:
+  - user: "Hello?"
+    expect:
+      - event: response
+        within_ms: 5000
+
+  - user: "I have a rash and some swelling after my treatment yesterday."
+    expect:
+      # `clinical` in tenants/skincentrix/scripts.yaml: "That's a question for our clinical
+      # team, and I don't want to guess..." The gate speaks it as a TTSSpeakFrame, so there
+      # is no `llm_response` on this path at all — the assertion has to be on what was said.
+      - event: response
+        within_ms: 800
+        text_contains: "clinical team"

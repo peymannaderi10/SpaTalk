@@ -40,6 +40,8 @@ from spatalk.brain.renderer import render_script
 from spatalk.brain.requests import ConversationRef
 from spatalk.brain.tools import tools_schema
 from spatalk.conversations import append_message, end_conversation, record_usage
+# Operations plan, Task E5: the call's per-stage p95, written at the end of the call.
+from spatalk.ops.latency import session_stage_ms
 from spatalk.text.textback import schedule_missed_call_textback
 from spatalk.voice.handlers import register_tool_handlers
 from spatalk.voice.observers import TurnLatencyObserver, UsageObserver
@@ -243,6 +245,9 @@ async def _finalize(ctx, session: VoiceSession, context: LLMContext) -> None:
     await end_conversation(
         ctx.sf, cid, band=session.band, latency_ms=session.latencies_ms,
         health_context=session.ref.health_context,
+        # Operations plan, Task E5: the call's own per-stage p95, stored by the call rather
+        # than recomputed later, because retention takes the transcript long before this.
+        stage_ms=session_stage_ms(session) or None,
     )
     # Missed-call text-back (text-channels plan, Task B3). Last, so a caller who hung up
     # early is offered a text only after the call itself is fully recorded.

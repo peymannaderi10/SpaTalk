@@ -40,6 +40,9 @@ async def end_conversation(
     band: int | None,
     latency_ms: list[int],
     health_context: bool = False,
+    # Operations plan, Task E5: the call's per-stage p95, {stt, llm, tts}. Optional, because
+    # only a voice call has stages; a text conversation ends with nothing to say here.
+    stage_ms: dict | None = None,
 ) -> None:
     async with sf() as s, s.begin():
         await s.execute(
@@ -50,6 +53,7 @@ async def end_conversation(
                 band=band,
                 latency_ms=latency_ms,
                 health_context=health_context,
+                stage_ms=stage_ms,
             )
         )
 

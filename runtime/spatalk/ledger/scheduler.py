@@ -18,6 +18,8 @@ from spatalk.ops import retention
 from spatalk.ops import nightly_audit
 # Operations plan, Task E9: importing this also registers the ops.cost_report handler.
 from spatalk.ops import cost_report
+# Operations plan, Task E5: importing this also registers the ops.latency_report handler.
+from spatalk.ops import latency
 # Instagram plan, Task D1: importing this also registers the social.refresh_tokens handler.
 from spatalk.social.meta_oauth import ensure_daily_refresh_scheduled
 from spatalk.text.takeover import hand_back_stale
@@ -117,6 +119,35 @@ async def ensure_nightly_audit_scheduled(ctx: jobs.JobContext) -> bool:
     return True
 
 
+# --- operations (operations plan, Task E5) ---------------------------------------------
+
+# An hour after the audit. `docs/reference/flows.md` §9 lists the daily latency report
+# among the nightly jobs; like the two above it is one sweep over every tenant, so it runs
+# on UTC and reports each tenant's own local day.
+NIGHTLY_LATENCY_UTC_HOUR = 5
+
+
+async def ensure_daily_latency_scheduled(ctx: jobs.JobContext) -> bool:
+    """Queue the latency report at most once per UTC day, from 05:00 UTC.
+
+    Same marker as the other nightly jobs: the queued job's own `run_at`, from the
+    application clock, so a restarted scheduler cannot queue a second one.
+    """
+    now = ctx.clock.now().astimezone(timezone.utc)
+    boundary = now.replace(hour=NIGHTLY_LATENCY_UTC_HOUR, minute=0, second=0, microsecond=0)
+    if now < boundary:
+        return False
+    async with ctx.sf() as s:
+        already = await s.scalar(
+            select(func.count(Job.id)).where(Job.kind == latency.RUN_KIND, Job.run_at >= boundary)
+        )
+    if already:
+        return False
+    await jobs.enqueue(ctx.sf, latency.RUN_KIND, {}, run_at=now)
+    logger.info("queued {} for {}", latency.RUN_KIND, now.isoformat())
+    return True
+
+
 # --- operations (operations plan, Task E9) ---------------------------------------------
 
 # An hour after the nightly audit, on the first of the month only. UTC for the same reason
@@ -200,6 +231,8 @@ async def run_scheduler_forever(ctx: jobs.JobContext, interval_seconds: float = 
             await ensure_nightly_retention_scheduled(ctx)
             # Re-judge yesterday's bands and scan its transcripts, nightly (Task E4).
             await ensure_nightly_audit_scheduled(ctx)
+            # Yesterday's turn and stage p95 against the budgets, daily (Task E5).
+            await ensure_daily_latency_scheduled(ctx)
             # Reconcile last month's metered cost against the invoices, monthly (Task E9).
             await ensure_monthly_cost_report_scheduled(ctx)
             # A dead job, a queue that stopped draining, a scheduler that stalled (Task E7).

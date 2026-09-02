@@ -34,3 +34,10 @@ class VoiceSession:
         }
     )
     started_at: datetime | None = None
+    # --- operations (operations plan, Task E5) ---
+    # Every TTFB reading of the call, in ms, filed under the stage that produced it. The
+    # turn number in `latencies_ms` says the caller waited; this says which vendor made
+    # them wait, which is the only version of the fact anybody can act on.
+    stage_ttfb_ms: dict[str, list[int]] = field(
+        default_factory=lambda: {"stt": [], "llm": [], "tts": []}
+    )

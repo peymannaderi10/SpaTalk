@@ -1,0 +1,41 @@
+# Band 1 on the phone, measured end to end: the caller asks a price, the assistant answers
+# from the tenant's own service list, and the answer arrives inside the brief's S7 budget.
+#
+# The budget on the second turn is BUDGETS_MS["turn"] from spatalk/ops/latency.py, asserted
+# on `response` — the transcription of the audio the bot actually synthesized — so it covers
+# the whole path: STT, LLM and TTS. tests/test_ops_latency.py fails if the two numbers ever
+# drift apart.
+#
+# Content is asserted on `llm_response`, the model's own text, never on the transcription:
+# a spoken "$99" comes back from a local STT as "ninety nine dollars" or "99" depending on
+# the model, and a scenario that fails on that is measuring the transcriber, not the bot.
+name: voice_price_question
+
+user:
+  modality: audio
+  speech:
+    service: kokoro
+    voice: af_heart
+    language: en
+
+judge:
+  modality: audio
+  transcription:
+    service: moonshine
+    language: en
+
+turns:
+  # The disclosure is spoken on connect, before the caller says anything, and it is fixed
+  # tenant wording (tenants/skincentrix/scripts.yaml) rather than model output. Its budget
+  # is the connect handshake's, not a turn's.
+  - user: "Hello?"
+    expect:
+      - event: response
+        within_ms: 5000
+
+  - user: "How much is the express treatment?"
+    expect:
+      - event: llm_response
+        text_contains: "99"
+      - event: response
+        within_ms: 800

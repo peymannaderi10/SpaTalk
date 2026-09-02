@@ -1,0 +1,85 @@
+name: nightly-voice-evals
+
+# Operations plan, Task E5. The runtime's own latency numbers come from production calls
+# (`conversations.stage_ms`, reported daily by `ops.latency_report`). This job is the
+# pre-production half of the same measurement: synthesized caller audio into the real
+# pipeline, with the brief's 800 ms turn budget asserted on the reply.
+#
+# It needs three provider keys to say anything at all, and it must never look green while
+# saying nothing: without the keys it prints a ::notice and every eval step is skipped.
+on:
+  schedule:
+    # 07:23 UTC, after the runtime's own nightly jobs (retention 03:00, audit 04:00,
+    # latency report 05:00) have finished with the night.
+    - cron: "23 7 * * *"
+  workflow_dispatch:
+
+jobs:
+  voice-evals:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # The `secrets` context is not available in a step-level `if`, so the keys are lifted
+      # to the job environment and every step below is guarded on the value being non-empty
+      # (ci.yml lifts GOOGLE_API_KEY for the same reason).
+      GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+      SONIOX_API_KEY: ${{ secrets.SONIOX_API_KEY }}
+      INWORLD_API_KEY: ${{ secrets.INWORLD_API_KEY }}
+      # The bot answers no phone here: the tenant comes from its committed bundle and the
+      # ledger is in memory (scenarios/voice/eval_bot.py). These satisfy the settings schema.
+      PUBLIC_BASE_URL: https://evals.invalid
+      SECRET_KEY: nightly-voice-evals
+      SPATALK_NO_ENV_FILE: "1"
+    steps:
+      - name: nothing to run without the provider keys
+        if: ${{ env.GOOGLE_API_KEY == '' || env.SONIOX_API_KEY == '' || env.INWORLD_API_KEY == '' }}
+        run: |
+          echo "::notice title=voice evals skipped::GOOGLE_API_KEY, SONIOX_API_KEY and INWORLD_API_KEY must all be set as repository secrets. No scenario ran."
+
+      - uses: actions/checkout@v4
+        if: ${{ env.GOOGLE_API_KEY != '' && env.SONIOX_API_KEY != '' && env.INWORLD_API_KEY != '' }}
+      - uses: astral-sh/setup-uv@v3
+        if: ${{ env.GOOGLE_API_KEY != '' && env.SONIOX_API_KEY != '' && env.INWORLD_API_KEY != '' }}
+
+      - name: the runtime, plus the eval harness and its local models
+        if: ${{ env.GOOGLE_API_KEY != '' && env.SONIOX_API_KEY != '' && env.INWORLD_API_KEY != '' }}
+        working-directory: runtime
+        # The caller's voice (Kokoro) and the transcription of the bot's audio (Moonshine)
+        # are local models the harness downloads: no fourth provider account, and no judge
+        # model at all, because every expectation in scenarios/voice is a fixed substring
+        # or a latency budget.
+        run: |
+          set -euxo pipefail
+          uv venv --python 3.12
+          uv pip install -e "."
+          uv pip install "pipecat-ai[cli,kokoro,whisper]"
+
+      - name: the bot, on the eval transport
+        if: ${{ env.GOOGLE_API_KEY != '' && env.SONIOX_API_KEY != '' && env.INWORLD_API_KEY != '' }}
+        working-directory: runtime
+        run: |
+          set -euxo pipefail
+          nohup uv run python scenarios/voice/eval_bot.py -t eval --port 7860 \
+            > eval-bot.log 2>&1 &
+          for _ in $(seq 1 60); do
+            if grep -q "eval transport" eval-bot.log; then exit 0; fi
+            sleep 2
+          done
+          echo "the eval bot never came up"; cat eval-bot.log; exit 1
+
+      - name: the scenarios, in audio mode
+        if: ${{ env.GOOGLE_API_KEY != '' && env.SONIOX_API_KEY != '' && env.INWORLD_API_KEY != '' }}
+        working-directory: runtime
+        run: |
+          uv run pipecat eval run scenarios/voice/*.yaml --audio \
+            --record-dir recordings --logs-dir eval-logs --verbose
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() && env.GOOGLE_API_KEY != '' }}
+        with:
+          name: voice-eval-artifacts
+          path: |
+            runtime/eval-logs
+            runtime/recordings
+            runtime/eval-bot.log
+          if-no-files-found: ignore
