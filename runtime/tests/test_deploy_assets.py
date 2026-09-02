@@ -47,7 +47,9 @@ def test_compose_has_db_app_and_caddy_wired_together():
     assert set(services) == {"db", "app", "caddy"}
     app = services["app"]
     assert app["build"] == "."
-    assert app["env_file"] == ".env"
+    # `.env` must be optional or `docker compose config` / `up -d db` fail on a clean
+    # checkout before anyone has copied `.env.example` (QA gate A, minor finding).
+    assert app["env_file"] == [{"path": ".env", "required": False}]
     # Inside the compose network the database is `db:5432`, never the host mapping.
     assert app["environment"]["DATABASE_URL"] == "postgresql+asyncpg://spatalk:spatalk@db:5432/spatalk"
     assert app["depends_on"]["db"]["condition"] == "service_healthy"
@@ -56,7 +58,7 @@ def test_compose_has_db_app_and_caddy_wired_together():
     assert caddy["ports"] == ["80:80", "443:443"]
     assert "./Caddyfile:/etc/caddy/Caddyfile:ro" in caddy["volumes"]
     # Caddy substitutes {$API_HOST} and {$MEDIA_HOST} from its own environment.
-    assert caddy["env_file"] == ".env"
+    assert caddy["env_file"] == [{"path": ".env", "required": False}]
     assert caddy["depends_on"] == ["app"]
     assert services["db"]["healthcheck"]["test"] == ["CMD-SHELL", "pg_isready -U spatalk"]
 

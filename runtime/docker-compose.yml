@@ -14,7 +14,11 @@ services:
       retries: 10
   app:
     build: .
-    env_file: .env
+    # Optional so `docker compose config` and `up -d db` work on a clean checkout,
+    # before anyone has copied `.env.example` to `.env`.
+    env_file:
+      - path: .env
+        required: false
     environment:
       # Inside the compose network Postgres is reachable as `db:5432`; the host mapping
       # on the db service (5434) is for the developer machine only.
@@ -24,7 +28,9 @@ services:
     restart: unless-stopped
   caddy:
     image: caddy:2-alpine
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
     ports: ["80:80", "443:443"]
     volumes: ["./Caddyfile:/etc/caddy/Caddyfile:ro", "caddy_data:/data", "caddy_config:/config"]
     depends_on: [app]
