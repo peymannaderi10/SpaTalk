@@ -1,9 +1,10 @@
 # text-channels Task B6: Text scenarios, edge tests in CI, tenant-text sync
 
 Status: done with deviations
-Commit: recorded by the docs commit that follows this one (the convention set by runtime-A8
-through A16 and text-channels B1 to B5: a hash cannot be written into the commit that carries it).
-Message: `test(text): sms and chat scenarios; ci for the edge worker; tenant text sync`.
+Commit: a060cf7 `test(text): sms and chat scenarios; ci for the edge worker; tenant text sync`
+(the hash is written in by the docs commit that follows it — the convention set by runtime-A8
+through A16 and text-channels B1 to B5, since a hash cannot be written into the commit that
+carries it).
 
 Tests: `uv run pytest tests/test_text_scenarios.py tests/test_edge_sync.py -q` -> 30/30
 (21 of them seen failing first — 11 in `test_text_scenarios.py`, all 10 in `test_edge_sync.py`;
