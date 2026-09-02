@@ -2,7 +2,7 @@
 
 Status: done
 
-Commit: <pending>
+Commit: 8961121
 
 Tests: `uv run pytest tests/test_ops_cost_report.py -q` -> 22/22; full suite
 `uv run pytest -q` -> 772 passed, 1 skipped, 1 failed (773 collected excluding the skip);
