@@ -1,7 +1,7 @@
 # portal Task C7: Security and audit hardening
 
 Status: done with deviations
-Commit: <filled in below>
+Commit: 38d5c81
 Tests: `cd portal && npm run test:unit` -> 71/71 (45 of them new here); `cd portal/e2e-tests && RUNTIME_INTERNAL_URL=… npx playwright test tests/security.spec.ts` -> 9/9; full portal suite -> 207/207 (`npx playwright test` 66, `wasp test client run` 70, `npm run test:unit` 71), green twice in a row, plus `wasp build` and `npx tsc -p tsconfig.src.json --noEmit` clean
 
 Interfaces produced:
