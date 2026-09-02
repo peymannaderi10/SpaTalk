@@ -74,10 +74,9 @@ Named after the behaviours the plan lists:
 - **`sent_at` is written from `ctx.clock`, not from the database's `now()`.** The column keeps its
   `server_default`, but the handler passes `sent_at=ctx.clock.now()` explicitly, because the
   24-hour window is decided against the application clock and a `FixedClock` test would otherwise
-  compare a fixed `now()` against a real wall-clock row. Evidence: with the server default,
-  `test_a_missed_call_a_day_later_is_texted_back_again` fails — the row's real timestamp sits
-  inside `clock.now() + 25 h - 24 h`. Evidence: with `s.add(Textback(tenant_id=tenant_id,
-  phone=to))`, `uv run pytest tests/test_textback.py -q` -> `1 failed, 17 passed`,
+  compare a fixed `now()` against a real wall-clock row: the row's real timestamp sits inside
+  `clock.now() + 25 h - 24 h`, so the day-later call reads as already texted. Evidence: with
+  `s.add(Textback(tenant_id=tenant_id, phone=to))`, `uv run pytest tests/test_textback.py -q` -> `1 failed, 17 passed`,
   `FAILED test_a_missed_call_a_day_later_is_texted_back_again`, log line
   `caller +19055550101 was already texted back today`; with `sent_at=now`, `18 passed`.
 - **"One of the tenant's own numbers" is checked four ways, and the comparison is on the national
