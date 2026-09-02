@@ -1,6 +1,6 @@
 # runtime-voice-ledger Task 2: Tenant configuration schema, bundle loader, Skincentrix bundle
 Status: done with deviations
-Commit: <hash>
+Commit: 6a8f47c2414c056f7fa7a3430270a385958ea20c (this line was filled in by the follow-up docs commit; the implementation commit is the one named)
 Tests: `uv run pytest tests/test_tenant_bundle.py -v` -> 5/5; full suite `uv run pytest -q` -> 27/27; `uv run ruff check spatalk tests` -> clean (`scenarios/` does not exist yet)
 Interfaces produced: `spatalk.tenants.schema` — `TenantConfig` (`.id .name .public_phone .timezone .jurisdiction .integration_tier .fulfilment .retention_days .recording_enabled .hours .holidays .voice_numbers .sms_from_number .transfer_number .booking_url_default .persona .services .knowledge .scripts .lexicons .escalation .delivery .social`, `.service(service_id) -> Service | None`), `Service`, `Persona`, `Scripts`, `SocialSettings`, `Lexicons`, `Destination`, `Delivery`, `Escalation`, `WEEKDAYS`, `BANNED_SCRIPT_WORDS`; `spatalk.tenants.bundle` — `load_bundle(path) -> TenantConfig`, `export_bundle(cfg, path)`, `config_to_json(cfg) -> dict`, `config_from_json(d) -> TenantConfig`, `FILES`
 
