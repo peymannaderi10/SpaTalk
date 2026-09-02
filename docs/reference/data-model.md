@@ -182,13 +182,26 @@ Index: `(tenant_id, phone, sent_at desc)`.
 | tenant_id, provider, sender_id | text | composite PK |
 | last_inbound_at | timestamptz | 24-hour window anchor |
 
-### ops_runs, deletion_receipts, audit_reports, alert_log, provider_invoices [operations plan]
+### alert_log [operations plan, Task E1]
+
+Split out of the table below because it is the first operations table that exists: E1's loop
+guard writes a row per refused self-call, and E7's `alerts.notify` deduplicates on `key`.
+
+| column | type | notes |
+|---|---|---|
+| id | bigserial PK | |
+| key | text | the incident identity, e.g. `loop_guard:<tenant>:<E.164>`; what dedup keys on |
+| subject | text | the one-line summary the alert email carries |
+| sent_at | timestamptz | default now |
+
+Index: `(key, sent_at desc)`.
+
+### ops_runs, deletion_receipts, audit_reports, provider_invoices [operations plan]
 | table | columns |
 |---|---|
 | ops_runs | id, kind, started_at, finished_at, ok bool, summary jsonb |
 | deletion_receipts | id, tenant_id, kind (`messages`, `conversations`, `items`, `usage_events`), count int, cutoff timestamptz, run_at |
 | audit_reports | id, day date, tenant_id, report jsonb, created_at; unique `(day, tenant_id)` |
-| alert_log | id, key text, subject text, sent_at; index `(key, sent_at desc)` |
 | provider_invoices | id, provider text, month text `YYYY-MM`, amount_cad numeric(12,2), entered_at; unique `(provider, month)` |
 
 ## Schema `public` (portal, Prisma) [portal plan]

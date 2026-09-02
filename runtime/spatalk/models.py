@@ -211,3 +211,23 @@ class Textback(Base):
     tenant_id: Mapped[str] = mapped_column(String(64))
     phone: Mapped[str] = mapped_column(String(32))
     sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+# --- operations (operations plan, Task E1) ---------------------------------------------
+
+
+class AlertLog(Base):
+    """Every operational alert the runtime raised, and when.
+
+    Task E1 writes one row per blocked self-call so the founder can see a bad forwarding
+    chain the morning after. Task E7's `alerts.notify` reads the same table to deduplicate
+    an alert per `key` for six hours, which is why the key is the caller-supplied identity
+    of the incident rather than a message.
+    """
+
+    __tablename__ = "alert_log"
+    __table_args__ = (Index("ix_alert_key_sent", "key", "sent_at"),)
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    key: Mapped[str] = mapped_column(String(200))
+    subject: Mapped[str] = mapped_column(String(400))
+    sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

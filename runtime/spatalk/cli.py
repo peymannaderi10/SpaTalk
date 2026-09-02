@@ -19,10 +19,12 @@ tenant = typer.Typer()
 numbers = typer.Typer()
 items = typer.Typer()
 edge = typer.Typer()
+texml = typer.Typer()          # carrier-side TeXML the founder pastes (operations plan, E1)
 app.add_typer(tenant, name="tenant")
 app.add_typer(numbers, name="numbers")
 app.add_typer(items, name="items")
 app.add_typer(edge, name="edge")
+app.add_typer(texml, name="texml")
 
 
 def _ctx():
@@ -147,3 +149,19 @@ def edge_sync_texts(worker_url: str, key: str = "", dry_run: bool = False):
     for number, entry in texts.items():
         typer.echo(f"{number} -> {entry['tenant_id']}: {entry['text']}")
     typer.echo(f"{len(texts)} number(s) {'collected' if dry_run else 'synced'}")
+
+
+# --- carrier failover (operations plan, Task E1) ------------------------------
+# When Telnyx cannot reach this runtime at all, it falls back to a TeXML Bin it hosts
+# itself. The wording still has to be the tenant's own `scripts.failover`, so it is printed
+# from the live config here and pasted into Telnyx by hand: `docs/runbooks/failover.md`.
+
+
+@texml.command("failover-bin")
+def texml_failover_bin(tenant_id: str):
+    """Print the TeXML Bin body to paste as the TeXML application's Failover URL."""
+    from spatalk.voice.texml import failover_bin
+
+    ctx = _ctx()
+    cfg = asyncio.run(ctx.registry.get(tenant_id))
+    typer.echo(failover_bin(cfg, ctx.clock.now()))
