@@ -299,3 +299,24 @@ class AuditReport(Base):
     tenant_id: Mapped[str] = mapped_column(String(64))
     report: Mapped[dict] = mapped_column(JSONB, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+# --- whatsapp (plan W) -----------------------------------------------------------------
+
+
+class WhatsAppWindow(Base):
+    """When a staff number last wrote to the platform number: the 24-hour window anchor.
+
+    Meta lets a business send free-form text and interactive buttons only inside 24 hours of
+    the person's own last inbound message; outside it, only an approved template goes
+    through. Delivery reads this row to choose between the two, so the rule is enforced in
+    code rather than assumed (whatsapp plan, Global Constraints).
+
+    Separate from ``meta_windows`` because that table is keyed by an Instagram or Page-scoped
+    sender id, and this one by an E.164 phone number that belongs to no Meta account.
+    """
+
+    __tablename__ = "whatsapp_windows"
+    tenant_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    phone: Mapped[str] = mapped_column(String(32), primary_key=True)
+    last_inbound_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

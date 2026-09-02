@@ -56,3 +56,14 @@ def test_json_roundtrip():
     from spatalk.tenants.bundle import config_from_json, config_to_json, load_bundle
     cfg = load_bundle(BUNDLE)
     assert config_from_json(config_to_json(cfg)) == cfg
+
+
+def test_bundle_whatsapp_destination_names_an_env_var_not_a_phone_number():
+    """whatsapp plan, Task W1: a staff number is personal data and stays out of the repo."""
+    from spatalk.tenants.bundle import load_bundle
+    cfg = load_bundle(BUNDLE)
+    wa = [d for d in cfg.delivery.destinations if d.kind == "whatsapp"]
+    assert wa, "skincentrix has no whatsapp destination"
+    assert wa[0].address_env == "SKINCENTRIX_WHATSAPP_STAFF"
+    assert wa[0].address is None
+    assert wa[0].address_env.isupper() and not any(c.isdigit() for c in wa[0].address_env)

@@ -96,6 +96,22 @@ class Settings(BaseSettings):
     # where reasoning time is free but a per-token price is not.
     judge_model: str = "gemini-2.5-flash"
 
+    # --- whatsapp (plan W) ----------------------------------------------------------------
+    # One platform number fronts every tenant at MVP: the id Meta assigns the WhatsApp
+    # business number, and the token the Cloud API calls carry. Empty means the runtime has
+    # no WhatsApp door at all, which is a working configuration, not an error.
+    whatsapp_phone_number_id: str = ""
+    whatsapp_access_token: str = ""
+    # The HMAC key for POST /whatsapp/webhook and the string echoed back on the GET
+    # handshake. The app secret is usually the same value as FACEBOOK_APP_SECRET.
+    whatsapp_app_secret: str = ""
+    whatsapp_verify_token: str = ""
+    # Approved message templates, used whenever the 24-hour window is shut. Names, not
+    # wording: the wording lives in WhatsApp Manager and is what Meta approved.
+    whatsapp_template_item: str = "front_desk_item"
+    whatsapp_template_digest: str = "front_desk_digest"
+    whatsapp_template_lang: str = "en"
+
     # --- hermetic settings (QA gate B, finding 1) -----------------------------------------
     def __init__(self, **values: Any) -> None:
         """Honour SPATALK_NO_ENV_FILE=1 by not reading ``.env`` at all.

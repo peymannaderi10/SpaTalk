@@ -43,5 +43,7 @@ delivery:
     - kind: slack
       webhook_env: SKINCENTRIX_SLACK_WEBHOOK
       channel_id: null       # Slack channel id; set with SLACK_BOT_TOKEN for takeover threads
+    - kind: whatsapp
+      address_env: SKINCENTRIX_WHATSAPP_STAFF   # env var NAME; the staff E.164 never lands here
   digest_time_local: "07:30"
   staff_phone_numbers: []

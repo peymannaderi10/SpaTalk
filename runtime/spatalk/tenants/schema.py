@@ -133,9 +133,15 @@ class Lexicons(BaseModel, frozen=True):
 
 
 class Destination(BaseModel, frozen=True):
-    kind: Literal["slack", "email", "webhook"]
+    kind: Literal["slack", "email", "webhook", "whatsapp"]
     webhook_env: str | None = None      # slack / webhook: env var NAME holding the URL
     address: str | None = None          # email
+    # --- whatsapp (plan W) ---
+    # A staff WhatsApp number is a personal phone number, so it is never written into a
+    # bundle: the destination names the environment variable that holds the E.164 value,
+    # exactly as a Slack destination names the variable holding its webhook URL. Email may
+    # use it too, for a mailbox a tenant would rather not commit.
+    address_env: str | None = None
     channel_id: str | None = None       # slack channel id, used with a bot token (B5)
     urgent_only: bool = False
 
@@ -143,8 +149,10 @@ class Destination(BaseModel, frozen=True):
     def _check(self):
         if self.kind in ("slack", "webhook") and not self.webhook_env:
             raise ValueError(f"{self.kind} destination needs webhook_env")
-        if self.kind == "email" and not self.address:
-            raise ValueError("email destination needs address")
+        if self.kind == "email" and not (self.address or self.address_env):
+            raise ValueError("email destination needs address or address_env")
+        if self.kind == "whatsapp" and not self.address_env:
+            raise ValueError("whatsapp destination needs address_env")
         return self
 
 

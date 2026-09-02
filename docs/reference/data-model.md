@@ -182,6 +182,17 @@ Index: `(tenant_id, phone, sent_at desc)`.
 | tenant_id, provider, sender_id | text | composite PK |
 | last_inbound_at | timestamptz | 24-hour window anchor |
 
+### whatsapp_windows [whatsapp plan, W1]
+
+Separate from `meta_windows` because that table is keyed by an Instagram or Page-scoped
+sender id and this one by an E.164 phone number, which belongs to no Meta account. Written
+by the webhook on any inbound message [W2], read by `deliver.whatsapp` to choose between
+free-form interactive buttons (window open) and an approved template (window shut).
+
+| tenant_id | text | PK with phone |
+| phone | text | E.164 with plus |
+| last_inbound_at | timestamptz | 24-hour customer-service window anchor |
+
 ### alert_log [operations plan, Task E1]
 
 Split out of the table below because it is the first operations table that exists: E1's loop

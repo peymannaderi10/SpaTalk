@@ -1,5 +1,8 @@
 async def test_item_delivery_enqueues_per_destination_and_sends(sf, registry, fixed_clock, monkeypatch):
     monkeypatch.setenv("SKINCENTRIX_SLACK_WEBHOOK", "https://hooks.slack.com/services/T/B/x")
+    # The bundle carries three destinations since the whatsapp plan (W1): email, Slack and
+    # a WhatsApp staff number named by environment variable.
+    monkeypatch.setenv("SKINCENTRIX_WHATSAPP_STAFF", "+15195550123")
     from spatalk import jobs
     from spatalk.brain.ports import ItemDraft
     from spatalk.brain.requests import ContactInfo, ConversationRef
@@ -19,7 +22,11 @@ async def test_item_delivery_enqueues_per_destination_and_sends(sf, registry, fi
     rec = await ledger.create_item(ref, ItemDraft(type="callback", urgency="normal",
                                                   contact=ContactInfo(name="Dana", phone="+19055550101")))
     ctx = jobs.JobContext(sf=sf, clock=fixed_clock, registry=registry, ledger=ledger, delivery=delivery, settings=settings)
-    assert await jobs.run_once(sf, ctx) == 2
+    assert await jobs.run_once(sf, ctx) == 3
+    # No window row for this number, so WhatsApp uses the approved template (W1).
+    assert len(delivery.whatsapp_templates) == 1
+    assert delivery.whatsapp_templates[0]["to"] == "+15195550123"
+    assert delivery.whatsapp_templates[0]["template"] == "front_desk_item"
     assert len(delivery.emails) == 1 and delivery.emails[0][0] == "info@skincentrix.com"
     assert "Dana" in delivery.emails[0][2] and "https://api.test/a/" in delivery.emails[0][2]
     assert len(delivery.slack) == 1 and delivery.slack[0][0].startswith("https://hooks.slack.com")

@@ -40,7 +40,7 @@ tenants/<id>/
 | escalation.urgent_minutes | int | default 15 | |
 | escalation.standard_business_hours | int | default 3 | |
 | escalation.after_hours_clinical_contact | string or null | | informational |
-| delivery.destinations[] | list | yes | each: `kind` (`slack`, `email`, `webhook`), `webhook_env` (env var name for slack or webhook), `address` (email), `channel_id` (Slack channel id when a bot token is used) [B5], `urgent_only` bool |
+| delivery.destinations[] | list | yes | each: `kind` (`slack`, `email`, `webhook`, `whatsapp` [W1]), `webhook_env` (env var name for slack or webhook), `address` (email), `address_env` (env var name holding the value: required for `whatsapp`, an alternative to `address` for `email`) [W1], `channel_id` (Slack channel id when a bot token is used) [B5], `urgent_only` bool |
 | delivery.digest_time_local | `HH:MM` | default 07:30 | |
 | delivery.staff_phone_numbers | list E.164 | default [] | staff who may relay by SMS [B5] |
 | social.comment_mode | `off` `keyword` `all` | default `keyword` | [D2] |

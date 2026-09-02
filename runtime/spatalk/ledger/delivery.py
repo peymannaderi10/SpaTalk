@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
 from typing import Protocol
 
@@ -13,9 +14,10 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from spatalk import jobs
 from spatalk.brain.hours import humanize_due
+from spatalk.conversations import record_usage
 from spatalk.ledger.links import sign_action
-from spatalk.models import Item
-from spatalk.tenants.schema import TenantConfig
+from spatalk.models import Item, WhatsAppWindow
+from spatalk.tenants.schema import Destination, TenantConfig
 from spatalk.text import takeover
 
 TYPE_LABELS = {
@@ -155,6 +157,231 @@ def build_email(
     return subject, body
 
 
+# --- whatsapp (plan W) ---------------------------------------------------------------------
+# Meta's own limits, asserted rather than hoped for: an interactive message body is at most
+# 1,024 characters, a reply button carries at most three buttons, each title at most 20
+# characters and each id at most 256. A template parameter may not contain a newline, a tab
+# or a run of more than four spaces.
+WHATSAPP_BODY_LIMIT = 1024
+WHATSAPP_TEXT_LIMIT = 4096
+WHATSAPP_MAX_BUTTONS = 3
+WHATSAPP_TITLE_LIMIT = 20
+WHATSAPP_BUTTON_ID_LIMIT = 256
+ESCALATED_PREFIX = "ESCALATED, past due: "
+_WHITESPACE = re.compile(r"\s+")
+
+
+def whatsapp_param(value: str) -> str:
+    """One template parameter: a single line, no tabs, no long space runs, under the cap."""
+    return _WHITESPACE.sub(" ", str(value)).strip()[:WHATSAPP_BODY_LIMIT]
+
+
+def build_whatsapp_text(
+    item: Item,
+    cfg: TenantConfig,
+    links: ActionLinks,
+    now: datetime | None = None,
+    escalation: bool = False,
+) -> str:
+    """The staff message: the item's own fields, the fixed labels, and the transcript link.
+
+    Every line comes from :func:`_summary`, which reads structured columns only. No model
+    output reaches a staff phone (CLAUDE.md non-negotiable 1).
+    """
+    now = now or datetime.now(timezone.utc)
+    lines = _summary(item, cfg, now)
+    head = (ESCALATED_PREFIX if escalation else "") + (
+        "URGENT: " if item.urgency == "urgent" else ""
+    )
+    body = "\n".join([f"{head}#{item.id} {lines[0]}", *lines[1:]])
+    return f"{body}\nTranscript: {links.transcript_url}"[:WHATSAPP_BODY_LIMIT]
+
+
+def build_whatsapp_buttons(item: Item, links: ActionLinks) -> list[tuple[str, str]]:
+    """The two reply buttons, each carrying the signed token the webhook verifies (W2)."""
+    return [
+        (f"ack:{links.ack_token}", "Acknowledge"),
+        (f"resolve:{links.resolve_token}", "Resolve"),
+    ]
+
+
+def build_whatsapp_template_params(
+    item: Item,
+    cfg: TenantConfig,
+    links: ActionLinks,
+    now: datetime | None = None,
+    escalation: bool = False,
+) -> list[str]:
+    """The five body parameters of the approved ``front_desk_item`` template.
+
+    "{{1}} via {{2}}. Who: {{3}}. Due {{4}}. Transcript: {{5}}" — see
+    docs/runbooks/whatsapp-setup.md. Order is the template's; wording is Meta-approved and
+    lives there, not here.
+    """
+    now = now or datetime.now(timezone.utc)
+    label = (ESCALATED_PREFIX if escalation else "") + (
+        "URGENT: " if item.urgency == "urgent" else ""
+    ) + TYPE_LABELS.get(item.type, item.type)
+    who = (
+        f"{item.contact_name or 'name not given'} "
+        f"{item.contact_phone or ''} {item.contact_email or ''}"
+    )
+    due = humanize_due(item.due_at, now, cfg.timezone, item.urgency == "urgent")
+    return [whatsapp_param(x) for x in (label, item.channel, who, due, links.transcript_url)]
+
+
+class WhatsAppPort(Protocol):
+    """What the WhatsApp Cloud API is used for, and nothing more."""
+
+    async def send_text(self, to: str, body: str) -> str: ...
+
+    async def send_buttons(self, to: str, body: str, buttons: list[tuple[str, str]]) -> str: ...
+
+    async def send_template(
+        self,
+        to: str,
+        template: str,
+        lang: str,
+        body_params: list[str],
+        button_params: list[str],
+    ) -> str: ...
+
+
+class WhatsAppDelivery:
+    """The Cloud API sender: one POST to ``/{phone_number_id}/messages`` per message.
+
+    Every call goes through the :class:`~spatalk.social.graph.GraphClient` seam, so tests
+    assert the payload against :class:`FakeGraphClient` and never reach Meta.
+    """
+
+    def __init__(self, settings, graph=None):
+        self._settings = settings
+        self._graph = graph
+
+    @property
+    def graph(self):
+        if self._graph is None:
+            from spatalk.social.graph import HttpGraphClient
+
+            self._graph = HttpGraphClient(
+                f"https://graph.facebook.com/{self._settings.meta_graph_version}",
+                lambda: self._settings.whatsapp_access_token,
+            )
+        return self._graph
+
+    async def _send(self, payload: dict) -> str:
+        path = f"/{self._settings.whatsapp_phone_number_id}/messages"
+        answer = await self.graph.post(path, json={"messaging_product": "whatsapp", **payload})
+        messages = answer.get("messages") or [{}]
+        return str(messages[0].get("id", ""))
+
+    async def send_text(self, to: str, body: str) -> str:
+        return await self._send(
+            {
+                "recipient_type": "individual",
+                "to": to,
+                "type": "text",
+                "text": {"preview_url": False, "body": body[:WHATSAPP_TEXT_LIMIT]},
+            }
+        )
+
+    async def send_buttons(self, to: str, body: str, buttons: list[tuple[str, str]]) -> str:
+        if not 1 <= len(buttons) <= WHATSAPP_MAX_BUTTONS:
+            raise ValueError(f"whatsapp allows 1 to {WHATSAPP_MAX_BUTTONS} reply buttons")
+        for button_id, title in buttons:
+            if len(title) > WHATSAPP_TITLE_LIMIT:
+                raise ValueError(f"whatsapp button title over {WHATSAPP_TITLE_LIMIT} chars")
+            if len(button_id) > WHATSAPP_BUTTON_ID_LIMIT:
+                raise ValueError(f"whatsapp button id over {WHATSAPP_BUTTON_ID_LIMIT} chars")
+        return await self._send(
+            {
+                "recipient_type": "individual",
+                "to": to,
+                "type": "interactive",
+                "interactive": {
+                    "type": "button",
+                    "body": {"text": body[:WHATSAPP_BODY_LIMIT]},
+                    "action": {
+                        "buttons": [
+                            {"type": "reply", "reply": {"id": bid, "title": title}}
+                            for bid, title in buttons
+                        ]
+                    },
+                },
+            }
+        )
+
+    async def send_template(
+        self,
+        to: str,
+        template: str,
+        lang: str,
+        body_params: list[str],
+        button_params: list[str],
+    ) -> str:
+        components: list[dict] = [
+            {
+                "type": "body",
+                "parameters": [{"type": "text", "text": p} for p in body_params],
+            }
+        ]
+        for index, payload in enumerate(button_params):
+            components.append(
+                {
+                    "type": "button",
+                    "sub_type": "quick_reply",
+                    "index": str(index),
+                    "parameters": [{"type": "payload", "payload": payload}],
+                }
+            )
+        return await self._send(
+            {
+                "recipient_type": "individual",
+                "to": to,
+                "type": "template",
+                "template": {
+                    "name": template,
+                    "language": {"code": lang},
+                    "components": components,
+                },
+            }
+        )
+
+
+async def whatsapp_window_open(
+    sf: async_sessionmaker, tenant_id: str, phone: str, now: datetime
+) -> bool:
+    """True when this number wrote to us inside the last 24 hours.
+
+    Read by delivery and written by the webhook (W2), so the two agree on one rule.
+    """
+    async with sf() as s:
+        row = await s.get(WhatsAppWindow, {"tenant_id": tenant_id, "phone": phone})
+        if row is None:
+            return False
+        return row.last_inbound_at > now - timedelta(hours=24)
+
+
+def destination_address(dest: Destination) -> str:
+    """The address a destination resolves to now: a literal, or the environment it names."""
+    if dest.address:
+        return dest.address
+    if dest.address_env:
+        return os.environ.get(dest.address_env, "")
+    return ""
+
+
+def whatsapp_port(ctx: jobs.JobContext) -> WhatsAppPort:
+    """The context's delivery object when it speaks WhatsApp, a real sender otherwise.
+
+    Tests inject :class:`MemoryDelivery`, which does; production injects the Slack/email
+    delivery, which does not, and gets a :class:`WhatsAppDelivery` built from settings.
+    """
+    if getattr(ctx.delivery, "send_buttons", None) is not None:
+        return ctx.delivery
+    return WhatsAppDelivery(ctx.settings, getattr(ctx, "graph", None))
+
+
 class DeliveryPort(Protocol):
     async def send_slack(self, webhook_url: str, blocks: list[dict], text: str) -> None: ...
 
@@ -233,12 +460,46 @@ class MemoryDelivery:
     def __init__(self):
         self.slack: list[tuple[str, list[dict], str]] = []
         self.emails: list[tuple[str, str, str]] = []
+        # --- whatsapp (plan W) ---
+        # Every WhatsApp message in order: (to, body or template name, buttons or params).
+        # `whatsapp_templates` keeps the full template record, which a tuple cannot hold.
+        self.whatsapp: list[tuple[str, str, list]] = []
+        self.whatsapp_templates: list[dict] = []
 
     async def send_slack(self, webhook_url, blocks, text):
         self.slack.append((webhook_url, blocks, text))
 
     async def send_email(self, to, subject, body):
         self.emails.append((to, subject, body))
+
+    # --- whatsapp (plan W) ---
+    async def send_text(self, to: str, body: str) -> str:
+        self.whatsapp.append((to, body, []))
+        return f"wamid.mem{len(self.whatsapp)}"
+
+    async def send_buttons(self, to: str, body: str, buttons: list[tuple[str, str]]) -> str:
+        self.whatsapp.append((to, body, list(buttons)))
+        return f"wamid.mem{len(self.whatsapp)}"
+
+    async def send_template(
+        self,
+        to: str,
+        template: str,
+        lang: str,
+        body_params: list[str],
+        button_params: list[str],
+    ) -> str:
+        self.whatsapp.append((to, template, list(body_params)))
+        self.whatsapp_templates.append(
+            {
+                "to": to,
+                "template": template,
+                "lang": lang,
+                "body_params": list(body_params),
+                "button_params": list(button_params),
+            }
+        )
+        return f"wamid.mem{len(self.whatsapp)}"
 
 
 class MemoryBotDelivery(MemoryDelivery):
@@ -288,6 +549,20 @@ async def schedule_item_delivery(
                     "item_id": item.id,
                     "tenant_id": cfg.id,
                     "to": dest.address,
+                    # A mailbox a tenant would rather not commit is named, not written (W1).
+                    "to_env": dest.address_env,
+                    "escalation": escalation,
+                },
+            )
+        # --- whatsapp (plan W) ---
+        elif dest.kind == "whatsapp":
+            await jobs.enqueue(
+                sf,
+                "deliver.whatsapp",
+                {
+                    "item_id": item.id,
+                    "tenant_id": cfg.id,
+                    "to_env": dest.address_env,
                     "escalation": escalation,
                 },
             )
@@ -351,12 +626,56 @@ async def _deliver_slack_in_thread(
 
 @jobs.register_handler("deliver.email")
 async def _deliver_email(payload: dict, ctx: jobs.JobContext) -> None:
+    to = payload.get("to") or os.environ.get(payload.get("to_env") or "", "")
+    if not to:
+        logger.warning("email destination env {} not set; skipping", payload.get("to_env"))
+        return
     item = await ctx.ledger.get(payload["item_id"])
     cfg = await ctx.registry.get(payload["tenant_id"])
     subject, body = build_email(item, cfg, build_links(ctx.settings, item), ctx.clock.now())
     if payload.get("escalation"):
-        subject = "ESCALATED, past due: " + subject
-    await ctx.delivery.send_email(payload["to"], subject, body)
+        subject = ESCALATED_PREFIX + subject
+    await ctx.delivery.send_email(to, subject, body)
+
+
+# --- whatsapp (plan W) ---------------------------------------------------------------------
+
+
+@jobs.register_handler("deliver.whatsapp")
+async def _deliver_whatsapp(payload: dict, ctx: jobs.JobContext) -> None:
+    """One tracked item to one staff number, with Acknowledge and Resolve as reply buttons.
+
+    Inside Meta's 24-hour customer-service window the message is free-form text plus the two
+    interactive buttons; outside it, the approved template carries the same fields and the
+    same two quick replies. There is no third path: a send never silently disappears.
+    """
+    to_env = payload.get("to_env") or ""
+    to = os.environ.get(to_env, "")
+    if not to:
+        logger.warning("whatsapp number env {} not set; skipping", to_env)
+        return
+    item = await ctx.ledger.get(payload["item_id"])
+    cfg = await ctx.registry.get(payload["tenant_id"])
+    links = build_links(ctx.settings, item)
+    now = ctx.clock.now()
+    escalation = bool(payload.get("escalation"))
+    port = whatsapp_port(ctx)
+
+    if await whatsapp_window_open(ctx.sf, cfg.id, to, now):
+        await port.send_buttons(
+            to,
+            build_whatsapp_text(item, cfg, links, now, escalation),
+            build_whatsapp_buttons(item, links),
+        )
+    else:
+        await port.send_template(
+            to,
+            ctx.settings.whatsapp_template_item,
+            ctx.settings.whatsapp_template_lang,
+            build_whatsapp_template_params(item, cfg, links, now, escalation),
+            [button_id for button_id, _ in build_whatsapp_buttons(item, links)],
+        )
+    await record_usage(ctx.sf, cfg.id, item.conversation_id, "whatsapp", "meta", "wa_out", 1)
 
 
 @jobs.register_handler("digest.email")
@@ -370,8 +689,38 @@ async def _digest_email(payload: dict, ctx: jobs.JobContext) -> None:
         lines.append(
             f"#{it.id} " + " | ".join(_summary(it, cfg, now)) + f"\n  resolve: {links.resolve_url}"
         )
+    body = "\n".join(lines)
     for dest in cfg.delivery.destinations:
         if dest.kind == "email":
+            address = destination_address(dest)
+            if not address:
+                logger.warning("email destination env {} not set; skipping", dest.address_env)
+                continue
             await ctx.delivery.send_email(
-                dest.address, f"{cfg.name} front desk: morning digest", "\n".join(lines)
+                address, f"{cfg.name} front desk: morning digest", body
             )
+        # --- whatsapp (plan W) ---
+        elif dest.kind == "whatsapp":
+            await _digest_whatsapp(ctx, cfg, dest, body, now)
+
+
+async def _digest_whatsapp(
+    ctx: jobs.JobContext, cfg: TenantConfig, dest: Destination, body: str, now: datetime
+) -> None:
+    """The same digest, to a staff WhatsApp number: text inside the window, template outside."""
+    to = destination_address(dest)
+    if not to:
+        logger.warning("whatsapp number env {} not set; skipping", dest.address_env)
+        return
+    port = whatsapp_port(ctx)
+    if await whatsapp_window_open(ctx.sf, cfg.id, to, now):
+        await port.send_text(to, body[:WHATSAPP_TEXT_LIMIT])
+    else:
+        await port.send_template(
+            to,
+            ctx.settings.whatsapp_template_digest,
+            ctx.settings.whatsapp_template_lang,
+            [whatsapp_param(body)],
+            [],
+        )
+    await record_usage(ctx.sf, cfg.id, None, "whatsapp", "meta", "wa_out", 1)

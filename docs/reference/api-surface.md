@@ -101,6 +101,7 @@ An echo has `"message": {"mid": "...", "text": "...", "is_echo": true}` with sen
 - Page message: `POST https://graph.facebook.com/v21.0/{page_id}/messages` `{"recipient": {"id": "<PSID>"}, "messaging_type": "RESPONSE", "message": {"text": "..."}}`.
 - Page private reply to a comment: `POST https://graph.facebook.com/v21.0/{comment_id}/private_replies` `{"message": "..."}`; public: `POST /{comment_id}/comments`.
 - Token refresh: `GET https://graph.instagram.com/refresh_access_token?grant_type=ig_refresh_token&access_token=...`.
+- WhatsApp staff message [W1]: `POST https://graph.facebook.com/v21.0/{phone_number_id}/messages`, bearer token, body always carrying `"messaging_product": "whatsapp"`, `"recipient_type": "individual"` and `"to"` in E.164. Three shapes: `"type": "text"` with `{"text": {"preview_url": false, "body": "..."}}`; `"type": "interactive"` with `{"interactive": {"type": "button", "body": {"text": "..."}, "action": {"buttons": [{"type": "reply", "reply": {"id": "ack:<token>", "title": "Acknowledge"}}]}}}` (max 3 buttons, title max 20 chars, id max 256, body max 1,024); `"type": "template"` with `{"template": {"name": "front_desk_item", "language": {"code": "en"}, "components": [{"type": "body", "parameters": [{"type": "text", "text": "..."}]}, {"type": "button", "sub_type": "quick_reply", "index": "0", "parameters": [{"type": "payload", "payload": "ack:<token>"}]}]}}`. A template parameter may not contain a newline, a tab or a run of more than four spaces. The answer is `{"messages": [{"id": "wamid...."}]}`. Text and interactive are legal only inside the 24-hour customer-service window (`whatsapp_windows`); outside it, only the approved template.
 
 ### Stripe webhook events used
 `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted`, `invoice.paid`, `invoice.payment_failed`. Verify with `STRIPE_WEBHOOK_SECRET`.
@@ -129,6 +130,8 @@ Runtime `runtime/.env`:
 | TURNSTILE_SITE_KEY, TURNSTILE_SECRET_KEY | B4 | widget |
 | INTERNAL_API_KEY | C3 | portal |
 | INSTAGRAM_APP_ID, INSTAGRAM_APP_SECRET, FACEBOOK_APP_ID, FACEBOOK_APP_SECRET, INSTAGRAM_WEBHOOK_VERIFY_TOKEN, META_TOKEN_ENCRYPTION_KEY, META_GRAPH_VERSION | D | social |
+| WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_ACCESS_TOKEN, WHATSAPP_APP_SECRET, WHATSAPP_VERIFY_TOKEN, WHATSAPP_TEMPLATE_ITEM, WHATSAPP_TEMPLATE_DIGEST, WHATSAPP_TEMPLATE_LANG | W1 | WhatsApp staff delivery |
+| `<TENANT>_WHATSAPP_STAFF` per tenant | W1 | the staff E.164 a `whatsapp` destination names; never written into a bundle |
 | OPS_EMAIL, OPS_SMS_NUMBER, SENTRY_DSN, LOG_FORMAT, GIT_COMMIT | E7 | operations |
 | R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_ENDPOINT, R2_BUCKET | E2 | backups (WAL-G reads them as AWS_* in `walg.env`) |
 
