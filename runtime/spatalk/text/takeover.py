@@ -193,6 +193,13 @@ async def relay_from_staff(ctx, conversation_id: uuid.UUID, text: str, staff_id:
     elif conv.channel == "chat":
         delivered = await deliver_to_chat(conv.tenant_id, conv.external_ref or "", text)
         note = None if delivered else WAITING_NOTE
+    elif conv.channel in ("instagram", "messenger"):
+        # Meta channels go out through the Graph API (instagram plan, Task D2). Imported
+        # here, not at module level, so `social` may import `text` and not the other way.
+        from spatalk.social.handlers import relay_social
+
+        why = await relay_social(ctx, conv, text)
+        note = None if why is None else UNDELIVERED_NOTE.format(why=why)
     else:
         logger.warning("staff relay on channel {} is not wired yet; stored only", conv.channel)
         note = UNDELIVERED_NOTE.format(why=f"a {conv.channel} conversation cannot be replied to")

@@ -11,6 +11,9 @@ from spatalk.tenants.schema import WEEKDAYS, TenantConfig
 CHANNEL_RULES = {
     "sms": "Reply in under 300 characters, plain text, no lists.",
     "chat": "Reply in under 500 characters, plain text.",
+    # Social channels (instagram plan, Task D2 and Task D3).
+    "instagram": "Reply in under 500 characters, plain text, no emoji unless the customer used one.",
+    "messenger": "Reply in under 500 characters, plain text, no emoji unless the customer used one.",
 }
 
 DAY_NAMES = {

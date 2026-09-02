@@ -35,6 +35,16 @@ class JobContext:
     graph: Any = None
 
 
+# --- social channels (instagram plan, Task D2) ---
+class DeadLetter(Exception):
+    """A failure no retry can fix: the job goes straight to `dead` with this message.
+
+    Raised by a handler that has learned the work can never succeed — a Meta 4xx that is not
+    a rate limit, for instance. Retrying such a call would repeat the same refusal five times
+    and hide the reason behind a stale `last_error`.
+    """
+
+
 def register_handler(kind: str):
     def deco(fn: Handler) -> Handler:
         _HANDLERS[kind] = fn
@@ -86,7 +96,8 @@ async def run_once(sf: async_sessionmaker, ctx: JobContext, limit: int = 10) -> 
             except Exception as e:  # noqa: BLE001
                 job.attempts += 1
                 job.last_error = f"{type(e).__name__}: {e}"[:2000]
-                if job.attempts >= job.max_attempts:
+                # A DeadLetter says another attempt would fail the same way (Task D2).
+                if job.attempts >= job.max_attempts or isinstance(e, DeadLetter):
                     job.state = "dead"
                     logger.error("job {} {} dead: {}", job.id, job.kind, job.last_error)
                 else:
