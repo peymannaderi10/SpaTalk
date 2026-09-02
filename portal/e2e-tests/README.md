@@ -88,6 +88,24 @@ and drives it through subscribed, past due and ended; `client.spec.ts`
 subscribes its own organisation once, because every client page but the overview
 needs a live subscription and its staff member is not an agency admin.
 
+## The rate limit
+
+The server refuses more than ten attempts a minute, per address and per
+endpoint, at login, signup, password reset, email verification and the three
+invitation calls (`src/server/security.ts`). Everything the whole suite runs
+from is one address, so a spec that spends a budget spends it for every spec
+that runs in the same minute.
+
+Two things keep that from biting. Attempts that *succeed* are given back on
+those endpoints — only refused ones are held against you — so the suite's many
+good logins and signups cost nothing. And `security.spec.ts` proves the limiter
+is wired in by guessing at `/auth/email/reset-password` eleven times, which is
+the one limited endpoint no other spec touches.
+
+Sending a password-reset email and inviting a member are counted whether or not
+they succeed, because each one sends mail. A spec that needs more than ten of
+either in a minute will be refused, and that is the limiter working.
+
 ## The mail sink
 
 The suite exercises real email verification, so it needs the verification link.
