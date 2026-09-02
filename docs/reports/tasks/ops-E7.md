@@ -1,13 +1,13 @@
 # operations plan Task E7: Monitoring, error reporting and alerts
 
 Status: done with deviations
-Commit: <filled in below>
+Commit: c984cae
 Tests: `TEST_DATABASE_URL=…/spatalk_test_e7 uv run pytest -q tests/test_ops_alerts.py` -> **43/43**;
-full suite `TEST_DATABASE_URL=…/spatalk_test_e7 uv run pytest -q` -> **731 passed, 2 failed,
-1 skipped** (734). Neither failure is this task's and neither is in a file this task touched
-— one belongs to a WhatsApp plan running concurrently in the same working tree, the other is
-the rates drift E4 reported and handed to the rates owner. Proof for both under "Two failures
-this task did not cause". The skip is `test_driver.py::test_gemini_client_calls_a_tool`,
+full suite `TEST_DATABASE_URL=…/spatalk_test_e7 uv run pytest -q` -> **732 passed, 1 failed,
+1 skipped** (734). The one failure is not this task's and is not in a file this task touched:
+it is the `rates.json` drift E4 reported and handed to the rates owner. Proof under "Failures
+this task did not cause" — which also records a second failure that appeared mid-run from a
+WhatsApp plan being written in the same working tree and was gone by the final run. The skip is `test_driver.py::test_gemini_client_calls_a_tool`,
 `skipif` on `GOOGLE_API_KEY`. `uv run ruff check spatalk tests scenarios` -> All checks passed.
 
 Interfaces produced: `spatalk.ops.alerts.notify(ctx, key, subject, body) -> bool` (unchanged
@@ -152,11 +152,12 @@ signature, now with the SMS leg), `…already_alerted(ctx, key)`, `…ops_sms_fr
     redoing; it is recorded so the orchestrator is not surprised that E7's commit does not
     name the file its Files list does. Same working-tree-sharing cause as the failure below.
 
-## Two failures this task did not cause
+## Failures this task did not cause
 
 Both were reproduced in isolation and neither is in a file this task modified.
 
-1. `tests/test_delivery.py::test_item_delivery_enqueues_per_destination_and_sends` — asserts
+1. `tests/test_delivery.py::test_item_delivery_enqueues_per_destination_and_sends` — failed in
+   two intermediate runs and passes in the final one, as the concurrent agent finished. It asserts
    `run_once` processes 2 jobs and gets 3. The captured log names the cause:
    `spatalk.ledger.delivery:_deliver_whatsapp:655 - whatsapp number env
    SKINCENTRIX_WHATSAPP_STAFF not set; skipping`. A WhatsApp plan is being written in this same
@@ -206,4 +207,4 @@ working tree remain the flakiest thing about these runs, as E1's report already 
 | `uv run ruff check spatalk tests scenarios` | All checks passed |
 | `curl`-equivalent of the monitor's keyword check (`test_healthz_answers_the_two_keyword_checks_the_monitor_uses`) | `"ok":true` and `"dead_jobs":0` present in the raw body |
 | `.env.example` parsed with python-dotenv | `42 keys; 12 poisoned` before -> `42 keys; 0 poisoned` after |
-| full suite | **731 passed, 2 failed, 1 skipped** — both failures accounted for above |
+| full suite (final run) | **732 passed, 1 failed, 1 skipped** — the rates drift only; the WhatsApp failure below was gone by this run |
