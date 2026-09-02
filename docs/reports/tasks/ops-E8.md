@@ -1,7 +1,7 @@
 # operations Task E8: Security hardening in code and CI
 
 Status: done with deviations
-Commit: <pending>
+Commit: 9ff6c63
 Tests: `uv run pytest -q tests/test_ops_ratelimit.py` -> 14/14; full suite `uv run pytest -q` -> 635 passed, 1 skipped, 0 failed (the skip is the live-key voice test)
 Interfaces produced: `spatalk.http.ratelimit.Rule`, `RULES`, `TokenBucket`, `IpRateLimiter`, `client_ip`, `carries_edge_key`, `install_rate_limits`; `spatalk.http.actions.SECURITY_HEADERS`
 
