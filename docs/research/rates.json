@@ -109,6 +109,10 @@
     },
     "elevenlabs_flash": {
       "per_1m_chars": 50.0
+    },
+    "soniox_tts": {
+      "per_1m_chars": 14.1,
+      "_note": "soniox.com/pricing 2026-09-02: ~$0.70 per hour of generated speech ($4/1M input text tokens + $21.50/1M output audio tokens); converted at 825 chars per spoken minute -> $0.0117/min -> $14.1 per 1M chars. Latency unbenchmarked. No-training statement covers audio and transcripts; TTS not explicitly named."
     }
   },
   "llm": {
@@ -207,6 +211,12 @@
       "stt": "deepgram_nova3_regular",
       "tts": "elevenlabs_flash",
       "llm": "claude_haiku_45"
+    },
+    "B4 Soniox only (STT + TTS), single vendor": {
+      "tel": "telnyx_ca_conservative",
+      "stt": "soniox_rt",
+      "tts": "soniox_tts",
+      "llm": "gemini_25_flash"
     }
   },
   "text_stacks": {
