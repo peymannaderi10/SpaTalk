@@ -10,6 +10,7 @@ from sqlalchemy import select
 from spatalk import jobs
 from spatalk.ledger.delivery import schedule_item_delivery
 from spatalk.models import Tenant
+from spatalk.text.takeover import hand_back_stale
 
 
 async def escalate_breached(ctx: jobs.JobContext) -> int:
@@ -49,6 +50,8 @@ async def run_scheduler_forever(ctx: jobs.JobContext, interval_seconds: float = 
         try:
             await escalate_breached(ctx)
             await send_digests(ctx)
+            # A conversation a person took over and then left silent (Task B5).
+            await hand_back_stale(ctx)
         except Exception as e:  # noqa: BLE001
             logger.exception("scheduler error: {}", e)
         await asyncio.sleep(interval_seconds)

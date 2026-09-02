@@ -42,6 +42,11 @@ class Settings(BaseSettings):
     turnstile_site_key: str = ""
     turnstile_secret_key: str = ""
 
+    # --- human takeover (text-channels plan, Task B5) ---
+    # With a bot token, item delivery opens a Slack thread per conversation and staff can
+    # reply in it. Without one, delivery stays on the incoming webhook and there is no thread.
+    slack_bot_token: str = ""
+
 
 @lru_cache
 def get_settings() -> Settings:

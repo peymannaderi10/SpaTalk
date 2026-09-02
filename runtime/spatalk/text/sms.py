@@ -18,6 +18,7 @@ from fastapi import APIRouter, HTTPException, Request
 from loguru import logger
 
 from spatalk.brain.renderer import render_script
+from spatalk.text import takeover
 from spatalk.text.service import (
     TextConversationService,
     add_optout,
@@ -137,6 +138,15 @@ async def inbound_sms(request: Request):
     word = text.strip().lower()
     if sender and await _keyword_reply(ctx, cfg, sender, word):
         return {"ok": True, "handled": "keyword"}
+
+    # A staff phone is not a customer: `#4821 on my way` relays to that item's conversation
+    # and hands it to the person; anything else from that number gets the help text (B5).
+    if sender and sender in cfg.delivery.staff_phone_numbers:
+        if await takeover.relay_staff_sms(ctx, cfg, sender, text):
+            return {"ok": True, "handled": "staff_relay"}
+        help_text = render_script("help_text", cfg, ctx.clock.now(), urgent=False)
+        await _send(ctx, cfg, sender, help_text)
+        return {"ok": True, "handled": "staff_help"}
 
     # An opted-out sender is filtered inside the service, which still stores the message.
     result = await _service(ctx).handle_inbound(

@@ -42,5 +42,6 @@ delivery:
       address: info@skincentrix.com
     - kind: slack
       webhook_env: SKINCENTRIX_SLACK_WEBHOOK
+      channel_id: null       # Slack channel id; set with SLACK_BOT_TOKEN for takeover threads
   digest_time_local: "07:30"
   staff_phone_numbers: []

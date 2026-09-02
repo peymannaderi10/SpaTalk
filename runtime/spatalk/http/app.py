@@ -11,8 +11,8 @@ from loguru import logger
 from spatalk import jobs
 from spatalk.clock import SystemClock
 from spatalk.db import make_engine, make_session_factory
-from spatalk.http import actions, slack
-from spatalk.ledger.delivery import HttpSlackEmailDelivery, schedule_item_delivery
+from spatalk.http import actions, slack, slack_events
+from spatalk.ledger.delivery import make_delivery, schedule_item_delivery
 from spatalk.ledger.items import PgLedger
 from spatalk.ledger.scheduler import run_scheduler_forever
 from spatalk.settings import Settings, get_settings
@@ -39,7 +39,8 @@ def build_context(settings: Settings) -> jobs.JobContext:
         clock=clock,
         registry=TenantRegistry(sf, clock),
         ledger=PgLedger(sf, clock, on_created=on_created),
-        delivery=HttpSlackEmailDelivery(settings),
+        # Slack bot when a token is configured, incoming webhook otherwise (Task B5).
+        delivery=make_delivery(settings),
         settings=settings,
         sms=TelnyxSms(settings.telnyx_api_key),
         # Text channels (Task B2): the shared TextConversationService drives this client.
@@ -81,6 +82,7 @@ def create_app(ctx: jobs.JobContext, start_background: bool = True) -> FastAPI:
     attach_router(app, texml.router)
     attach_router(app, actions.router)
     attach_router(app, slack.router)
+    attach_router(app, slack_events.router)  # human takeover (Task B5)
     attach_router(app, text_sms.router)   # text channels (Task B2)
     attach_router(app, text_chat.router)  # web chat widget (Task B4)
 

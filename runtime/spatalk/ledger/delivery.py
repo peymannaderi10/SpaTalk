@@ -16,6 +16,7 @@ from spatalk.brain.hours import humanize_due
 from spatalk.ledger.links import sign_action
 from spatalk.models import Item
 from spatalk.tenants.schema import TenantConfig
+from spatalk.text import takeover
 
 TYPE_LABELS = {
     "callback": "Callback requested",
@@ -41,6 +42,8 @@ class ActionLinks:
     transcript_url: str
     ack_token: str
     resolve_token: str
+    # Signed like the other two; only a Slack thread root carries the button (Task B5).
+    handback_token: str = ""
 
 
 def build_links(settings, item: Item) -> ActionLinks:
@@ -48,7 +51,8 @@ def build_links(settings, item: Item) -> ActionLinks:
     ack = sign_action(settings.secret_key, item.id, "ack", item.tenant_id)
     res = sign_action(settings.secret_key, item.id, "resolve", item.tenant_id)
     tr = sign_action(settings.secret_key, item.id, "transcript", item.tenant_id)
-    return ActionLinks(f"{base}/a/{ack}", f"{base}/a/{res}", f"{base}/a/{tr}", ack, res)
+    back = sign_action(settings.secret_key, item.id, "handback", item.tenant_id)
+    return ActionLinks(f"{base}/a/{ack}", f"{base}/a/{res}", f"{base}/a/{tr}", ack, res, back)
 
 
 def _summary(item: Item, cfg: TenantConfig, now: datetime) -> list[str]:
@@ -82,13 +86,29 @@ def _summary(item: Item, cfg: TenantConfig, now: datetime) -> list[str]:
 
 
 def build_slack_blocks(
-    item: Item, cfg: TenantConfig, links: ActionLinks, now: datetime | None = None
+    item: Item,
+    cfg: TenantConfig,
+    links: ActionLinks,
+    now: datetime | None = None,
+    handback: bool = False,
 ) -> list[dict]:
     now = now or datetime.now(timezone.utc)
     head = ("\U0001f534 URGENT: " if item.urgency == "urgent" else "") + TYPE_LABELS.get(
         item.type, item.type
     )
     body = "\n".join(_summary(item, cfg, now)[1:])
+    buttons: list[dict] = []
+    if handback and links.handback_token:
+        # Only on a thread root: the thread is where a person takes the conversation over,
+        # so it is the only place the way back belongs (Task B5).
+        buttons.append(
+            {
+                "type": "button",
+                "action_id": "handback",
+                "value": links.handback_token,
+                "text": {"type": "plain_text", "text": "Hand back to assistant"},
+            }
+        )
     return [
         {"type": "header", "text": {"type": "plain_text", "text": f"#{item.id} {head}"[:150]}},
         {
@@ -114,6 +134,7 @@ def build_slack_blocks(
                     "style": "primary",
                     "text": {"type": "plain_text", "text": "Resolve"},
                 },
+                *buttons,
             ],
         },
     ]
@@ -162,6 +183,52 @@ class HttpSlackEmailDelivery:
         )
 
 
+class SlackBotDelivery(HttpSlackEmailDelivery):
+    """Slack through the bot API, so every conversation gets a thread staff can reply in.
+
+    ``send_slack`` still satisfies :class:`DeliveryPort`: given a webhook URL it posts to the
+    webhook exactly as before, given a channel id it posts as the bot. Email is unchanged.
+    """
+
+    def __init__(self, settings, http: httpx.AsyncClient | None = None, client=None):
+        super().__init__(settings, http)
+        self._client = client
+
+    @property
+    def client(self):
+        if self._client is None:
+            from slack_sdk.web.async_client import AsyncWebClient
+
+            self._client = AsyncWebClient(token=self._settings.slack_bot_token)
+        return self._client
+
+    async def send_slack(self, webhook_url: str, blocks: list[dict], text: str) -> None:
+        if webhook_url.startswith("http"):
+            await super().send_slack(webhook_url, blocks, text)
+            return
+        await self.client.chat_postMessage(channel=webhook_url, blocks=blocks, text=text)
+
+    async def post_thread_root(self, channel_id: str, blocks: list[dict], text: str) -> str:
+        response = await self.client.chat_postMessage(
+            channel=channel_id, blocks=blocks, text=text
+        )
+        return str(response["ts"])
+
+    async def post_in_thread(
+        self, channel_id: str, thread_ts: str, text: str, blocks: list[dict] | None = None
+    ) -> None:
+        await self.client.chat_postMessage(
+            channel=channel_id, thread_ts=thread_ts, text=text, blocks=blocks
+        )
+
+
+def make_delivery(settings, http: httpx.AsyncClient | None = None) -> DeliveryPort:
+    """The bot when a token is configured, the incoming webhook otherwise."""
+    if getattr(settings, "slack_bot_token", ""):
+        return SlackBotDelivery(settings, http)
+    return HttpSlackEmailDelivery(settings, http)
+
+
 class MemoryDelivery:
     def __init__(self):
         self.slack: list[tuple[str, list[dict], str]] = []
@@ -172,6 +239,25 @@ class MemoryDelivery:
 
     async def send_email(self, to, subject, body):
         self.emails.append((to, subject, body))
+
+
+class MemoryBotDelivery(MemoryDelivery):
+    """In-memory stand-in for :class:`SlackBotDelivery`, threads included."""
+
+    def __init__(self):
+        super().__init__()
+        self.roots: list[tuple[str, list[dict], str]] = []
+        self.thread: list[tuple[str, str, str, list[dict] | None]] = []
+        self.posted_ts: list[str] = []
+
+    async def post_thread_root(self, channel_id, blocks, text) -> str:
+        ts = f"1712.{len(self.roots) + 1:06d}"
+        self.roots.append((channel_id, blocks, text))
+        self.posted_ts.append(ts)
+        return ts
+
+    async def post_in_thread(self, channel_id, thread_ts, text, blocks=None) -> None:
+        self.thread.append((channel_id, thread_ts, text, blocks))
 
 
 async def schedule_item_delivery(
@@ -189,6 +275,8 @@ async def schedule_item_delivery(
                     "item_id": item.id,
                     "tenant_id": cfg.id,
                     "env": dest.webhook_env,
+                    # Slack channel id, used with a bot token to open a thread (Task B5).
+                    "channel_id": dest.channel_id,
                     "escalation": escalation,
                 },
             )
@@ -220,15 +308,44 @@ async def schedule_item_delivery(
 async def _deliver_slack(payload: dict, ctx: jobs.JobContext) -> None:
     item = await ctx.ledger.get(payload["item_id"])
     cfg = await ctx.registry.get(payload["tenant_id"])
+    links = build_links(ctx.settings, item)
+    now = ctx.clock.now()
+    prefix = "ESCALATED, past due: " if payload.get("escalation") else ""
+    text = f"{prefix}#{item.id} {TYPE_LABELS.get(item.type, item.type)}"
+
+    # With a bot token and a channel id, the conversation gets one thread: the first item is
+    # its root, everything after it is a reply (Task B5). Without them, nothing changes.
+    channel_id = payload.get("channel_id")
+    if channel_id and getattr(ctx.delivery, "post_thread_root", None) is not None:
+        await _deliver_slack_in_thread(ctx, item, cfg, links, now, channel_id, text)
+        return
+
     url = os.environ.get(payload["env"], "")
     if not url:
         logger.warning("slack webhook env {} not set; skipping", payload["env"])
         return
-    links = build_links(ctx.settings, item)
-    blocks = build_slack_blocks(item, cfg, links, ctx.clock.now())
-    prefix = "ESCALATED, past due: " if payload.get("escalation") else ""
-    await ctx.delivery.send_slack(
-        url, blocks, f"{prefix}#{item.id} {TYPE_LABELS.get(item.type, item.type)}"
+    await ctx.delivery.send_slack(url, build_slack_blocks(item, cfg, links, now), text)
+
+
+async def _deliver_slack_in_thread(
+    ctx: jobs.JobContext,
+    item: Item,
+    cfg: TenantConfig,
+    links: ActionLinks,
+    now: datetime,
+    channel_id: str,
+    text: str,
+) -> None:
+    thread = await takeover.thread_for(ctx.sf, item.conversation_id)
+    if thread is None:
+        rooted = item.conversation_id is not None
+        blocks = build_slack_blocks(item, cfg, links, now, handback=rooted)
+        ts = await ctx.delivery.post_thread_root(channel_id, blocks, text)
+        if item.conversation_id is not None:
+            await takeover.store_thread(ctx.sf, item.conversation_id, channel_id, ts)
+        return
+    await ctx.delivery.post_in_thread(
+        thread[0], thread[1], text, build_slack_blocks(item, cfg, links, now)
     )
 
 

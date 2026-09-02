@@ -55,6 +55,8 @@ class Conversation(Base):
     __table_args__ = (
         Index("ix_conv_tenant_started", "tenant_id", "started_at"),
         Index("ix_conv_lookup", "tenant_id", "channel", "external_ref", "last_message_at"),
+        # Human takeover (Task B5): a staff reply arrives naming only its Slack thread.
+        Index("ix_conv_slack_ts", "slack_ts"),
     )
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[str] = mapped_column(ForeignKey("runtime.tenants.id"))
@@ -78,6 +80,10 @@ class Conversation(Base):
     )
     # Link to a related conversation (SMS text-back -> the voice conversation it followed).
     external_session: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # --- human takeover (text-channels plan, Task B5) ---
+    # The Slack thread staff read and reply in: the channel and the root message's ts.
+    slack_channel: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    slack_ts: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
 
 class Message(Base):

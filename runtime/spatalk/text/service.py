@@ -32,6 +32,7 @@ from spatalk.brain.renderer import render_script
 from spatalk.brain.requests import ConversationRef
 from spatalk.conversations import append_message, record_usage
 from spatalk.models import Conversation, InboundMessage, Item, Job, Message, SmsOptout
+from spatalk.text import takeover
 from spatalk.text.segments import split_sms
 
 Channel = Literal["sms", "chat", "instagram", "messenger"]
@@ -203,6 +204,8 @@ class TextConversationService:
             logger.info("duplicate {} message {} ignored", channel, provider_message_id)
             return InboundResult(conv.id, suppressed=True, reason="duplicate")
         await append_message(ctx.sf, conv.id, "user", text)
+        # Staff read the conversation in Slack, whoever is answering it (Task B5).
+        await takeover.mirror_to_thread(ctx, conv.id, text, "customer")
         await self._touch(conv.id)
         await self._meter(cfg.id, conv.id, channel, USAGE_UNITS[channel][0], 1)
 
@@ -227,6 +230,7 @@ class TextConversationService:
         replies = self._segments(turn.reply, channel)
         for part in replies:
             await append_message(ctx.sf, conv.id, "assistant", part)
+            await takeover.mirror_to_thread(ctx, conv.id, part, "assistant")
         await self._finish_turn(conv, turn)
         if replies:
             await self._meter(

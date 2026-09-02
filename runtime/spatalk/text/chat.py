@@ -27,6 +27,7 @@ from spatalk.brain.ports import ItemDraft
 from spatalk.brain.renderer import render_script
 from spatalk.brain.requests import ContactInfo, ConversationRef
 from spatalk.conversations import append_message
+from spatalk.text import takeover
 from spatalk.text.service import TextConversationService, make_text_llm
 
 router = APIRouter()
@@ -188,6 +189,22 @@ async def chat_ws(websocket: WebSocket) -> None:
         return
 
     await websocket.accept()
+
+    async def send_staff(text: str) -> None:
+        await websocket.send_text(json.dumps({"type": "staff", "text": text}))
+
+    # A person may be answering this visitor (Task B5): take the socket so staff replies
+    # arrive live, and deliver anything said while the widget was away.
+    takeover.register_chat_socket(tenant_id, session, send_staff)
+    try:
+        for waiting in takeover.take_pending_staff(tenant_id, session):
+            await send_staff(waiting)
+        await _chat_loop(websocket, ctx, service, tenant_id, session, ip, messages)
+    finally:
+        takeover.unregister_chat_socket(tenant_id, session)
+
+
+async def _chat_loop(websocket, ctx, service, tenant_id, session, ip, messages) -> None:
     while True:
         try:
             raw = await websocket.receive_text()
