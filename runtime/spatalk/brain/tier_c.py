@@ -13,6 +13,10 @@ from spatalk.brain.requests import (
 )
 from spatalk.clock import Clock
 
+# Channels where the customer can read and tap a link in the conversation, so the booking
+# link is shown inline instead of being texted to a phone number (renderer: scripts.link_shown).
+INLINE_LINK_CHANNELS = ("chat", "instagram", "messenger")
+
 
 def _with_caller(ref: ConversationRef, contact: ContactInfo) -> ContactInfo:
     if contact.phone is None and ref.caller_phone:
@@ -65,6 +69,10 @@ class TierCCapabilities:
         service = ref.tenant.service(req.service_id)
         if service is None:
             return Refused(reason="unknown_service")
+        # Text channels (Task B4): the customer is reading a screen, so the link is shown in
+        # the conversation itself. Nothing is sent anywhere, and no contact is needed.
+        if ref.channel in INLINE_LINK_CHANNELS:
+            return LinkSent(service_id=service.id, url=service.booking_url)
         contact = _with_caller(ref, req.contact)
         if ref.tenant.sms_from_number and contact.phone:
             text = (

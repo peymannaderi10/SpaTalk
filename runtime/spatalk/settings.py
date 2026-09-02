@@ -36,6 +36,12 @@ class Settings(BaseSettings):
     # Telnyx account public key (base64), used when no edge worker fronts the webhook.
     telnyx_public_key: str = ""
 
+    # --- web chat widget (text-channels plan, Task B4) ---
+    # Cloudflare Turnstile. The site key is public and is served to the widget; the secret
+    # key is what makes the check real. With no secret key set, the socket does not challenge.
+    turnstile_site_key: str = ""
+    turnstile_secret_key: str = ""
+
 
 @lru_cache
 def get_settings() -> Settings:

@@ -54,9 +54,14 @@ async def test_booking_link_is_captured_when_no_sms_or_no_phone(world):
     from spatalk.brain.requests import BookingLinkRequest, ContactInfo
     out = await caps.send_booking_link(_ref(cfg), BookingLinkRequest(service_id="facial", contact=ContactInfo()))
     assert out.kind == "captured" and ledger.items[0].type == "send_link"
-    out2 = await caps.send_booking_link(_ref(cfg, channel="chat", caller=None),
+    out2 = await caps.send_booking_link(_ref(cfg, channel="voice", caller=None),
                                         BookingLinkRequest(service_id="facial", contact=ContactInfo()))
     assert out2.kind == "refused" and out2.reason == "no_contact"
+    # Task B4: on a screen the link is shown in the conversation, so it needs no contact
+    # and nothing is sent anywhere.
+    out3 = await caps.send_booking_link(_ref(cfg, channel="chat", caller=None),
+                                        BookingLinkRequest(service_id="facial", contact=ContactInfo()))
+    assert out3.kind == "link_sent" and sms.sent == []
 
 
 async def test_escalate_is_urgent(world):

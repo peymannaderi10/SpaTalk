@@ -18,6 +18,7 @@ from spatalk.ledger.scheduler import run_scheduler_forever
 from spatalk.settings import Settings, get_settings
 from spatalk.sms import TelnyxSms
 from spatalk.tenants.registry import TenantRegistry
+from spatalk.text import chat as text_chat
 from spatalk.text import sms as text_sms
 from spatalk.text.service import make_text_llm
 from spatalk.voice import texml
@@ -81,6 +82,7 @@ def create_app(ctx: jobs.JobContext, start_background: bool = True) -> FastAPI:
     attach_router(app, actions.router)
     attach_router(app, slack.router)
     attach_router(app, text_sms.router)   # text channels (Task B2)
+    attach_router(app, text_chat.router)  # web chat widget (Task B4)
 
     @app.get("/healthz")
     async def healthz():
