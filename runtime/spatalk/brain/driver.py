@@ -13,6 +13,7 @@ The three structural-honesty layers are visible here, top to bottom:
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Protocol
@@ -69,6 +70,36 @@ class FakeLLM:
         if not self._responses:
             return LLMResponse(text="", tool_calls=[])
         return self._responses.pop(0)
+
+
+# --- which vendor a model string names (operations plan, Task E6) ------------------------
+# Spec §10 weakness 3: the model this runtime talks through is retired on the vendor's
+# schedule, not ours. `LLM_MODEL` therefore names the vendor as well as the model, so the
+# swap is an environment change: a bare name is Google, `openai:<model>` is OpenAI. Both
+# `make_llm` (voice) and `make_text_llm` (text) read it through these two functions, and so
+# does `spatalk.ops.model_check`, which is the only way the three can never disagree.
+
+OPENAI_PREFIX = "openai:"
+GOOGLE = "google"
+OPENAI = "openai"
+
+
+def provider_for(model: str) -> str:
+    """The vendor `model` names: `"openai"` for the `openai:` prefix, else `"google"`."""
+    return OPENAI if (model or "").strip().lower().startswith(OPENAI_PREFIX) else GOOGLE
+
+
+def model_name(model: str) -> str:
+    """`model` as the provider spells it, with any vendor prefix removed."""
+    raw = (model or "").strip()
+    if provider_for(raw) != OPENAI:
+        return raw
+    name = raw[len(OPENAI_PREFIX) :].strip()
+    if not name:
+        # An empty name would fall through to whatever the SDK defaults to, which is a
+        # different model than the one the operator thought they had configured.
+        raise ValueError(f"LLM_MODEL={model!r} names the openai vendor but no model")
+    return name
 
 
 class GeminiClient:
@@ -128,6 +159,87 @@ class GeminiClient:
             elif getattr(part, "text", None):
                 text_parts.append(part.text)
         return LLMResponse(text=" ".join(text_parts).strip() or None, tool_calls=calls)
+
+
+# --- the second vendor (operations plan, Task E6) ----------------------------------------
+
+
+def parse_chat_completion(resp) -> LLMResponse:
+    """One OpenAI Chat Completions answer as an :class:`LLMResponse`.
+
+    Split out from :class:`OpenAIClient` so a recorded response can be parsed in a test
+    without a client, a key or a network. The shape is the SDK's `ChatCompletion`; only
+    duck-typed attribute access is used, so a recorded payload validated by the SDK's own
+    model and a hand-built stub are both accepted.
+    """
+    choices = getattr(resp, "choices", None) or []
+    message = getattr(choices[0], "message", None) if choices else None
+    text = (getattr(message, "content", None) or "").strip() or None
+    calls: list[ToolCall] = []
+    for call in getattr(message, "tool_calls", None) or []:
+        fn = getattr(call, "function", None)
+        if fn is None or not getattr(fn, "name", ""):
+            continue
+        raw = getattr(fn, "arguments", None) or "{}"
+        try:
+            args = json.loads(raw)
+        except (ValueError, TypeError):
+            # The same shape GeminiClient produces when the model sends no arguments: the
+            # call still runs and `dispatch_tool` answers honestly about the missing
+            # fields. Dropping the call instead would leave a voice caller with silence.
+            logger.warning("openai tool {} sent unparseable arguments {!r}", fn.name, raw)
+            args = {}
+        calls.append(ToolCall(fn.name, args if isinstance(args, dict) else {}))
+    return LLMResponse(text=text, tool_calls=calls)
+
+
+class OpenAIClient:
+    """The second LLM vendor behind the same protocol as :class:`GeminiClient`.
+
+    Chat Completions, not Responses: it is the API the installed SDK exposes tools through
+    in the shape Pipecat's own `OpenAILLMService` uses for the voice half of the same swap
+    (`pipecat.services.openai.base_llm` calls `chat.completions.create`), so a drill that
+    swaps `LLM_MODEL` puts both channels on one API rather than two.
+
+    `client` is the test seam: production passes nothing and the SDK is imported lazily.
+    """
+
+    def __init__(
+        self,
+        api_key: str,
+        model: str,
+        temperature: float = 0.3,
+        client=None,
+    ):
+        if client is None:
+            from openai import AsyncOpenAI
+
+            client = AsyncOpenAI(api_key=api_key)
+        self._client = client
+        self._model, self._temperature = model_name(model), temperature
+
+    async def complete(self, system, history, tools) -> LLMResponse:
+        messages = [{"role": "system", "content": system}]
+        messages += [
+            {"role": "assistant" if m["role"] not in ("user", "system") else m["role"],
+             "content": m["content"]}
+            for m in history
+        ]
+        # `to_genai_declarations` already produces `{name, description, parameters}` with a
+        # JSON-Schema object for the parameters, which is exactly what a function tool
+        # carries here too; only the envelope differs.
+        kwargs: dict = {
+            "model": self._model,
+            "temperature": self._temperature,
+            "messages": messages,
+        }
+        decls = to_genai_declarations(tools)
+        if decls:
+            # An empty list is rejected by the API, and a caller with no tools at all is the
+            # nightly audit's judge, which must classify rather than act.
+            kwargs["tools"] = [{"type": "function", "function": d} for d in decls]
+        resp = await self._client.chat.completions.create(**kwargs)
+        return parse_chat_completion(resp)
 
 
 def _contact(d: dict | None) -> ContactInfo:

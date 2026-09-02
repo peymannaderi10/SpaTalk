@@ -108,6 +108,13 @@ class Settings(BaseSettings):
     # VPS can read. Anything else keeps the human-readable console format.
     log_format: str = "text"
 
+    # --- operations: the second LLM vendor (operations plan, Task E6) ---------------------
+    # `llm_model` names the vendor as well as the model: a bare name is Google,
+    # `openai:<model>` is OpenAI, in voice and in text alike. This key is needed only for
+    # the second one, and the swap is `LLM_MODEL=openai:gpt-4.1-nano` plus this key
+    # (docs/runbooks/model-swap.md).
+    openai_api_key: str = ""
+
     # --- whatsapp (plan W) ----------------------------------------------------------------
     # One platform number fronts every tenant at MVP: the id Meta assigns the WhatsApp
     # business number, and the token the Cloud API calls carry. Empty means the runtime has

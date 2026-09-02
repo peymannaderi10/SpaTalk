@@ -393,9 +393,17 @@ async def _send_followup(payload: dict, ctx: jobs.JobContext) -> None:
 
 
 def make_text_llm(settings) -> LLMClient | None:
-    """The production LLM client for text channels, or None when no key is configured."""
+    """The production LLM client for text channels, or None when no key is configured.
+
+    `LLM_MODEL` names the vendor as well as the model (operations plan, Task E6), and it is
+    read here exactly as `voice.pipeline.make_llm` reads it, so one environment change
+    swaps every channel at once rather than leaving text on the retired vendor.
+    """
+    from spatalk.brain.driver import OPENAI, GeminiClient, OpenAIClient, provider_for
+
+    if provider_for(settings.llm_model) == OPENAI:
+        key = getattr(settings, "openai_api_key", "")
+        return OpenAIClient(key, settings.llm_model) if key else None
     if not settings.google_api_key:
         return None
-    from spatalk.brain.driver import GeminiClient
-
     return GeminiClient(settings.google_api_key, settings.llm_model)

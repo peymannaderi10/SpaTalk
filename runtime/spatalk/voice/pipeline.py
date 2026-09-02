@@ -35,6 +35,8 @@ from pipecat.turns.user_mute.mute_until_first_bot_complete_user_mute_strategy im
 from pipecat.workers.runner import WorkerRunner
 
 from spatalk.brain.capabilities import load_capabilities
+# Operations plan, Task E6: the vendor a model string names.
+from spatalk.brain.driver import OPENAI, model_name, provider_for
 from spatalk.brain.prompt import build_system_prompt
 from spatalk.brain.renderer import render_script
 from spatalk.brain.requests import ConversationRef
@@ -81,12 +83,39 @@ def make_tts(settings):
     )
 
 
+# --- second LLM vendor (operations plan, Task E6) ----------------------------------------
+# One temperature for both vendors, so a swap drill compares models and not settings.
+LLM_TEMPERATURE = 0.3
+
+
 def make_llm(settings):
+    """The conversational LLM for a call. `LLM_MODEL` names the vendor as well as the model.
+
+    A bare name is Google; `openai:<model>` is OpenAI (spec §10 weakness 3: the swap has to
+    be an environment change, because the vendor decides when the model retires).
+    """
+    if provider_for(settings.llm_model) == OPENAI:
+        from pipecat.services.openai.llm import OpenAILLMService
+
+        key = getattr(settings, "openai_api_key", "")
+        if not key:
+            # The alternative is a service that constructs cleanly and 401s on the first
+            # turn of a real call, which is the worst moment to find out.
+            raise ValueError(
+                f"LLM_MODEL={settings.llm_model!r} selects OpenAI but OPENAI_API_KEY is not set"
+            )
+        return OpenAILLMService(
+            api_key=key,
+            settings=OpenAILLMService.Settings(
+                model=model_name(settings.llm_model),
+                temperature=LLM_TEMPERATURE,
+            ),
+        )
     return GoogleLLMService(
         api_key=settings.google_api_key,
         settings=GoogleLLMService.Settings(
             model=settings.llm_model,
-            temperature=0.3,
+            temperature=LLM_TEMPERATURE,
             thinking=GoogleLLMService.ThinkingConfig(thinking_budget=0),
         ),
     )

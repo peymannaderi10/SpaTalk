@@ -15,7 +15,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Coroutine
 
-from spatalk.brain.driver import Brain, GeminiClient
+from spatalk.brain.driver import OPENAI, Brain, GeminiClient, OpenAIClient, provider_for
 from spatalk.brain.ports import MemoryLedger, MemorySms
 from spatalk.brain.requests import ConversationRef
 from spatalk.brain.tier_c import TierCCapabilities
@@ -30,10 +30,16 @@ BUNDLE = (
 
 
 def _make_llm():
-    return GeminiClient(
-        api_key=os.environ["GOOGLE_API_KEY"],
-        model=os.environ.get("LLM_MODEL", "gemini-2.5-flash"),
-    )
+    """The vendor `LLM_MODEL` names, so a swap drill grades the model it claims to grade.
+
+    `voice.pipeline.make_llm` and `text.service.make_text_llm` read the same variable the
+    same way (operations plan, Task E6); if this one did not, step 3 of
+    docs/runbooks/model-swap.md would score the old vendor and call it the new one.
+    """
+    model = os.environ.get("LLM_MODEL", "gemini-2.5-flash")
+    if provider_for(model) == OPENAI:
+        return OpenAIClient(api_key=os.environ["OPENAI_API_KEY"], model=model)
+    return GeminiClient(api_key=os.environ["GOOGLE_API_KEY"], model=model)
 
 
 def _clock():

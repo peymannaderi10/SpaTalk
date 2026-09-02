@@ -89,6 +89,24 @@ async def test_gemini_client_calls_a_tool(fixed_clock):
     assert any(tc.name == "escalate" for tc in resp.tool_calls)
 
 
+@pytest.mark.skipif(not os.environ.get("OPENAI_API_KEY"), reason="live OpenAI smoke test")
+async def test_openai_client_calls_a_tool(fixed_clock):
+    """The second vendor (operations plan, Task E6) on the same prompt and the same tools.
+
+    Step 3 of docs/runbooks/model-swap.md is the real check; this is the one-turn version
+    that says the wiring reaches OpenAI at all. Skipped without the key, like its twin."""
+    from spatalk.brain.driver import OpenAIClient
+    from spatalk.brain.prompt import build_system_prompt
+    from spatalk.brain.tools import build_tools
+    from spatalk.tenants.bundle import load_bundle
+    cfg = load_bundle(BUNDLE)
+    client = OpenAIClient(api_key=os.environ["OPENAI_API_KEY"],
+                          model=os.environ.get("OPENAI_MODEL", "openai:gpt-4.1-nano"))
+    resp = await client.complete(build_system_prompt(cfg, "voice", fixed_clock.now()),
+                                 [{"role": "user", "content": "Can I talk to a real person"}], build_tools(cfg))
+    assert any(tc.name == "escalate" for tc in resp.tool_calls)
+
+
 async def test_guard_block_with_a_dead_ledger_refuses_and_claims_nothing(fixed_clock):
     """The blocked claim could not be filed, so the caller gets the clinic's number, not a promise."""
     from spatalk.brain.driver import LLMResponse

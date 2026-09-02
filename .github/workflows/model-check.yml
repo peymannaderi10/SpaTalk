@@ -1,0 +1,69 @@
+name: model-check
+
+# Operations plan, Task E6. Spec §10 weakness 3: the runtime talks through one model at one
+# vendor and the vendor retires models on its own calendar. This job asks each provider for
+# its model list once a week and fails when the model this repository is configured to use
+# is missing or carries a retirement notice.
+#
+# It needs a provider key to say anything, and it must never look green while saying
+# nothing: without a key the check does not run and a ::notice says so. `model_check.main`
+# exits 2 rather than 0 for the same reason if it is ever reached without one.
+on:
+  schedule:
+    # Mondays at 06:40 UTC: a finding lands at the start of a week, with the whole week to
+    # run the swap drill in docs/runbooks/model-swap.md before anything actually breaks.
+    - cron: "40 6 * * 1"
+  workflow_dispatch:
+
+jobs:
+  configured-model-still-exists:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      # The `secrets` context is not available in a step-level `if`, so the keys are lifted
+      # to the job environment (ci.yml and nightly-voice-evals.yml do the same).
+      GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      # The check reads settings, and settings must not pick up anything but this job's env.
+      SPATALK_NO_ENV_FILE: "1"
+      PUBLIC_BASE_URL: https://model-check.invalid
+      SECRET_KEY: model-check
+    steps:
+      - name: nothing to check without a provider key
+        if: ${{ env.GOOGLE_API_KEY == '' && env.OPENAI_API_KEY == '' }}
+        run: |
+          echo "::notice title=model check skipped::Neither GOOGLE_API_KEY nor OPENAI_API_KEY is set as a repository secret. No provider was asked."
+
+      - uses: actions/checkout@v4
+        if: ${{ env.GOOGLE_API_KEY != '' || env.OPENAI_API_KEY != '' }}
+      - uses: astral-sh/setup-uv@v3
+        if: ${{ env.GOOGLE_API_KEY != '' || env.OPENAI_API_KEY != '' }}
+
+      - name: install the runtime
+        if: ${{ env.GOOGLE_API_KEY != '' || env.OPENAI_API_KEY != '' }}
+        working-directory: runtime
+        run: uv sync --extra dev
+
+      - name: the configured Google model still exists
+        if: ${{ env.GOOGLE_API_KEY != '' }}
+        working-directory: runtime
+        # The model the repository is actually configured with, not a hard-coded name.
+        run: uv run python -m spatalk.ops.model_check --model "${LLM_MODEL:-gemini-2.5-flash}"
+        env:
+          LLM_MODEL: ${{ vars.LLM_MODEL }}
+
+      - name: the judge model still exists
+        if: ${{ env.GOOGLE_API_KEY != '' }}
+        working-directory: runtime
+        # The nightly audit (Task E4) runs on its own model, and it retires separately.
+        run: uv run python -m spatalk.ops.model_check --model "${JUDGE_MODEL:-gemini-2.5-flash}"
+        env:
+          JUDGE_MODEL: ${{ vars.JUDGE_MODEL }}
+
+      - name: the second vendor's model still exists
+        if: ${{ env.OPENAI_API_KEY != '' }}
+        working-directory: runtime
+        # The fallback is only a fallback if it is there on the day it is needed.
+        run: uv run python -m spatalk.ops.model_check --model "openai:${OPENAI_MODEL:-gpt-4.1-nano}"
+        env:
+          OPENAI_MODEL: ${{ vars.OPENAI_MODEL }}
