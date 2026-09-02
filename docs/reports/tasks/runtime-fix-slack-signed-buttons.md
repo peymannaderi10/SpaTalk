@@ -1,6 +1,6 @@
 # QA gate A fix: slack-signed-buttons
 Status: done with deviations
-Commit: <filled below>
+Commit: a510871
 Tests: `uv run pytest -q tests/test_http_actions.py tests/test_delivery.py` -> 9/9; full suite `uv run pytest -q` -> 191 passed, 1 skipped; `uv run ruff check spatalk tests scenarios` -> All checks passed
 
 ## The defect
