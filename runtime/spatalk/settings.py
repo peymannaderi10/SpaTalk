@@ -55,6 +55,21 @@ class Settings(BaseSettings):
     # reply in it. Without one, delivery stays on the incoming webhook and there is no thread.
     slack_bot_token: str = ""
 
+    # --- Instagram and Messenger (instagram plan, Task D1) ---
+    # One Meta app per surface: Instagram Business Login and Facebook Login for Pages. The
+    # secrets are also the webhook signing keys, which is why both are verified in D2.
+    instagram_app_id: str = ""
+    instagram_app_secret: str = ""
+    facebook_app_id: str = ""
+    facebook_app_secret: str = ""
+    # Fernet key for tokens at rest (spatalk.social.crypto). Empty means no Meta token can be
+    # stored at all: encryption raises rather than writing one in the clear.
+    meta_token_encryption_key: str = ""
+    meta_graph_version: str = "v21.0"
+    # The string Meta echoes back on `GET /instagram/webhook` (api-surface.md, plan D). It
+    # lives here because settings.py belongs to this task and D2's webhook needs it.
+    instagram_webhook_verify_token: str = ""
+
 
 @lru_cache
 def get_settings() -> Settings:

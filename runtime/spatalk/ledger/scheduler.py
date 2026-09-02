@@ -10,6 +10,8 @@ from sqlalchemy import select
 from spatalk import jobs
 from spatalk.ledger.delivery import schedule_item_delivery
 from spatalk.models import Tenant
+# Instagram plan, Task D1: importing this also registers the social.refresh_tokens handler.
+from spatalk.social.meta_oauth import ensure_daily_refresh_scheduled
 from spatalk.text.takeover import hand_back_stale
 
 
@@ -52,6 +54,8 @@ async def run_scheduler_forever(ctx: jobs.JobContext, interval_seconds: float = 
             await send_digests(ctx)
             # A conversation a person took over and then left silent (Task B5).
             await hand_back_stale(ctx)
+            # Meta tokens expire; this queues the daily refresh job once a day (Task D1).
+            await ensure_daily_refresh_scheduled(ctx.sf, ctx.clock)
         except Exception as e:  # noqa: BLE001
             logger.exception("scheduler error: {}", e)
         await asyncio.sleep(interval_seconds)

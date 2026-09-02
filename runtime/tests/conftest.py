@@ -23,6 +23,7 @@ async def engine():
     """Fresh schema per test: simple, loop-safe, and ids restart at 1 (tests rely on that)."""
     from spatalk.db import make_engine, Base
     import spatalk.models  # noqa: F401
+    import spatalk.social.models  # noqa: F401  (instagram plan, Task D1)
     eng = make_engine(os.environ["TEST_DATABASE_URL"])
     async with eng.begin() as conn:
         await conn.execute(text("CREATE SCHEMA IF NOT EXISTS runtime"))

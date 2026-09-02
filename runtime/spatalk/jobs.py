@@ -29,6 +29,10 @@ class JobContext:
     # Text channels (text-channels plan, Task B2): the LLM client the shared
     # TextConversationService drives. Voice builds its own inside the Pipecat pipeline.
     llm: Any = None
+    # Social (instagram plan, Task D1): a spatalk.social.graph.GraphClient. Production
+    # leaves it None and each call builds the client for the host it needs; tests inject a
+    # FakeGraphClient so no test ever reaches Meta.
+    graph: Any = None
 
 
 def register_handler(kind: str):

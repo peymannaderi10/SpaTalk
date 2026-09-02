@@ -6,6 +6,7 @@ from sqlalchemy import pool, text
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 import spatalk.models  # noqa: F401  (registers tables)
+import spatalk.social.models  # noqa: F401  (instagram plan, Task D1: the social tables)
 from spatalk.db import Base
 from spatalk.settings import get_settings
 
