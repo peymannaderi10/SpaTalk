@@ -1,0 +1,79 @@
+services:
+  - id: virtual_consultation
+    name: Free virtual consultation
+    category: consultation
+    price_text: free
+    duration_minutes: 15
+    booking_url: https://skincentrix.janeapp.com/locations/skincentrix
+    description: Phone, video, FaceTime or WhatsApp. The usual first step for new clients.
+  - id: express_treatment
+    name: Express treatment
+    category: facial
+    price_text: "$99"
+    booking_url: https://skincentrix.janeapp.com/locations/skincentrix
+  - id: facial
+    name: Facial
+    category: facial
+    price_text: varies by facial
+    booking_url: https://skincentrix.janeapp.com/locations/skincentrix
+    description: Includes 24k gold facial and dermaplaning.
+  - id: microchanneling
+    name: Microchanneling
+    category: skin
+    price_text: ask for current pricing
+    booking_url: https://skincentrix.janeapp.com/locations/skincentrix
+    description: Currently promoting VAMP Salmon DNA Microchanneling.
+  - id: laser_hair_removal
+    name: Laser hair removal
+    category: laser
+    price_text: depends on area; packages of 3 and 8 sessions
+    booking_url: https://skincentrix.janeapp.com/locations/skincentrix
+    consult_required: true
+  - id: laser_treatment
+    name: Laser skin treatment
+    category: laser
+    price_text: ask for current pricing
+    booking_url: https://skincentrix.janeapp.com/locations/skincentrix
+    consult_required: true
+  - id: prp
+    name: PRP
+    category: medical
+    price_text: ask for current pricing
+    booking_url: https://skincentrix.janeapp.com/locations/skincentrix
+    consult_required: true
+    clinical: true
+  - id: injectables
+    name: Injectables
+    category: medical
+    price_text: ask for current pricing
+    booking_url: https://skincentrix.janeapp.com/locations/skincentrix
+    consult_required: true
+    clinical: true
+  - id: acne_treatment
+    name: Acne treatment
+    category: skin
+    price_text: ask for current pricing
+    booking_url: https://skincentrix.janeapp.com/locations/skincentrix
+    consult_required: true
+  - id: body_contouring
+    name: Body contouring
+    category: body
+    price_text: ask for current pricing
+    booking_url: https://skincentrix.janeapp.com/locations/skincentrix
+    consult_required: true
+  - id: tattoo_removal
+    name: Tattoo removal
+    category: laser
+    price_text: ask for current pricing
+    booking_url: https://skincentrix.janeapp.com/locations/skincentrix
+    consult_required: true
+  - id: waxing_sugaring
+    name: Waxing and sugaring
+    category: hair
+    price_text: depends on area
+    booking_url: https://skincentrix.janeapp.com/locations/skincentrix
+  - id: skin_analysis
+    name: Skin analysis
+    category: consultation
+    price_text: ask for current pricing
+    booking_url: https://skincentrix.janeapp.com/locations/skincentrix

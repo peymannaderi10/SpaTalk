@@ -1,0 +1,46 @@
+id: skincentrix
+name: Skincentrix
+public_phone: "905-703-7546"
+timezone: America/Toronto
+jurisdiction: CA-ON
+integration_tier: C
+fulfilment: tier_c
+retention_days: 30
+recording_enabled: false
+# Hours are from a third-party listing and UNVERIFIED with the clinic. Confirm before go-live.
+hours:
+  mon: [["12:00", "19:00"]]
+  tue: [["10:00", "18:00"]]
+  wed: [["10:00", "18:00"]]
+  thu: [["12:00", "20:00"]]
+  fri: [["10:00", "18:00"]]
+  sat: [["10:00", "17:00"]]
+  sun: [["13:00", "18:00"]]
+holidays: []
+voice_numbers: []          # filled by `spatalk numbers add` after Telnyx purchase
+sms_from_number: null      # toll-free number once verified
+transfer_number: null      # UNVERIFIED: a TELUS extension that does not forward to us
+booking_url_default: https://skincentrix.janeapp.com/locations/skincentrix
+social:
+  comment_mode: keyword
+  comment_keywords: ["price", "how much", "book", "info", "details"]
+  public_reply_enabled: false
+persona:
+  assistant_name: Skincentrix's AI assistant
+  tone: warm, brief, plain-spoken
+  max_sentences_per_turn: 2
+escalation:
+  owner_name: Skincentrix front desk
+  owner_email: info@skincentrix.com
+  owner_phone: null
+  urgent_minutes: 15
+  standard_business_hours: 3
+  after_hours_clinical_contact: null   # UNVERIFIED: ask the clinic
+delivery:
+  destinations:
+    - kind: email
+      address: info@skincentrix.com
+    - kind: slack
+      webhook_env: SKINCENTRIX_SLACK_WEBHOOK
+  digest_time_local: "07:30"
+  staff_phone_numbers: []
