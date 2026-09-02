@@ -274,7 +274,16 @@
       },
       "cad_per_min_at_fx": 0.0778,
       "source": "telnyx.com/pricing/voice-ai-agents fetched 2026-09-02 (founder pointer)",
-      "note": "hosted agent; the model loop runs on Telnyx so the output guard, rules gate and template renderer cannot sit between model and speech; 500 concurrent calls, no platform fee, HIPAA included"
+      "note": "hosted agent; the model loop runs on Telnyx so the output guard, rules gate and template renderer cannot sit between model and speech; 500 concurrent calls, no platform fee, HIPAA included",
+      "add_ons_usd_per_min": {
+        "premium_third_party_models": 0.004,
+        "call_recording": 0.002,
+        "sms_follow_up": 0.004,
+        "agent_knowledge_base": 0.004
+      },
+      "with_knowledge_base_and_sms_follow_up_usd_per_min": 0.064,
+      "with_knowledge_base_and_sms_follow_up_cad_per_min": 0.0889,
+      "calculator_screenshot_2026_09_02": "$0.07/min with all four add-ons at 230,000 min/month"
     }
   }
 }
