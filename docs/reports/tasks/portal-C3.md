@@ -1,7 +1,7 @@
 # portal Task C3: Runtime internal API and its contract (Python side)
 
 Status: done with deviations
-Commit: pending (recorded by the follow-up commit)
+Commit: 72676139f21a70571d11922bad7daed6fce42348
 Tests: `uv run pytest tests/test_internal_api.py tests/test_contract_snapshot.py -q` -> 41/41; full suite `uv run pytest -q` -> 368 passed, 1 skipped (369); `uv run ruff check spatalk tests scenarios` -> clean
 
 Interfaces produced:
