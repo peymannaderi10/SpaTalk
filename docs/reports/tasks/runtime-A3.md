@@ -1,6 +1,6 @@
 # runtime-voice-ledger Task 3: Business calendar and due-time wording
 Status: done with deviations
-Commit: 5e0f2045d97a8d7893f747a217c75b264cd12cbf (amended in place to record its own hash; the tree is unchanged)
+Commit: 5af2ddea0719e682528686517741e59125298346 (this line was filled in by the follow-up docs commit; the implementation commit is the one named)
 Tests: `uv run pytest tests/test_hours.py -v` -> 7/7; full suite `uv run pytest -q` -> 34/34 for every committed test module (`--ignore=tests/test_guard.py --ignore=tests/test_rules.py`; those two files are the parallel Task 6 agent's in-flight red tests, uncommitted and not mine); `uv run ruff check spatalk tests` -> clean (`scenarios/` does not exist yet)
 Interfaces produced: `spatalk.brain.hours` — `BusinessCalendar(cfg: TenantConfig)` with `.is_open(at) -> bool`, `.next_open(at) -> datetime`, `.add_business_hours(at, hours: float) -> datetime`, `.due_for(urgency: Literal["normal","urgent"], at) -> datetime`; `humanize_due(due, now, tz: str, urgent: bool) -> str`; `Urgency` type alias; `spatalk.brain` package (`__init__.py`, empty)
 
