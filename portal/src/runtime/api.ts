@@ -36,6 +36,61 @@ export function runtime(actorEmail?: string | null): RuntimeClient {
   });
 }
 
+/**
+ * What `GET /healthz` answers. It is the runtime's unauthenticated liveness
+ * endpoint and therefore not part of the `/internal` contract the typed client
+ * is generated from, so its shape is written out here — the one thing in the
+ * portal that reaches the runtime without going through `client.ts`, and it
+ * stays inside this module (portal plan, Global Constraints).
+ */
+export type RuntimeStatus = {
+  ok: boolean;
+  tenants: string[];
+  config_versions: Record<string, number>;
+  commit: string;
+};
+
+export async function runtimeHealthz(): Promise<RuntimeStatus> {
+  const url = `${env.RUNTIME_INTERNAL_URL.replace(/\/$/, "")}/healthz`;
+  let response: Response;
+  try {
+    response = await fetch(url);
+  } catch {
+    throw new HttpError(
+      502,
+      friendlyRuntimeMessage(null, "the service status"),
+    );
+  }
+  if (!response.ok) {
+    throw new HttpError(
+      502,
+      friendlyRuntimeMessage(response.status, "the service status"),
+    );
+  }
+  return (await response.json()) as RuntimeStatus;
+}
+
+/**
+ * The five bundle files as a multipart body. `openapi-fetch` serialises JSON by
+ * default; `POST /internal/tenants/from-bundle` wants file parts, and FastAPI
+ * only treats a part as a file when it carries a filename.
+ */
+export function bundleFormData(
+  parts: Record<string, string>,
+  filenames: Record<string, string>,
+): FormData {
+  const form = new FormData();
+  for (const [name, value] of Object.entries(parts)) {
+    const filename = filenames[name];
+    if (filename) {
+      form.append(name, new Blob([value], { type: "text/plain" }), filename);
+    } else {
+      form.append(name, value);
+    }
+  }
+  return form;
+}
+
 type Answer<T> = {
   data?: T;
   error?: unknown;

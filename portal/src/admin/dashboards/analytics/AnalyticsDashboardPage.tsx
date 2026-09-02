@@ -2,6 +2,7 @@ import { type AuthUser } from "wasp/auth";
 import { getDailyStats, useQuery } from "wasp/client/operations";
 import { cn } from "../../../client/utils";
 import { DefaultLayout } from "../../layout/DefaultLayout";
+import { RecurringRevenueCard } from "./RecurringRevenueCard";
 import { RevenueAndProfitChart } from "./RevenueAndProfitChart";
 import { TotalPayingUsersCard } from "./TotalPayingUsersCard";
 import { TotalRevenueCard } from "./TotalRevenueCard";
@@ -10,16 +11,21 @@ import { TotalSignupsCard } from "./TotalSignupsCard";
 export function AnalyticsDashboardPage({ user }: { user: AuthUser }) {
   const { data: stats, isLoading, error } = useQuery(getDailyStats);
 
+  // The signups and revenue block is one thing and the agency's own recurring
+  // revenue is another: a daily-stats job that has not run yet must not take
+  // the whole page down with it, which is what an early return did.
   if (error) {
     return (
       <DefaultLayout user={user}>
-        <div className="flex h-full items-center justify-center">
-          <div className="bg-card rounded-lg p-8 shadow-lg">
-            <p className="text-2xl font-bold text-red-500">Error</p>
-            <p className="text-muted-foreground mt-2 text-sm">
-              {error.message || "Something went wrong while fetching stats."}
-            </p>
-          </div>
+        <div className="bg-card rounded-lg p-8 shadow-lg">
+          <p className="text-2xl font-bold text-red-500">Error</p>
+          <p className="text-muted-foreground mt-2 text-sm">
+            {error.message || "Something went wrong while fetching stats."}
+          </p>
+        </div>
+
+        <div className="2xl:mt-7.5 mt-4 grid grid-cols-12 gap-4 md:mt-6 md:gap-6">
+          <RecurringRevenueCard />
         </div>
       </DefaultLayout>
     );
@@ -69,6 +75,13 @@ export function AnalyticsDashboardPage({ user }: { user: AuthUser }) {
             </div>
           </div>
         )}
+      </div>
+
+      {/* Outside the stats block on purpose: the agency's own recurring revenue
+          does not depend on the daily-stats job having run, and the "no stats
+          yet" overlay must not sit on top of it. */}
+      <div className="2xl:mt-7.5 mt-4 grid grid-cols-12 gap-4 md:mt-6 md:gap-6">
+        <RecurringRevenueCard />
       </div>
     </DefaultLayout>
   );

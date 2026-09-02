@@ -264,21 +264,58 @@ export const inviteMember: InviteMember<
   const args = ensureArgsSchemaOrThrowHttpError(inviteMemberSchema, rawArgs);
   const { org } = await requireOrgOwner(context, args.organizationId);
 
-  const email = normaliseEmail(args.email);
+  return createAndSendInvitation({
+    entities: context.entities,
+    org,
+    email: args.email,
+    role: args.role,
+  });
+};
+
+type InvitationEntities = {
+  Membership: {
+    findFirst(args: unknown): Promise<{ id: string } | null>;
+  };
+  Invitation: {
+    findFirst(args: unknown): Promise<Invitation | null>;
+    create(args: { data: Record<string, unknown> }): Promise<Invitation>;
+  };
+};
+
+/**
+ * The one place an invitation is minted: single use, seven days, emailed, and
+ * returned with the link so whoever asked for it can hand it over. The
+ * onboarding wizard invites an owner through this too, so an invitation the
+ * agency creates is the same object as one an owner creates.
+ *
+ * The caller has already decided that this person may invite.
+ */
+export async function createAndSendInvitation({
+  entities,
+  org,
+  email: rawEmail,
+  role,
+}: {
+  entities: InvitationEntities;
+  org: Organization;
+  email: string;
+  role: OrgRole;
+}): Promise<InvitationView> {
+  const email = normaliseEmail(rawEmail);
   const now = new Date();
 
-  const alreadyIn = await context.entities.Membership.findFirst({
+  const alreadyIn = await entities.Membership.findFirst({
     where: { organizationId: org.id, user: { email } },
   });
   if (alreadyIn) {
     throw new HttpError(409, "That person is already in this organisation.");
   }
 
-  const pending = await context.entities.Invitation.findFirst({
+  const pending = await entities.Invitation.findFirst({
     where: {
       organizationId: org.id,
       email,
-      role: args.role,
+      role,
       acceptedAt: null,
       expiresAt: { gt: now },
     },
@@ -287,10 +324,10 @@ export const inviteMember: InviteMember<
 
   const invitation =
     pending ??
-    (await context.entities.Invitation.create({
+    (await entities.Invitation.create({
       data: {
         email,
-        role: args.role,
+        role,
         organizationId: org.id,
         token: newInvitationToken(),
         expiresAt: invitationExpiryFrom(now),
@@ -301,7 +338,7 @@ export const inviteMember: InviteMember<
   await sendInvitationEmail({ to: email, org, inviteUrl: view.inviteUrl });
 
   return view;
-};
+}
 
 async function sendInvitationEmail({
   to,

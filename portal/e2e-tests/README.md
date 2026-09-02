@@ -27,6 +27,11 @@ Before any test runs, `global-setup.ts`:
 
 The seeding is destructive for the `skincentrix` tenant and only for it.
 
+`admin.spec.ts` also writes to the runtime: the onboarding wizard imports the
+Skincentrix bundle under the id `skincentrix-portal-e2e`, so that tenant appears
+beside the seeded one and gains a configuration version on every run. It is
+never `skincentrix`, whose version `client.spec.ts` asserts.
+
 | variable | default | meaning |
 |---|---|---|
 | `RUNTIME_INTERNAL_URL` | `http://localhost:8000` | where the runtime is, for the tests and for the portal server the suite starts |

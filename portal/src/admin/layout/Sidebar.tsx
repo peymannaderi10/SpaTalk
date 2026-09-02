@@ -1,4 +1,4 @@
-import { LayoutDashboard, Sheet, X } from "lucide-react";
+import { Activity, Building2, LayoutDashboard, Sheet, X } from "lucide-react";
 import React, { useEffect, useRef, useState } from "react";
 import { NavLink, useLocation } from "react-router";
 import { Link, routes } from "wasp/client/router";
@@ -134,6 +134,46 @@ export function Sidebar({ sidebarOpen, setSidebarOpen }: SidebarProps) {
                 </NavLink>
               </li>
               {/* <!-- Menu Item Users --> */}
+
+              {/* <!-- Menu Item Tenants --> */}
+              <li>
+                <NavLink
+                  to={routes.AdminTenantsRoute.to}
+                  end
+                  className={({ isActive }) =>
+                    cn(
+                      "text-muted-foreground hover:bg-accent hover:text-accent-foreground group relative flex items-center gap-2.5 rounded-sm px-4 py-2 font-medium duration-300 ease-in-out",
+                      {
+                        "bg-accent text-accent-foreground": isActive,
+                      },
+                    )
+                  }
+                >
+                  <Building2 />
+                  Tenants
+                </NavLink>
+              </li>
+              {/* <!-- Menu Item Tenants --> */}
+
+              {/* <!-- Menu Item Health --> */}
+              <li>
+                <NavLink
+                  to={routes.AdminHealthRoute.to}
+                  end
+                  className={({ isActive }) =>
+                    cn(
+                      "text-muted-foreground hover:bg-accent hover:text-accent-foreground group relative flex items-center gap-2.5 rounded-sm px-4 py-2 font-medium duration-300 ease-in-out",
+                      {
+                        "bg-accent text-accent-foreground": isActive,
+                      },
+                    )
+                  }
+                >
+                  <Activity />
+                  Health
+                </NavLink>
+              </li>
+              {/* <!-- Menu Item Health --> */}
 
             </ul>
           </div>
