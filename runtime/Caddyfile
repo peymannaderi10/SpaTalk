@@ -1,0 +1,6 @@
+{$API_HOST} {
+    reverse_proxy app:8000
+}
+{$MEDIA_HOST} {
+    reverse_proxy app:8000
+}

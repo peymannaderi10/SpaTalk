@@ -1,0 +1,9 @@
+# The image builds from a clean checkout: never ship the host's virtualenv, secrets or caches.
+.venv
+.env
+__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache
+.promptfoo
+node_modules

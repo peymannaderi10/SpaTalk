@@ -12,5 +12,24 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+  app:
+    build: .
+    env_file: .env
+    environment:
+      # Inside the compose network Postgres is reachable as `db:5432`; the host mapping
+      # on the db service (5434) is for the developer machine only.
+      DATABASE_URL: postgresql+asyncpg://spatalk:spatalk@db:5432/spatalk
+    depends_on:
+      db: { condition: service_healthy }
+    restart: unless-stopped
+  caddy:
+    image: caddy:2-alpine
+    env_file: .env
+    ports: ["80:80", "443:443"]
+    volumes: ["./Caddyfile:/etc/caddy/Caddyfile:ro", "caddy_data:/data", "caddy_config:/config"]
+    depends_on: [app]
+    restart: unless-stopped
 volumes:
   pgdata:
+  caddy_data:
+  caddy_config:
