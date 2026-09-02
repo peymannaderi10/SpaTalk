@@ -1,7 +1,7 @@
 # Fix: real-model findings from promptfoo run A (2026-09-02)
 
 Status: done with deviations
-Commit: PENDING
+Commit: 7c04630
 
 ## What was wrong
 
