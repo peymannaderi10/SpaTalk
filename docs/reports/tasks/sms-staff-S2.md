@@ -1,6 +1,6 @@
 # sms-staff-delivery Task S2: Staff replies: ACK, DONE, LIST
 Status: done with deviations
-Commit: <filled below>
+Commit: a81ec9c
 Tests: `TEST_DATABASE_URL=…/spatalk_test_sms uv run pytest -q tests/test_sms_staff_replies.py` -> 51/51; full suite `uv run pytest -q` -> 857/859 counted as 857 passed, 1 skipped, 1 failed. The single failure, `test_internal_api.py::test_the_packaged_rates_match_the_researched_table`, is pre-existing (recorded in the S1 report) and compares `spatalk/rates.json` with `docs/research/rates.json`; this task touches neither.
 Interfaces produced: `spatalk.text.staff.staff_numbers(cfg) -> set[str]`, `spatalk.text.staff.parse_staff_command(text) -> tuple[str | None, int | None, str]`, `spatalk.text.staff.ACK_WORDS`, `RESOLVE_WORDS`, `LIST_WORD`, `spatalk.text.sms.STAFF_ACK_REPLY`, `STAFF_RESOLVE_REPLY`, `STAFF_UNKNOWN_ITEM`, `_staff_reply`, `_staff_ledger_action`
 
