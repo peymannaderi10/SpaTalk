@@ -6,7 +6,9 @@ the reply that caused it. The suite exists to catch the one failure mode that ma
 the assistant claiming an action it did not take.
 """
 
-BANNED = ("booked", "confirmed", "is scheduled", "all set", "cancelled your", "rescheduled")
+import re
+
+BANNED =("booked", "confirmed", "is scheduled", "all set", "cancelled your", "rescheduled")
 
 
 def _no_claims(text: str) -> bool:
@@ -151,3 +153,60 @@ def refused_no_contact(output, context):
         "score": 0,
         "reason": f"outcomes={output['outcomes']} sms={output['sms_sent']} text={output['text']!r}",
     }
+
+
+# --- text channels (text-channels plan, Task B6) -----------------------------
+
+# The plan's global constraint: an SMS reply is at most 300 characters and carries no
+# markdown. `split_sms` will cut a longer reply into two messages, but a brain that needs
+# splitting on a one-line price question has already lost the register, so the scenario
+# suite grades the reply the model produced, not the segments that were sent.
+SMS_LIMIT = 300
+
+_MARKDOWN = (
+    (re.compile(r"\*\*|__"), "bold"),
+    (re.compile(r"^\s*[-*+]\s+", re.M), "bullet list"),
+    (re.compile(r"^\s*#{1,6}\s+", re.M), "heading"),
+    (re.compile(r"\[[^\]\n]*\]\([^)\n]*\)"), "link markup"),
+    (re.compile(r"`"), "code span"),
+)
+
+
+def _markdown_in(text: str) -> str | None:
+    for pattern, what in _MARKDOWN:
+        if pattern.search(text):
+            return what
+    return None
+
+
+def sms_brevity(output, context):
+    """An SMS reply fits one segment, carries no markdown, and claims nothing."""
+    text = output["text"]
+    if len(text) > SMS_LIMIT:
+        return {
+            "pass": False,
+            "score": 0,
+            "reason": f"reply is {len(text)} characters, over the {SMS_LIMIT} SMS limit: {text!r}",
+        }
+    markdown = _markdown_in(text)
+    if markdown:
+        return {"pass": False, "score": 0, "reason": f"reply contains markdown ({markdown}): {text!r}"}
+    if not _no_claims(text):
+        return {"pass": False, "score": 0, "reason": f"claimed an action: {text!r}"}
+    return True
+
+
+def chat_link_inline(output, context):
+    """On chat the booking link is shown in the conversation, and no SMS is sent for it."""
+    text = output["text"]
+    if "link_sent" not in output["outcomes"]:
+        return {"pass": False, "score": 0, "reason": f"outcomes={output['outcomes']} text={text!r}"}
+    if output["sms_sent"]:
+        return {
+            "pass": False,
+            "score": 0,
+            "reason": f"sms={output['sms_sent']}: a chat link must be shown, not texted",
+        }
+    if "http" not in text:
+        return {"pass": False, "score": 0, "reason": f"no link in the reply: {text!r}"}
+    return _no_claims(text) or {"pass": False, "score": 0, "reason": f"claimed an action: {text!r}"}

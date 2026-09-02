@@ -30,3 +30,16 @@ jobs:
         env:
           PROMPTFOO_PYTHON: ${{ github.workspace }}/runtime/.venv/bin/python
         run: cd runtime/scenarios && npx promptfoo@latest eval -c promptfooconfig.yaml --no-cache
+
+  # The Cloudflare worker is the SMS front door when the runtime is down (Task B1), so its
+  # tests run on every push, independently of the runtime job and of any provider key.
+  edge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "22" }
+      - run: npm ci
+        working-directory: edge/sms-worker
+      - run: npm test
+        working-directory: edge/sms-worker

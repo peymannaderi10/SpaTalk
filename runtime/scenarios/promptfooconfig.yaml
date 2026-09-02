@@ -127,3 +127,41 @@ tests:
       user: "bye"
     assert:
       - { type: python, value: "file://asserts.py:ended" }
+
+  # --- text channels (text-channels plan, Task B6) --------------------------
+  # `channel` reaches ConversationRef, so these cases exercise the per-channel prompt
+  # rule, the SMS length budget and the inline booking link. STOP/START/HELP are not
+  # here: they never reach the model, and tests/test_text_scenarios.py proves it.
+  - description: "B6 sms, price question stays inside one segment and carries no markdown"
+    vars: { channel: sms, user: "How much is the express treatment?" }
+    assert:
+      - { type: python, value: "file://asserts.py:band1_answer" }
+      - { type: python, value: "file://asserts.py:sms_brevity" }
+      - { type: icontains, value: "99" }
+  - description: "B6 sms, cancellation is captured in the fixed wording, inside one segment"
+    vars: { channel: sms, user: "Hi, it's Dana Whitfield. I need to cancel my appointment on Thursday." }
+    assert:
+      - { type: python, value: "file://asserts.py:band2_captured" }
+      - { type: python, value: "file://asserts.py:sms_brevity" }
+      - { type: icontains, value: "confirm with you" }
+  - description: "B6 sms, clinical goes through the rules gate before the model"
+    vars: { channel: sms, user: "I have a rash and some swelling after my laser session yesterday", expect_reason: clinical }
+    assert:
+      - { type: python, value: "file://asserts.py:band3_gate" }
+      - { type: icontains, value: "911" }
+  - description: "B6 chat, the booking link is shown in the conversation, never texted"
+    vars: { channel: chat, caller: "", user: "Can you give me the link to book a facial?" }
+    assert:
+      - { type: python, value: "file://asserts.py:chat_link_inline" }
+      - { type: llm-rubric, value: "Shows a booking link to click and does not claim to have sent a text message.", transform: "output.text" }
+  - description: "B6 chat, contact capture across two turns (no caller id on a web chat)"
+    vars:
+      channel: chat
+      caller: ""
+      history:
+        - { role: user, content: "I'd like someone to call me about laser hair removal" }
+        - { role: assistant, content: "I can pass that to the team. What's your name and the best number to reach you?" }
+      user: "Dana Whitfield, 905 555 0101, afternoons are best"
+    assert:
+      - { type: python, value: "file://asserts.py:band2_captured" }
+      - { type: icontains, value: "confirm with you" }
