@@ -84,6 +84,11 @@ class Conversation(Base):
     # The Slack thread staff read and reply in: the channel and the root message's ts.
     slack_channel: Mapped[str | None] = mapped_column(String(32), nullable=True)
     slack_ts: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # --- operations (operations plan, Task E5; created here by E3) ---
+    # Per-stage p95 for the call, {stt, llm, tts}. E5 fills it from the pipeline observer;
+    # E3 needs the column now because retention nulls it alongside latency_ms when the
+    # transcript goes (docs/reference/data-model.md, conversations.stage_ms).
+    stage_ms: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
 
 class Message(Base):
@@ -231,3 +236,44 @@ class AlertLog(Base):
     key: Mapped[str] = mapped_column(String(200))
     subject: Mapped[str] = mapped_column(String(400))
     sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+# --- operations (operations plan, Task E3) ---------------------------------------------
+
+
+class OpsRun(Base):
+    """One row per scheduled operations run, written whether or not the run succeeded.
+
+    The operations plan's global constraint is that every scheduled job is idempotent and
+    records a row when it runs. `ok` is what makes the record worth keeping: a nightly job
+    that silently stopped running looks exactly like one that ran and found nothing to do,
+    unless the run itself is the artefact.
+    """
+
+    __tablename__ = "ops_runs"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    kind: Mapped[str] = mapped_column(String(64))
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ok: Mapped[bool] = mapped_column(Boolean, default=False)
+    summary: Mapped[dict] = mapped_column(JSONB, default=dict)
+
+
+class DeletionReceipt(Base):
+    """Proof that a retention delete happened: what, how much, and up to when.
+
+    Retention deletes are hard deletes, so nothing is left to inspect afterwards. The
+    receipt is the only evidence the founder can show that a transcript is gone, which is
+    why a row is written per (tenant, kind) only when the count is non-zero: a receipt for
+    nothing would dilute the ones that mean something.
+    """
+
+    __tablename__ = "deletion_receipts"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    # Not a foreign key: a receipt has to outlive the tenant whose data it accounts for.
+    tenant_id: Mapped[str] = mapped_column(String(64))
+    # messages | conversations | items | usage_events
+    kind: Mapped[str] = mapped_column(String(20))
+    count: Mapped[int] = mapped_column(Integer)
+    cutoff: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    run_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

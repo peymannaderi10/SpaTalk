@@ -1,15 +1,17 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import time
+from datetime import time, timezone
 from zoneinfo import ZoneInfo
 
 from loguru import logger
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from spatalk import jobs
 from spatalk.ledger.delivery import schedule_item_delivery
-from spatalk.models import Tenant
+from spatalk.models import Job, Tenant
+# Operations plan, Task E3: importing this also registers the ops.retention handler.
+from spatalk.ops import retention
 # Instagram plan, Task D1: importing this also registers the social.refresh_tokens handler.
 from spatalk.social.meta_oauth import ensure_daily_refresh_scheduled
 from spatalk.text.takeover import hand_back_stale
@@ -47,6 +49,37 @@ async def send_digests(ctx: jobs.JobContext) -> int:
     return sent
 
 
+# --- operations (operations plan, Task E3) ---------------------------------------------
+
+# Retention runs on UTC, not on a tenant's clock: it is one sweep over every tenant, and a
+# tenant-local 03:00 would mean as many nightly runs as there are timezones.
+NIGHTLY_RETENTION_UTC_HOUR = 3
+
+
+async def ensure_nightly_retention_scheduled(ctx: jobs.JobContext) -> bool:
+    """Queue the retention job at most once per UTC day, from 03:00 UTC.
+
+    The marker is the queued job's own `run_at`, set from the application clock, so the
+    "already done today" test survives a scheduler that restarts and cannot be fooled by
+    the database's wall clock drifting from the runtime's.
+    """
+    now = ctx.clock.now().astimezone(timezone.utc)
+    boundary = now.replace(hour=NIGHTLY_RETENTION_UTC_HOUR, minute=0, second=0, microsecond=0)
+    if now < boundary:
+        return False
+    async with ctx.sf() as s:
+        already = await s.scalar(
+            select(func.count(Job.id)).where(
+                Job.kind == retention.RUN_KIND, Job.run_at >= boundary
+            )
+        )
+    if already:
+        return False
+    await jobs.enqueue(ctx.sf, retention.RUN_KIND, {}, run_at=now)
+    logger.info("queued {} for {}", retention.RUN_KIND, now.isoformat())
+    return True
+
+
 async def run_scheduler_forever(ctx: jobs.JobContext, interval_seconds: float = 60.0) -> None:
     while True:
         try:
@@ -56,6 +89,8 @@ async def run_scheduler_forever(ctx: jobs.JobContext, interval_seconds: float = 
             await hand_back_stale(ctx)
             # Meta tokens expire; this queues the daily refresh job once a day (Task D1).
             await ensure_daily_refresh_scheduled(ctx.sf, ctx.clock)
+            # Hard-delete everything past its retention threshold, nightly (Task E3).
+            await ensure_nightly_retention_scheduled(ctx)
         except Exception as e:  # noqa: BLE001
             logger.exception("scheduler error: {}", e)
         await asyncio.sleep(interval_seconds)

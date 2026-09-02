@@ -196,11 +196,37 @@ guard writes a row per refused self-call, and E7's `alerts.notify` deduplicates 
 
 Index: `(key, sent_at desc)`.
 
-### ops_runs, deletion_receipts, audit_reports, provider_invoices [operations plan]
+### ops_runs [operations plan, Task E3]
+
+One row per scheduled operations run, written whether or not the run succeeded, so a job
+that silently stopped running does not look like one that found nothing to do.
+
+| column | type | notes |
+|---|---|---|
+| id | bigserial PK | |
+| kind | text | the job kind, e.g. `ops.retention` |
+| started_at | timestamptz | default now |
+| finished_at | timestamptz null | null while the run is in flight or if the process died |
+| ok | bool | default false; set true only when the run completed |
+| summary | jsonb | what the run did, e.g. the retention counts per tenant |
+
+### deletion_receipts [operations plan, Task E3]
+
+Retention deletes are hard deletes, so the receipt is the only evidence afterwards. One row
+per (tenant, kind) per run, and only when the count is non-zero.
+
+| column | type | notes |
+|---|---|---|
+| id | bigserial PK | |
+| tenant_id | text | not a foreign key: a receipt outlives the tenant it accounts for |
+| kind | text | `messages`, `conversations`, `items`, `usage_events` |
+| count | int | rows deleted |
+| cutoff | timestamptz | everything older than this went |
+| run_at | timestamptz | the run's clock, not the database's |
+
+### audit_reports, provider_invoices [operations plan]
 | table | columns |
 |---|---|
-| ops_runs | id, kind, started_at, finished_at, ok bool, summary jsonb |
-| deletion_receipts | id, tenant_id, kind (`messages`, `conversations`, `items`, `usage_events`), count int, cutoff timestamptz, run_at |
 | audit_reports | id, day date, tenant_id, report jsonb, created_at; unique `(day, tenant_id)` |
 | provider_invoices | id, provider text, month text `YYYY-MM`, amount_cad numeric(12,2), entered_at; unique `(provider, month)` |
 
