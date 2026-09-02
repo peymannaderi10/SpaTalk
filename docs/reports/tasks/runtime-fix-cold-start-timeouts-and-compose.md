@@ -1,9 +1,10 @@
 # runtime QA gate A fix: cold-start-timeouts-and-compose
 
 Status: done with deviations
-Commit: PENDING
+Commit: b972e20
 Tests: `uv run pytest -q tests/test_voice_processors.py tests/test_deploy_assets.py` -> 12/12;
-full suite `uv run pytest -q` -> PENDING
+full suite `uv run pytest -q` -> 187/188 (187 passed, 1 skipped; the skip is the
+`GOOGLE_API_KEY` live test), measured on a clean worktree at HEAD
 Interfaces produced: none (no product code changed)
 
 ## What this fixes
@@ -60,6 +61,7 @@ Two minor findings from `docs/reports/qa-gate-A.md`:
 | `uv run pytest -q -p no:cacheprovider tests/test_voice_processors.py` x3 | 6 passed, 6 passed, 6 passed |
 | same after `rm -rf` of every `__pycache__` under `runtime/` and `runtime/.venv` | 6 passed in 1.84 s |
 | `uv run ruff check spatalk tests scenarios` | All checks passed |
+| full suite on a clean `git worktree` at HEAD | 187 passed, 1 skipped in 9.15 s |
 
 ## Deviations
 
@@ -96,3 +98,22 @@ Two minor findings from `docs/reports/qa-gate-A.md`:
   `docs/runbooks/deploy.md` is unchanged and `.env.example` is still the source of the
   variable list. `required: false` needs Compose spec support (Docker Compose v2.24+);
   verified working on the Docker Desktop in this environment.
+
+## A note on measuring the full suite
+
+The first two `uv run pytest -q` attempts hung. `pg_stat_activity` on `spatalk_test` showed
+six sessions blocked on `DROP TABLE runtime.usage_events` behind one `idle in transaction`
+holder: several agents were running the suite against the one shared Compose database at the
+same time. Nothing to do with this change. After stopping the duplicate runs the database
+drained to zero sessions and the suite finished in 11.5 s.
+
+That run reported `7 failed, 184 passed, 1 skipped`, and all seven failures were in
+`tests/test_delivery.py` and `tests/test_http_actions.py` -- the only two dirty files in the
+tree at the time (`git status --porcelain`), the in-flight test-first half of a neighbouring
+agent's Slack signed-token fix, whose product code was not yet committed.
+
+To get a number that is actually about this commit, the suite was re-run in a detached
+`git worktree` at HEAD (which contains b972e20) against the same venv: **187 passed,
+1 skipped in 9.15 s**, `ruff check spatalk tests scenarios` clean. The worktree was removed
+afterwards. 187 is the 184 gate A baseline plus this task's guard test plus two tests from
+neighbouring fixes that landed in the same window.
