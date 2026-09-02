@@ -1,8 +1,8 @@
 # instagram Task D2: Instagram webhook, comments and DMs
 
 Status: done with deviations
-Commit: `<filled in by the docs commit that follows; a hash cannot be written into the commit
-that carries it — the convention set by runtime-A8 onward>`
+Commit: `0e74196` (implementation, tests and this report; the hash is recorded by the docs commit
+that follows, the convention set by runtime-A8 onward)
 Tests: `uv run pytest tests/test_social_instagram.py -q` -> 35/35 (all 33 originally written
 were seen failing first, the two later additions are named below); full runtime suite
 `uv run pytest -q` -> 430 passed, 1 skipped (baseline after D1: 395 passed, 1 skipped);
