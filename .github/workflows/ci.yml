@@ -1,0 +1,32 @@
+name: ci
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env: { POSTGRES_USER: spatalk, POSTGRES_PASSWORD: spatalk, POSTGRES_DB: spatalk_test }
+        ports: ["5432:5432"]
+        options: --health-cmd "pg_isready -U spatalk" --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql+asyncpg://spatalk:spatalk@localhost:5432/spatalk_test
+      DATABASE_URL: postgresql+asyncpg://spatalk:spatalk@localhost:5432/spatalk_test
+      # The `secrets` context is not available in a step-level `if`, so the key is lifted
+      # to the job environment and the regression suite is skipped when it is empty.
+      GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - run: cd runtime && uv venv --python 3.12 && uv pip install -e ".[dev]"
+      - run: cd runtime && uv run ruff check spatalk tests scenarios
+      - run: cd runtime && uv run pytest -q
+      # promptfoo refuses to start on Node older than 22.22.
+      - uses: actions/setup-node@v4
+        if: ${{ env.GOOGLE_API_KEY != '' }}
+        with: { node-version: "22" }
+      - name: conversation regression suite
+        if: ${{ env.GOOGLE_API_KEY != '' }}
+        env:
+          PROMPTFOO_PYTHON: ${{ github.workspace }}/runtime/.venv/bin/python
+        run: cd runtime/scenarios && npx promptfoo@latest eval -c promptfooconfig.yaml --no-cache
