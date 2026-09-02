@@ -1,6 +1,6 @@
 # runtime-voice-ledger Task 5: Outcome renderer
 Status: done with deviations
-Commit: PENDING
+Commit: 47617513ff300eb414d840fe3ea4f6be0265ef70
 Tests: `uv run pytest tests/test_renderer.py -v` -> 6/6; full suite `uv run pytest -q` -> 63/63; `uv run ruff check spatalk tests` -> `All checks passed!` (`runtime/scenarios/` does not exist yet, so it was omitted from the lint path list, as in Tasks 3, 4, 6 and 11)
 Interfaces produced: `spatalk.brain.renderer` — `render(outcome: Outcome, cfg: TenantConfig, now: datetime, channel: str = "voice") -> str`, `render_script(name: str, cfg: TenantConfig, now: datetime, urgent: bool = True, **extra) -> str`, `COMPLETED_TEMPLATE`, `TEXT_CHANNELS = ("chat", "instagram", "messenger")`
 
