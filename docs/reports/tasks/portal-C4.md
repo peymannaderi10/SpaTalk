@@ -1,7 +1,7 @@
 # portal Task C4: Client pages
 
 Status: done with deviations
-Commit: <filled below>
+Commit: e34a93c
 Tests: `cd portal/e2e-tests && RUNTIME_INTERNAL_URL=… npx playwright test tests/client.spec.ts` -> 16/16; full portal suite -> 77/77 (`npx playwright test` 32, `wasp test client run` 34, `npm run test:unit` 11) plus `wasp build` and `npx tsc -p tsconfig.src.json --noEmit` clean
 
 Interfaces produced:
