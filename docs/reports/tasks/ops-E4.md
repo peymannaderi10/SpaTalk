@@ -1,7 +1,7 @@
 # operations plan Task E4: Nightly audit — lexicon scan, band audit with a judge model, health-context stats
 
 Status: done with deviations
-Commit: <pending>
+Commit: 1db8abf
 Tests: `TEST_DATABASE_URL=…/spatalk_test_e4 uv run pytest -q tests/test_ops_nightly_audit.py` -> 27/27;
 full suite `TEST_DATABASE_URL=…/spatalk_test_e4 uv run pytest -q` -> **672 passed, 1 failed, 1 skipped**
 (674 total). The one failure is `tests/test_internal_api.py::test_the_packaged_rates_match_the_researched_table`,
