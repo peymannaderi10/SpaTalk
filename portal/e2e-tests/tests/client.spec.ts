@@ -4,11 +4,13 @@ import {
   callOperation,
   createRandomUser,
   logUserIn,
+  SERVER_URL,
   signInOrSignUp,
   signUserUp,
   verifyUserEmail,
   type User,
 } from "./utils";
+import { checkoutSessionCompleted, postStripeEvent } from "./stripe";
 import {
   auditRows,
   itemState,
@@ -77,6 +79,20 @@ test.beforeAll(async ({ browser }) => {
       (org: { slug: string }) => org.slug === ORG_SLUG,
     ).id;
   }
+
+  // Every client page but the overview needs a live subscription (portal plan,
+  // Task C6), and the staff member below is not an agency admin, so the
+  // organisation is subscribed the only way the portal allows: a signed Stripe
+  // event at the webhook. Billing itself is proved in `billing.spec.ts`.
+  const subscribed = await postStripeEvent(
+    SERVER_URL,
+    checkoutSessionCompleted({
+      organizationId,
+      stripeCustomerId: `cus_test_${ORG_SLUG}`,
+      customerEmail: agencyAdmin.email,
+    }),
+  );
+  expect(subscribed).toBe(204);
 });
 
 test.afterAll(async () => {

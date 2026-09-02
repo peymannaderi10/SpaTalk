@@ -17,6 +17,11 @@ import {
   type OrgAccess,
   type OrgSlugAccessContext,
 } from "../organizations/access";
+import {
+  organizationIsEntitled,
+  SUBSCRIPTION_REQUIRED_STATUS,
+  subscriptionRequiredMessage,
+} from "../payment/entitlement";
 import { runtime, runtimeCall, type RuntimeClient } from "../runtime/api";
 import { type components } from "../runtime/client";
 import { ensureArgsSchemaOrThrowHttpError } from "../server/validation";
@@ -76,11 +81,38 @@ type Sess = {
 
 /** What these operations need of a Wasp context: the org lookup, plus who is acting. */
 type PageContext = OrgSlugAccessContext & {
-  user?: { id: string; email?: string | null } | null;
+  user?: { id: string; isAdmin: boolean; email?: string | null } | null;
 };
 
-async function session(context: PageContext, slug: string): Promise<Sess> {
+/**
+ * The subscription gate (portal plan, Task C6).
+ *
+ * Every client page except the overview needs the organisation's subscription
+ * to be live; an agency admin is let through regardless. It is enforced here,
+ * on the server, and not only in the page: hiding a button is not a gate.
+ */
+function requireSubscription(context: PageContext, access: OrgAccess): void {
+  const entitled = organizationIsEntitled({
+    subscriptionStatus: access.org.subscriptionStatus,
+    viewerIsAgencyAdmin: context.user?.isAdmin === true,
+  });
+  if (!entitled) {
+    throw new HttpError(
+      SUBSCRIPTION_REQUIRED_STATUS,
+      subscriptionRequiredMessage(access.org.name, access.org.subscriptionStatus),
+    );
+  }
+}
+
+async function session(
+  context: PageContext,
+  slug: string,
+  { needsSubscription = true }: { needsSubscription?: boolean } = {},
+): Promise<Sess> {
   const access = await requireOrgAccessBySlug(context, slug);
+  if (needsSubscription) {
+    requireSubscription(context, access);
+  }
   const actor = context.user?.email ?? context.user?.id ?? "unknown";
   return {
     access,
@@ -92,6 +124,7 @@ async function session(context: PageContext, slug: string): Promise<Sess> {
 
 async function ownerSession(context: PageContext, slug: string): Promise<Sess> {
   const access = await requireOrgOwnerBySlug(context, slug);
+  requireSubscription(context, access);
   const actor = context.user?.email ?? context.user?.id ?? "unknown";
   return {
     access,
@@ -168,7 +201,11 @@ export const getTenantOverview: GetTenantOverview<
   Overview
 > = async (rawArgs, context) => {
   const { slug } = ensureArgsSchemaOrThrowHttpError(overviewArgs, rawArgs);
-  const { api, tenantId, access } = await session(context, slug);
+  // The one page a clinic keeps without a subscription: an owner deciding
+  // whether to pay has to see what they would be paying for.
+  const { api, tenantId, access } = await session(context, slug, {
+    needsSubscription: false,
+  });
 
   // No dates: the runtime answers with the last thirty days *in the tenant's
   // timezone*, and the last of them is the tenant's today. Everything else here

@@ -17,7 +17,14 @@ import { OrgShell, Problem, type Org } from "./OrgShell";
  * tenant except which slice of the runtime's answer to show.
  */
 export function OverviewPage() {
-  return <OrgShell title="Overview">{(org) => <Body org={org} />}</OrgShell>;
+  // The overview stays open without a subscription: an owner deciding whether
+  // to pay has to be able to see what they would be paying for (portal plan,
+  // Task C6). The banner still appears above it.
+  return (
+    <OrgShell title="Overview" requiresSubscription={false}>
+      {(org) => <Body org={org} />}
+    </OrgShell>
+  );
 }
 
 function Body({ org }: { org: Org }) {

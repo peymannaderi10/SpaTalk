@@ -6,7 +6,7 @@ import {
   type UpdateIsUserAdminById,
 } from "wasp/server/operations";
 import * as z from "zod";
-import { SubscriptionStatus } from "../payment/plans";
+import { type OrgRole } from "../organizations/roles";
 import { ensureArgsSchemaOrThrowHttpError } from "../server/validation";
 
 const updateUserAdminByIdInputSchema = z.object({
@@ -45,16 +45,15 @@ export const updateIsUserAdminById: UpdateIsUserAdminById<
   });
 };
 
+/**
+ * The agency's list of people. A person has no subscription — a clinic does
+ * (portal plan, Task C6) — so what an admin needs beside a name is which
+ * organisations that person can open, and as what.
+ */
 type GetPaginatedUsersOutput = {
-  users: Pick<
-    User,
-    | "id"
-    | "email"
-    | "username"
-    | "subscriptionStatus"
-    | "paymentProcessorUserId"
-    | "isAdmin"
-  >[];
+  users: (Pick<User, "id" | "email" | "username" | "isAdmin"> & {
+    organizations: { id: string; name: string; slug: string; role: OrgRole }[];
+  })[];
   totalPages: number;
 };
 
@@ -63,9 +62,6 @@ const getPaginatorArgsSchema = z.object({
   filter: z.object({
     emailContains: z.string().nonempty().optional(),
     isAdmin: z.boolean().optional(),
-    subscriptionStatusIn: z
-      .array(z.nativeEnum(SubscriptionStatus).nullable())
-      .optional(),
   }),
 });
 
@@ -91,69 +87,55 @@ export const getPaginatedUsers: GetPaginatedUsers<
 
   const {
     skipPages,
-    filter: {
-      subscriptionStatusIn: subscriptionStatus,
-      emailContains,
-      isAdmin,
-    },
+    filter: { emailContains, isAdmin },
   } = ensureArgsSchemaOrThrowHttpError(getPaginatorArgsSchema, rawArgs);
-
-  const includeUnsubscribedUsers = !!subscriptionStatus?.some(
-    (status) => status === null,
-  );
-  const desiredSubscriptionStatuses = subscriptionStatus?.filter(
-    (status) => status !== null,
-  );
 
   const pageSize = 10;
 
-  const userPageQuery: Prisma.UserFindManyArgs = {
-    skip: skipPages * pageSize,
-    take: pageSize,
-    where: {
-      AND: [
-        {
-          email: {
-            contains: emailContains,
-            mode: "insensitive",
-          },
-          isAdmin,
-        },
-        {
-          OR: [
-            {
-              subscriptionStatus: {
-                in: desiredSubscriptionStatuses,
-              },
-            },
-            {
-              subscriptionStatus: includeUnsubscribedUsers ? null : undefined,
-            },
-          ],
-        },
-      ],
+  const where: Prisma.UserWhereInput = {
+    email: {
+      contains: emailContains,
+      mode: "insensitive",
     },
-    select: {
-      id: true,
-      email: true,
-      username: true,
-      isAdmin: true,
-      subscriptionStatus: true,
-      paymentProcessorUserId: true,
-    },
-    orderBy: {
-      username: "asc",
-    },
+    isAdmin,
   };
 
   const [pageOfUsers, totalUsers] = await prisma.$transaction([
-    context.entities.User.findMany(userPageQuery),
-    context.entities.User.count({ where: userPageQuery.where }),
+    context.entities.User.findMany({
+      skip: skipPages * pageSize,
+      take: pageSize,
+      where,
+      select: {
+        id: true,
+        email: true,
+        username: true,
+        isAdmin: true,
+        memberships: {
+          select: {
+            role: true,
+            organization: { select: { id: true, name: true, slug: true } },
+          },
+          orderBy: { createdAt: "asc" },
+        },
+      },
+      orderBy: { email: "asc" },
+    }),
+    context.entities.User.count({ where }),
   ]);
-  const totalPages = Math.ceil(totalUsers / pageSize);
 
   return {
-    users: pageOfUsers,
-    totalPages,
+    users: pageOfUsers.map((user) => ({
+      id: user.id,
+      email: user.email,
+      username: user.username,
+      isAdmin: user.isAdmin,
+      organizations: user.memberships.map((membership) => ({
+        id: membership.organization.id,
+        name: membership.organization.name,
+        slug: membership.organization.slug,
+        role: membership.role,
+      })),
+    })),
+    totalPages: Math.ceil(totalUsers / pageSize),
   };
 };

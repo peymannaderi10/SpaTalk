@@ -8,6 +8,8 @@ import {
 
 export const userSpec: Spec = [
   route("AccountRoute", "/account", page(AccountPage, { authRequired: true })),
-  query(getPaginatedUsers, { entities: ["User"] }),
+  query(getPaginatedUsers, {
+    entities: ["User", "Membership", "Organization"],
+  }),
   action(updateIsUserAdminById, { entities: ["User"] }),
 ];

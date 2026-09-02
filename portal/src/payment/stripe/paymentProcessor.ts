@@ -1,42 +1,32 @@
 import Stripe from "stripe";
 import { env } from "wasp/server";
-import { CUSTOMER_PORTAL_RETURN_URL } from "../paths";
+import { customerPortalReturnUrl } from "../paths";
 import type {
   CreateCheckoutSessionArgs,
   FetchCustomerPortalUrlArgs,
   PaymentProcessor,
 } from "../paymentProcessor";
 import { getPaymentProcessorPlanId } from "../paymentProcessorPlans";
-import {
-  fetchUserPaymentProcessorUserId,
-  updateUserPaymentProcessorUserId,
-} from "../user";
-import {
-  createStripeCheckoutSession,
-  ensureStripeCustomer,
-} from "./checkoutUtils";
+import { createStripeCheckoutSession } from "./checkoutUtils";
 import { stripeClient } from "./stripeClient";
 import { stripeMiddlewareConfigFn, stripeWebhook } from "./webhook";
 
 export const stripePaymentProcessor: PaymentProcessor = {
   id: "stripe",
   createCheckoutSession: async ({
-    userId,
-    userEmail,
+    organizationId,
+    organizationSlug,
+    organizationName,
+    ownerEmail,
     paymentPlan,
-    prismaUserDelegate,
   }: CreateCheckoutSessionArgs) => {
-    const customer = await ensureStripeCustomer(userEmail);
-
-    await updateUserPaymentProcessorUserId(
-      { userId, paymentProcessorUserId: customer.id },
-      prismaUserDelegate,
-    );
-
     const checkoutSession = await createStripeCheckoutSession({
-      customerId: customer.id,
       priceId: getPaymentProcessorPlanId(paymentPlan),
-      mode: "subscription",
+      paymentPlanId: paymentPlan.id,
+      organizationId,
+      organizationSlug,
+      organizationName,
+      ownerEmail,
     });
 
     if (!checkoutSession.url) {
@@ -53,28 +43,19 @@ export const stripePaymentProcessor: PaymentProcessor = {
     };
   },
   fetchCustomerPortalUrl: async ({
-    prismaUserDelegate,
-    userId,
+    stripeCustomerId,
+    organizationSlug,
   }: FetchCustomerPortalUrlArgs) => {
-    const paymentProcessorUserId = await fetchUserPaymentProcessorUserId(
-      userId,
-      prismaUserDelegate,
-    );
-
-    if (!paymentProcessorUserId) {
-      return null;
-    }
-
     // A no-code Stripe customer portal link, when the deployment configures
-    // one, saves a round trip to Stripe on every page render.
+    // one, saves a round trip to Stripe.
     if (env.STRIPE_CUSTOMER_PORTAL_URL) {
       return env.STRIPE_CUSTOMER_PORTAL_URL;
     }
 
     const billingPortalSession =
       await stripeClient.billingPortal.sessions.create({
-        customer: paymentProcessorUserId,
-        return_url: CUSTOMER_PORTAL_RETURN_URL,
+        customer: stripeCustomerId,
+        return_url: customerPortalReturnUrl(organizationSlug),
       });
 
     return billingPortalSession.url;

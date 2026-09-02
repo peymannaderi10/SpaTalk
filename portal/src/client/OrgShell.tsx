@@ -1,6 +1,7 @@
 import { type ReactNode } from "react";
 import { Link, useLocation, useParams } from "react-router";
 import { getOrganization, useQuery } from "wasp/client/operations";
+import { subscriptionProblem } from "../payment/entitlement";
 
 /**
  * The frame every client page sits in: the organisation it is about, the
@@ -14,17 +15,33 @@ export type Org = {
   slug: string;
   runtimeTenantId: string;
   role: "OWNER" | "STAFF";
+  subscriptionStatus: string | null;
+  /** Whether Stripe has ever billed this organisation. */
+  hasStripeCustomer: boolean;
+  /**
+   * Whether this viewer may open the pages that need a subscription. The
+   * server decides it — an agency admin is entitled to every organisation —
+   * and the page only obeys, so the banner and the refusal always agree.
+   */
+  entitled: boolean;
 };
 
 export function OrgShell({
   title,
+  requiresSubscription = true,
   children,
 }: {
   title: string;
+  /** False for the pages a clinic keeps without a subscription. */
+  requiresSubscription?: boolean;
   children: (org: Org) => ReactNode;
 }) {
   const { orgSlug = "" } = useParams();
-  const { data: org, isLoading, error } = useQuery(getOrganization, {
+  const {
+    data: org,
+    isLoading,
+    error,
+  } = useQuery(getOrganization, {
     slug: orgSlug,
   });
 
@@ -52,10 +69,46 @@ export function OrgShell({
     );
   }
 
+  const closed = !org.entitled;
+
   return (
     <Frame title={title} slug={org.slug} org={org}>
-      {children(org)}
+      {closed && <SubscriptionBanner org={org} />}
+      {closed && requiresSubscription ? null : children(org)}
     </Frame>
+  );
+}
+
+/**
+ * Why a page is closed, and what the owner can do about it. It never says the
+ * clinic's data is gone: a lapsed subscription closes the door, it does not
+ * empty the room.
+ */
+export function SubscriptionBanner({ org }: { org: Org }) {
+  const problem = subscriptionProblem(org.subscriptionStatus);
+  if (!problem) {
+    return null;
+  }
+
+  return (
+    <div
+      data-testid="subscription-required"
+      className="border-border mb-8 rounded-md border p-4"
+    >
+      <p className="text-foreground text-sm font-medium">{problem.headline}</p>
+      <p className="text-muted-foreground mt-1 text-sm">{problem.detail}</p>
+      <p className="mt-3 text-sm">
+        {org.role === "OWNER" ? (
+          <Link className="underline" to={`/app/${org.slug}/billing`}>
+            {problem.action === "manage"
+              ? "Update the payment method"
+              : "Subscribe this organisation"}
+          </Link>
+        ) : (
+          `Ask an owner of ${org.name} to sort out the subscription.`
+        )}
+      </p>
+    </div>
   );
 }
 
@@ -111,12 +164,24 @@ function Frame({
           );
         })}
         {org?.role === "OWNER" && (
-          <Link
-            to={`/app/${slug}/settings/people`}
-            className="text-muted-foreground hover:text-foreground"
-          >
-            People
-          </Link>
+          <>
+            <Link
+              to={`/app/${slug}/billing`}
+              className={
+                location.pathname === `/app/${slug}/billing`
+                  ? "text-foreground font-medium"
+                  : "text-muted-foreground hover:text-foreground"
+              }
+            >
+              Billing
+            </Link>
+            <Link
+              to={`/app/${slug}/settings/people`}
+              className="text-muted-foreground hover:text-foreground"
+            >
+              People
+            </Link>
+          </>
         )}
       </nav>
 

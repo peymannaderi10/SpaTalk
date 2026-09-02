@@ -11,6 +11,6 @@ export const analyticsSpec: Spec = [
       cron: "0 * * * *", // Every hour. useful in production.
       // cron: "* * * * *" // Every minute. useful for debugging.
     },
-    entities: ["User", "DailyStats", "Logs"],
+    entities: ["User", "Organization", "DailyStats", "Logs"],
   }),
 ];

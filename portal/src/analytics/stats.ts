@@ -1,7 +1,7 @@
 import { type DailyStats } from "wasp/entities";
 import { type CalculateDailyStatsJob } from "wasp/server/jobs";
+import { ENTITLING_SUBSCRIPTION_STATUSES } from "../payment/entitlement";
 import { paymentProcessor } from "../payment/paymentProcessor";
-import { SubscriptionStatus } from "../payment/plans";
 
 export type DailyStatsProps = {
   dailyStats?: DailyStats;
@@ -10,9 +10,13 @@ export type DailyStatsProps = {
 };
 
 /**
- * Signups, paying customers and revenue for the agency dashboard. There is no
+ * Signups, paying clinics and revenue for the agency dashboard. There is no
  * page-view tracking on the portal: the marketing site was removed, and with
  * it the third-party analytics scripts.
+ *
+ * `paidUserCount` counts *organisations*, not people: a clinic subscribes and
+ * may have several people in it (portal plan, Task C6). The column keeps the
+ * template's name because open-saas's chart reads it.
  */
 export const calculateDailyStatsJob: CalculateDailyStatsJob<
   never,
@@ -34,11 +38,11 @@ export const calculateDailyStatsJob: CalculateDailyStatsJob<
     });
 
     const userCount = await context.entities.User.count({});
-    // Users can have paid but canceled subscriptions which terminate at the end
-    // of the period; those are not current paying users.
-    const paidUserCount = await context.entities.User.count({
+    // Every status in which the agency is still owed money for the month,
+    // including a subscription cancelled but paid to the end of its period.
+    const paidUserCount = await context.entities.Organization.count({
       where: {
-        subscriptionStatus: SubscriptionStatus.Active,
+        subscriptionStatus: { in: [...ENTITLING_SUBSCRIPTION_STATUSES] },
       },
     });
 

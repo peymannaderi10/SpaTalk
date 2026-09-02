@@ -8,20 +8,26 @@
  * owns.
  */
 
+import { isEntitlingStatus } from "../payment/entitlement";
+import { PLAN_MONTHLY_CAD } from "../payment/plans";
+
 /**
- * The list price of the single plan, in Canadian dollars per month
- * (`docs/runbooks/accounts-and-env.md` § 10: "recurring price CA$999 per
- * month"). Stripe holds the price of record; this is what the agency's own
- * MRR line is computed with, and the page says so rather than implying the
- * figure came back from Stripe.
+ * The list price of the single plan, in Canadian dollars per month. It lives
+ * with the plan itself (`src/payment/plans.ts`) and is re-exported here because
+ * this is where the agency's MRR line is computed. Stripe holds the price of
+ * record; the pages that print it say so rather than implying the figure came
+ * back from Stripe.
  */
-export const PLAN_MONTHLY_CAD = 999;
+export { PLAN_MONTHLY_CAD } from "../payment/plans";
 
-/** The Stripe statuses in which a subscription is still being paid for. */
-const PAYING = new Set(["active", "trialing", "cancel_at_period_end"]);
-
+/**
+ * The Stripe statuses in which a subscription is still being paid for — the
+ * same list that decides whether the clinic's pages open
+ * (`src/payment/entitlement.ts`). "We are being paid" and "they get the
+ * service" are one question, and answering it in two places is how they drift.
+ */
 export function isPayingStatus(status: string | null | undefined): boolean {
-  return status !== null && status !== undefined && PAYING.has(status);
+  return isEntitlingStatus(status);
 }
 
 export function mrrCadFor(

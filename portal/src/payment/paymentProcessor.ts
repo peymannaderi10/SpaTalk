@@ -1,20 +1,29 @@
-import { PrismaClient } from "@prisma/client";
-import { User } from "wasp/entities";
 import type { MiddlewareConfigFn } from "wasp/server";
 import type { PaymentsWebhook } from "wasp/server/api";
 import type { PaymentPlan } from "./plans";
 import { stripePaymentProcessor } from "./stripe/paymentProcessor";
 
+/**
+ * The payment processor, seen from the rest of the portal.
+ *
+ * Everything here is keyed to an organisation: a clinic subscribes, not a
+ * person (portal plan, Task C6). The processor never reads or writes the
+ * database — the webhook does that through `src/payment/subscription.ts`.
+ */
+
 export interface CreateCheckoutSessionArgs {
-  userId: User["id"];
-  userEmail: NonNullable<User["email"]>;
+  organizationId: string;
+  organizationSlug: string;
+  organizationName: string;
+  /** The owner starting the checkout. Stripe prefills and invoices this. */
+  ownerEmail: string;
   paymentPlan: PaymentPlan;
-  prismaUserDelegate: PrismaClient["user"];
 }
 
 export interface FetchCustomerPortalUrlArgs {
-  userId: User["id"];
-  prismaUserDelegate: PrismaClient["user"];
+  /** Learned from `checkout.session.completed`; null before a first payment. */
+  stripeCustomerId: string;
+  organizationSlug: string;
 }
 
 export interface PaymentProcessor {

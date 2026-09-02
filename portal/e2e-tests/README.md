@@ -68,6 +68,26 @@ RUNTIME_INTERNAL_URL=http://localhost:8010 npx playwright test
 `seedCommand()` in `tests/runtime.ts` falls back from `uv` to `uv.exe`, so the
 seeding step reaches the Windows runtime from WSL without any of this.
 
+## Stripe
+
+No Stripe account, key or CLI exists for this project. `billing.spec.ts` proves
+billing the way Stripe documents it instead: a test-mode event body signed with
+a webhook secret we hold, posted at `/payments-webhook`. The event shapes and
+the signature live in `../src/payment/stripe/fixtures.ts`, so the unit test in
+`../src/payment/subscription.server.test.ts` proves the same bodies.
+
+`playwright.config.ts` pins `STRIPE_WEBHOOK_SECRET`, `STRIPE_API_KEY`,
+`STRIPE_PRICE_ID_FRONTDESK` and `STRIPE_CUSTOMER_PORTAL_URL` for the app it
+starts, so the suite does not depend on whatever is in `.env.server` and no test
+ever reaches Stripe. The pinned `STRIPE_API_KEY` is not a real key; nothing in
+the suite calls the Stripe API with it.
+
+Two specs write subscriptions: `billing.spec.ts` creates one organisation per
+run (`billing-test-<8 hex>`, whose runtime tenant deliberately does not exist)
+and drives it through subscribed, past due and ended; `client.spec.ts`
+subscribes its own organisation once, because every client page but the overview
+needs a live subscription and its staff member is not an agency admin.
+
 ## The mail sink
 
 The suite exercises real email verification, so it needs the verification link.

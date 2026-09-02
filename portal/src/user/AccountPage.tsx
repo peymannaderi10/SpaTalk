@@ -1,6 +1,6 @@
-import { getCustomerPortalUrl, useQuery } from "wasp/client/operations";
+import { Link } from "react-router";
+import { listMyOrganizations, useQuery } from "wasp/client/operations";
 import type { User } from "wasp/entities";
-import { Button } from "../client/components/ui/button";
 import {
   Card,
   CardContent,
@@ -8,14 +8,26 @@ import {
   CardTitle,
 } from "../client/components/ui/card";
 import { Separator } from "../client/components/ui/separator";
-import {
-  PaymentPlanId,
-  SubscriptionStatus,
-  parsePaymentPlanId,
-  prettyPaymentPlanName,
-} from "../payment/plans";
+
+/**
+ * The account page. It says who you are and which clinics you can open.
+ *
+ * There is no plan here: a subscription belongs to an organisation, not to a
+ * person (portal plan, Task C6), so billing lives on each organisation's own
+ * billing page and only its owners can reach it.
+ */
+
+const STATUS_WORDING: Record<string, string> = {
+  active: "Subscribed",
+  trialing: "In trial",
+  cancel_at_period_end: "Subscribed, ending this billing period",
+  past_due: "Payment past due",
+  deleted: "Subscription ended",
+};
 
 export function AccountPage({ user }: { user: User }) {
+  const { data: organizations, isLoading } = useQuery(listMyOrganizations);
+
   return (
     <div className="mt-10 px-6">
       <Card className="mb-4 lg:m-8">
@@ -27,45 +39,59 @@ export function AccountPage({ user }: { user: User }) {
         <CardContent className="p-0">
           <div className="space-y-0">
             {!!user.email && (
-              <div className="px-6 py-4">
-                <div className="grid grid-cols-1 sm:grid-cols-3 sm:gap-4">
-                  <div className="text-muted-foreground text-sm font-medium">
-                    Email address
-                  </div>
-                  <div className="text-foreground mt-1 text-sm sm:col-span-2 sm:mt-0">
-                    {user.email}
-                  </div>
-                </div>
-              </div>
+              <Row label="Email address">
+                <span className="text-foreground text-sm">{user.email}</span>
+              </Row>
             )}
             {!!user.username && (
               <>
                 <Separator />
-                <div className="px-6 py-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-3 sm:gap-4">
-                    <div className="text-muted-foreground text-sm font-medium">
-                      Username
-                    </div>
-                    <div className="text-foreground mt-1 text-sm sm:col-span-2 sm:mt-0">
-                      {user.username}
-                    </div>
-                  </div>
-                </div>
+                <Row label="Username">
+                  <span className="text-foreground text-sm">
+                    {user.username}
+                  </span>
+                </Row>
               </>
             )}
             <Separator />
-            <div className="px-6 py-4">
-              <div className="grid grid-cols-1 sm:grid-cols-3 sm:gap-4">
-                <div className="text-muted-foreground text-sm font-medium">
-                  Your plan
-                </div>
-                <UserCurrentSubscriptionPlan
-                  subscriptionPlan={user.subscriptionPlan}
-                  subscriptionStatus={user.subscriptionStatus}
-                  datePaid={user.datePaid}
-                />
-              </div>
-            </div>
+            <Row label="Your organisations">
+              {isLoading ? (
+                <span className="text-muted-foreground text-sm">Loading…</span>
+              ) : organizations && organizations.length > 0 ? (
+                <ul className="space-y-2 text-sm">
+                  {organizations.map((org) => (
+                    <li key={org.id} data-testid="account-organization">
+                      <Link className="underline" to={`/app/${org.slug}`}>
+                        {org.name}
+                      </Link>
+                      <span className="text-muted-foreground">
+                        {" — "}
+                        {org.role === "OWNER" ? "owner" : "staff"},{" "}
+                        {org.subscriptionStatus
+                          ? STATUS_WORDING[org.subscriptionStatus] ??
+                            org.subscriptionStatus
+                          : "no subscription yet"}
+                      </span>
+                      {org.role === "OWNER" && (
+                        <>
+                          {" · "}
+                          <Link
+                            className="underline"
+                            to={`/app/${org.slug}/billing`}
+                          >
+                            Billing
+                          </Link>
+                        </>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <span className="text-muted-foreground text-sm">
+                  You are not in an organisation yet.
+                </span>
+              )}
+            </Row>
           </div>
         </CardContent>
       </Card>
@@ -73,87 +99,21 @@ export function AccountPage({ user }: { user: User }) {
   );
 }
 
-function UserCurrentSubscriptionPlan({
-  subscriptionPlan,
-  subscriptionStatus,
-  datePaid,
-}: Pick<User, "subscriptionPlan" | "subscriptionStatus" | "datePaid">) {
-  let subscriptionPlanMessage = "Free Plan";
-  if (
-    subscriptionPlan !== null &&
-    subscriptionStatus !== null &&
-    datePaid !== null
-  ) {
-    subscriptionPlanMessage = formatSubscriptionStatusMessage(
-      parsePaymentPlanId(subscriptionPlan),
-      datePaid,
-      subscriptionStatus as SubscriptionStatus,
-    );
-  }
-
+function Row({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
   return (
-    <>
-      <div className="text-foreground mt-1 text-sm sm:col-span-1 sm:mt-0">
-        {subscriptionPlanMessage}
+    <div className="px-6 py-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 sm:gap-4">
+        <div className="text-muted-foreground text-sm font-medium">{label}</div>
+        <div className="text-foreground mt-1 text-sm sm:col-span-2 sm:mt-0">
+          {children}
+        </div>
       </div>
-      <div className="ml-auto mt-4 sm:mt-0">
-        <CustomerPortalButton />
-      </div>
-    </>
-  );
-}
-
-function formatSubscriptionStatusMessage(
-  subscriptionPlan: PaymentPlanId,
-  datePaid: Date,
-  subscriptionStatus: SubscriptionStatus,
-): string {
-  const paymentPlanName = prettyPaymentPlanName(subscriptionPlan);
-  const statusToMessage: Record<SubscriptionStatus, string> = {
-    active: `${paymentPlanName}`,
-    past_due: `Payment for your ${paymentPlanName} plan is past due! Please update your subscription payment information.`,
-    cancel_at_period_end: `Your ${paymentPlanName} plan subscription has been canceled, but remains active until the end of the current billing period: ${prettyPrintEndOfBillingPeriod(
-      datePaid,
-    )}`,
-    deleted: `Your previous subscription has been canceled and is no longer active.`,
-  };
-
-  if (!statusToMessage[subscriptionStatus]) {
-    throw new Error(`Invalid subscription status: ${subscriptionStatus}`);
-  }
-
-  return statusToMessage[subscriptionStatus];
-}
-
-function prettyPrintEndOfBillingPeriod(datePaid: Date) {
-  const lastDayOfNextMonth = new Date(datePaid);
-  lastDayOfNextMonth.setMonth(lastDayOfNextMonth.getMonth() + 2, 0);
-  // Clamped so e.g., Jan 31 + 1 month → Feb 28, not until March 3.
-  const clampedDayOfMonth = Math.min(
-    datePaid.getDate(),
-    lastDayOfNextMonth.getDate(),
-  );
-  const endOfBillingPeriod = new Date(datePaid);
-  endOfBillingPeriod.setMonth(
-    endOfBillingPeriod.getMonth() + 1,
-    clampedDayOfMonth,
-  );
-  return endOfBillingPeriod.toLocaleDateString();
-}
-
-function CustomerPortalButton() {
-  const { data: customerPortalUrl, isLoading: isCustomerPortalUrlLoading } =
-    useQuery(getCustomerPortalUrl);
-
-  if (!customerPortalUrl) {
-    return null;
-  }
-
-  return (
-    <a href={customerPortalUrl} target="_blank" rel="noopener noreferrer">
-      <Button disabled={isCustomerPortalUrlLoading} variant="link">
-        Manage Payment Details
-      </Button>
-    </a>
+    </div>
   );
 }

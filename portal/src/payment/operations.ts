@@ -1,73 +1,83 @@
 import { HttpError } from "wasp/server";
 import type {
   GenerateCheckoutSession,
-  GetCustomerPortalUrl,
+  OpenCustomerPortal,
 } from "wasp/server/operations";
 import * as z from "zod";
-import { PaymentPlanId, paymentPlans } from "../payment/plans";
+import { requireOrgOwner } from "../organizations/access";
 import { ensureArgsSchemaOrThrowHttpError } from "../server/validation";
 import { paymentProcessor } from "./paymentProcessor";
+import { PaymentPlanId, paymentPlans } from "./plans";
+
+/**
+ * Subscribing a clinic, and managing that subscription afterwards.
+ *
+ * Both are an owner's job: `requireOrgOwner` refuses STAFF, and an agency admin
+ * passes as an owner of every organisation (portal plan, Task C2). Nothing here
+ * writes a subscription — Stripe's webhook does that, so what the portal shows
+ * is what Stripe actually did.
+ */
 
 export type CheckoutSession = {
   sessionUrl: string | null;
   sessionId: string;
 };
 
-const generateCheckoutSessionSchema = z.nativeEnum(PaymentPlanId);
-
-type GenerateCheckoutSessionInput = z.infer<
-  typeof generateCheckoutSessionSchema
->;
+const organizationArgs = z.object({
+  organizationId: z.string().min(1),
+});
 
 export const generateCheckoutSession: GenerateCheckoutSession<
-  GenerateCheckoutSessionInput,
+  z.infer<typeof organizationArgs>,
   CheckoutSession
-> = async (rawPaymentPlanId, context) => {
-  if (!context.user) {
+> = async (rawArgs, context) => {
+  const args = ensureArgsSchemaOrThrowHttpError(organizationArgs, rawArgs);
+  const { org } = await requireOrgOwner(context, args.organizationId);
+
+  const ownerEmail = context.user?.email;
+  if (!ownerEmail) {
     throw new HttpError(
-      401,
-      "Only authenticated users are allowed to perform this operation",
+      403,
+      "Your account needs an email address before you can subscribe.",
     );
   }
 
-  const paymentPlanId = ensureArgsSchemaOrThrowHttpError(
-    generateCheckoutSessionSchema,
-    rawPaymentPlanId,
-  );
-  const userId = context.user.id;
-  const userEmail = context.user.email;
-  if (!userEmail) {
-    // If using the usernameAndPassword Auth method, switch to an Auth method that provides an email.
-    throw new HttpError(403, "User needs an email to make a payment.");
-  }
-
-  const paymentPlan = paymentPlans[paymentPlanId];
   const { session } = await paymentProcessor.createCheckoutSession({
-    userId,
-    userEmail,
-    paymentPlan,
-    prismaUserDelegate: context.entities.User,
+    organizationId: org.id,
+    organizationSlug: org.slug,
+    organizationName: org.name,
+    ownerEmail,
+    paymentPlan: paymentPlans[PaymentPlanId.FrontDesk],
   });
 
-  return {
-    sessionUrl: session.url,
-    sessionId: session.id,
-  };
+  return { sessionUrl: session.url, sessionId: session.id };
 };
 
-export const getCustomerPortalUrl: GetCustomerPortalUrl<
-  void,
-  string | null
-> = async (_args, context) => {
-  if (!context.user) {
+/**
+ * An action, not a query: it creates a single-use Stripe billing portal session,
+ * so it must happen when the owner asks for it, not on every page render.
+ */
+export const openCustomerPortal: OpenCustomerPortal<
+  z.infer<typeof organizationArgs>,
+  string
+> = async (rawArgs, context) => {
+  const args = ensureArgsSchemaOrThrowHttpError(organizationArgs, rawArgs);
+  const { org } = await requireOrgOwner(context, args.organizationId);
+
+  if (!org.stripeCustomerId) {
     throw new HttpError(
-      401,
-      "Only authenticated users are allowed to perform this operation",
+      404,
+      "This organisation has never been billed, so it has no Stripe customer to manage yet.",
     );
   }
 
-  return paymentProcessor.fetchCustomerPortalUrl({
-    userId: context.user.id,
-    prismaUserDelegate: context.entities.User,
+  const url = await paymentProcessor.fetchCustomerPortalUrl({
+    stripeCustomerId: org.stripeCustomerId,
+    organizationSlug: org.slug,
   });
+
+  if (!url) {
+    throw new HttpError(502, "Stripe did not return a billing portal link.");
+  }
+  return url;
 };

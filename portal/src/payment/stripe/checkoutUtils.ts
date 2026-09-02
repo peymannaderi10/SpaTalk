@@ -1,70 +1,51 @@
 import Stripe from "stripe";
-import { User } from "wasp/entities";
-import { CHECKOUT_CANCELED_URL, CHECKOUT_SUCCESS_URL } from "../paths";
+import { checkoutCanceledUrl, checkoutSuccessUrl } from "../paths";
+import { type PaymentPlanId } from "../plans";
 import { stripeClient } from "./stripeClient";
-
-/**
- * Returns a Stripe customer for the given User email, creating a customer if none exist.
- * Implements email uniqueness logic since Stripe doesn't enforce unique emails.
- */
-export async function ensureStripeCustomer(
-  userEmail: NonNullable<User["email"]>,
-): Promise<Stripe.Customer> {
-  const customers = await stripeClient.customers.list({
-    email: userEmail,
-  });
-
-  if (customers.data.length === 0) {
-    return stripeClient.customers.create({
-      email: userEmail,
-    });
-  } else {
-    return customers.data[0];
-  }
-}
 
 interface CreateStripeCheckoutSessionParams {
   priceId: Stripe.Price["id"];
-  customerId: Stripe.Customer["id"];
-  mode: Stripe.Checkout.Session.Mode;
-}
-
-export function createStripeCheckoutSession({
-  priceId,
-  customerId,
-  mode,
-}: CreateStripeCheckoutSessionParams): Promise<Stripe.Checkout.Session> {
-  return stripeClient.checkout.sessions.create({
-    customer: customerId,
-    line_items: [
-      {
-        price: priceId,
-        quantity: 1,
-      },
-    ],
-    mode,
-    success_url: CHECKOUT_SUCCESS_URL,
-    cancel_url: CHECKOUT_CANCELED_URL,
-    automatic_tax: { enabled: true },
-    allow_promotion_codes: true,
-    customer_update: {
-      address: "auto",
-    },
-    invoice_creation: getInvoiceCreationConfig(mode),
-  });
+  paymentPlanId: PaymentPlanId;
+  organizationId: string;
+  organizationSlug: string;
+  organizationName: string;
+  /** The owner starting the checkout; Stripe prefills and invoices this. */
+  ownerEmail: string;
 }
 
 /**
- * Stripe automatically creates invoices for subscriptions.
- * For one-time payments, we must enable them manually.
- * However, enabling invoices for subscriptions will throw an error.
+ * The subscription checkout for one clinic.
+ *
+ * `client_reference_id` is the organisation id: it is the only thing that comes
+ * back on `checkout.session.completed`, and therefore the only honest way to
+ * decide which clinic a new Stripe customer belongs to. Matching on the email
+ * address instead would tie the subscription to whichever person happened to
+ * click, which is the bug this whole task exists to remove.
+ *
+ * No customer is created up front: `customer_email` lets Stripe make one, and
+ * the webhook writes its id onto the organisation.
  */
-function getInvoiceCreationConfig(
-  mode: Stripe.Checkout.Session.Mode,
-): Stripe.Checkout.SessionCreateParams["invoice_creation"] {
-  return mode === "payment"
-    ? {
-        enabled: true,
-      }
-    : undefined;
+export function createStripeCheckoutSession({
+  priceId,
+  paymentPlanId,
+  organizationId,
+  organizationSlug,
+  organizationName,
+  ownerEmail,
+}: CreateStripeCheckoutSessionParams): Promise<Stripe.Checkout.Session> {
+  return stripeClient.checkout.sessions.create({
+    mode: "subscription",
+    line_items: [{ price: priceId, quantity: 1 }],
+    client_reference_id: organizationId,
+    customer_email: ownerEmail,
+    metadata: { organizationId, organizationSlug, paymentPlanId },
+    subscription_data: {
+      description: organizationName,
+      metadata: { organizationId, organizationSlug, paymentPlanId },
+    },
+    success_url: checkoutSuccessUrl(organizationSlug),
+    cancel_url: checkoutCanceledUrl(organizationSlug),
+    automatic_tax: { enabled: true },
+    allow_promotion_codes: true,
+  });
 }

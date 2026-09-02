@@ -1,9 +1,9 @@
-import { action, api, page, query, route, type Spec } from "@wasp.sh/spec";
+import { action, api, page, route, type Spec } from "@wasp.sh/spec";
 
-import { CheckoutResultPage } from "./CheckoutResultPage" with { type: "ref" };
+import { BillingPage } from "./BillingPage" with { type: "ref" };
 import {
   generateCheckoutSession,
-  getCustomerPortalUrl,
+  openCustomerPortal,
 } from "./operations" with { type: "ref" };
 import { PricingPage } from "./PricingPage" with { type: "ref" };
 import {
@@ -11,17 +11,28 @@ import {
   paymentsWebhook,
 } from "./webhook" with { type: "ref" };
 
+/**
+ * Billing belongs to an organisation, so its page hangs off one
+ * (`/app/:orgSlug/billing`) and both operations take an organisation id. The
+ * webhook needs only the `Organization` table: it is the only thing a Stripe
+ * event ever writes.
+ */
+
+const orgEntities = { entities: ["Organization", "Membership"] };
+
 export const paymentSpec: Spec = [
   route("PricingPageRoute", "/pricing", page(PricingPage), { prerender: true }),
   route(
-    "CheckoutResultRoute",
-    "/checkout",
-    page(CheckoutResultPage, { authRequired: true }),
+    "OrgBillingRoute",
+    "/app/:orgSlug/billing",
+    page(BillingPage, { authRequired: true }),
   ),
-  query(getCustomerPortalUrl, { entities: ["User"] }),
-  action(generateCheckoutSession, { entities: ["User"] }),
+
+  action(generateCheckoutSession, orgEntities),
+  action(openCustomerPortal, orgEntities),
+
   api("POST", "/payments-webhook", paymentsWebhook, {
-    entities: ["User"],
+    entities: ["Organization"],
     middlewareConfigFn: paymentsMiddlewareConfigFn,
   }),
 ];

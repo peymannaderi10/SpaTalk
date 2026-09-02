@@ -1,5 +1,10 @@
 import { defineConfig, devices } from "@playwright/test";
 import { RUNTIME_KEY, RUNTIME_URL } from "./tests/runtime";
+import {
+  STRIPE_TEST_API_KEY,
+  STRIPE_TEST_PRICE_ID,
+  STRIPE_TEST_WEBHOOK_SECRET,
+} from "./tests/stripe";
 import { AGENCY_ADMIN_EMAIL } from "./tests/utils";
 
 /**
@@ -59,6 +64,15 @@ export default defineConfig({
       // tests seeded and assert against.
       RUNTIME_INTERNAL_URL: RUNTIME_URL,
       RUNTIME_INTERNAL_KEY: RUNTIME_KEY,
+      // Billing is proved with Stripe's own test-mode fixture events, signed
+      // with this secret. Pinning it here means the suite does not depend on
+      // whatever a developer happens to have in `.env.server`, and nothing in
+      // these tests ever reaches Stripe.
+      STRIPE_WEBHOOK_SECRET: STRIPE_TEST_WEBHOOK_SECRET,
+      STRIPE_API_KEY: STRIPE_TEST_API_KEY,
+      STRIPE_PRICE_ID_FRONTDESK: STRIPE_TEST_PRICE_ID,
+      // A no-code portal link, so "Manage subscription" needs no Stripe call.
+      STRIPE_CUSTOMER_PORTAL_URL: "https://billing.stripe.test/p/session/test",
     },
     url: "http://localhost:3000",
     reuseExistingServer: false,

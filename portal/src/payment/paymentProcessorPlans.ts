@@ -16,11 +16,16 @@ export function getPaymentProcessorPlanId(paymentPlan: PaymentPlan): string {
 }
 
 /**
- * Returns the `PaymentPlanId` for a Stripe price ID.
+ * Returns the `PaymentPlanId` for a Stripe price ID, or null when the price is
+ * not one of ours.
+ *
+ * Null rather than a throw: the same Stripe account may carry prices that have
+ * nothing to do with this portal, and an exception in the webhook would make
+ * Stripe retry a foreign event until it gave up.
  */
-export function getPaymentPlanIdByPaymentProcessorPlanId(
+export function findPaymentPlanIdByPaymentProcessorPlanId(
   paymentProcessorPlanId: string,
-): PaymentPlanId {
+): PaymentPlanId | null {
   for (const [planId, processorPlanId] of Object.entries(
     paymentProcessorPlanIds,
   )) {
@@ -29,7 +34,5 @@ export function getPaymentPlanIdByPaymentProcessorPlanId(
     }
   }
 
-  throw new Error(
-    `Unknown payment processor plan ID: ${paymentProcessorPlanId}`,
-  );
+  return null;
 }

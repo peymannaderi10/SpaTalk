@@ -12,6 +12,7 @@ import {
   type RemoveMember,
 } from "wasp/server/operations";
 import * as z from "zod";
+import { organizationIsEntitled } from "../payment/entitlement";
 import { ensureArgsSchemaOrThrowHttpError } from "../server/validation";
 import {
   requireAdmin,
@@ -45,6 +46,14 @@ export type OrganizationSummary = {
   slug: string;
   runtimeTenantId: string;
   subscriptionStatus: string | null;
+  /** Whether Stripe has ever billed this organisation. */
+  hasStripeCustomer: boolean;
+  /**
+   * Whether *this viewer* may open the pages that need a subscription (portal
+   * plan, Task C6). The server settles it here so the page and the operations
+   * cannot disagree about who is let in.
+   */
+  entitled: boolean;
   role: OrgRole;
   isMember: boolean;
 };
@@ -169,6 +178,11 @@ export const listMyOrganizations: ListMyOrganizations<
         slug: membership.organization.slug,
         runtimeTenantId: membership.organization.runtimeTenantId,
         subscriptionStatus: membership.organization.subscriptionStatus,
+        hasStripeCustomer: membership.organization.stripeCustomerId !== null,
+        entitled: organizationIsEntitled({
+          subscriptionStatus: membership.organization.subscriptionStatus,
+          viewerIsAgencyAdmin: user.isAdmin,
+        }),
         role: membership.role,
         isMember: true,
       },
@@ -193,6 +207,11 @@ export const listMyOrganizations: ListMyOrganizations<
         slug: org.slug,
         runtimeTenantId: org.runtimeTenantId,
         subscriptionStatus: org.subscriptionStatus,
+        hasStripeCustomer: org.stripeCustomerId !== null,
+        entitled: organizationIsEntitled({
+          subscriptionStatus: org.subscriptionStatus,
+          viewerIsAgencyAdmin: user.isAdmin,
+        }),
         role: "OWNER" as const,
         isMember: false,
       },
@@ -242,6 +261,11 @@ export const getOrganization: GetOrganization<
     slug: org.slug,
     runtimeTenantId: org.runtimeTenantId,
     subscriptionStatus: org.subscriptionStatus,
+    hasStripeCustomer: org.stripeCustomerId !== null,
+    entitled: organizationIsEntitled({
+      subscriptionStatus: org.subscriptionStatus,
+      viewerIsAgencyAdmin: context.user?.isAdmin === true,
+    }),
     role,
     isMember: members.some((member) => member.userId === context.user?.id),
     members,

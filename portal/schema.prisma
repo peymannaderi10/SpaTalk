@@ -19,11 +19,7 @@ model User {
   username                  String?         @unique
   isAdmin                   Boolean         @default(false)
 
-  paymentProcessorUserId    String?         @unique
-  subscriptionStatus        String?         // 'active', 'cancel_at_period_end', 'past_due', 'deleted'
-  subscriptionPlan          String?         // 'frontdesk'
-  datePaid                  DateTime?
-
+  // A person carries no subscription. A clinic does: see `Organization`.
   memberships               Membership[]
 }
 
@@ -38,8 +34,11 @@ model Organization {
   slug                      String          @unique
   runtimeTenantId           String          @unique
 
+  // Billing, per clinic. `stripeCustomerId` is learned from Stripe's
+  // `checkout.session.completed`, which carries the organisation id we put on
+  // the Checkout Session; every later Stripe event finds the organisation by it.
   stripeCustomerId          String?         @unique
-  subscriptionStatus        String?         // 'active', 'cancel_at_period_end', 'past_due', 'deleted'
+  subscriptionStatus        String?         // 'active', 'trialing', 'cancel_at_period_end', 'past_due', 'deleted'
   subscriptionPlan          String?         // 'frontdesk'
 
   memberships               Membership[]
