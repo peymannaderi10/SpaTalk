@@ -1,7 +1,7 @@
 # instagram Task D3: Messenger (Facebook Page) adapter
 
 Status: done with deviations
-Commit: `feat(social): facebook page messenger and comment adapter` (hash recorded by the docs
+Commit: `9144258` `feat(social): facebook page messenger and comment adapter` (hash recorded by the docs
 commit that follows, the convention set by runtime-A8 onward)
 Tests: `uv run pytest tests/test_social_messenger.py -q` -> 34/34 (33 were written first and
 seen failing; the 34th, the messenger prompt rule, passed on the first run because D2 shipped
