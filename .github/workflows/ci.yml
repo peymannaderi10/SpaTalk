@@ -20,6 +20,10 @@ jobs:
       - uses: astral-sh/setup-uv@v3
       - run: cd runtime && uv venv --python 3.12 && uv pip install -e ".[dev]"
       - run: cd runtime && uv run ruff check spatalk tests scenarios
+      # The whole runtime suite, unfiltered. The Meta tests (instagram plan, `tests/test_social_*.py`)
+      # run here and need no secret of their own: every Graph call goes through `FakeGraphClient`
+      # and every webhook is a recorded fixture signed with a test secret, so nothing reaches Meta.
+      # `tests/test_social_scenarios.py` fails if this step ever grows a filter.
       - run: cd runtime && uv run pytest -q
       # promptfoo refuses to start on Node older than 22.22.
       - uses: actions/setup-node@v4

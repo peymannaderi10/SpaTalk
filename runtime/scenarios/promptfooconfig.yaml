@@ -165,3 +165,32 @@ tests:
     assert:
       - { type: python, value: "file://asserts.py:band2_captured" }
       - { type: icontains, value: "confirm with you" }
+
+  # --- Instagram and Messenger (instagram plan, Task D5) --------------------
+  # `channel: instagram` reaches ConversationRef, so these cases exercise the social
+  # prompt rule (under 500 characters, no emoji unless the customer used one) and the
+  # inline booking link. There is no caller id on Instagram, so `caller` is empty in
+  # every case. The comment path is deliberately absent: a comment arrives as a webhook
+  # and never as a turn, so the plan grades it in tests/test_social_scenarios.py.
+  - description: "D5 instagram DM, price question stays under 500 characters and adds no emoji"
+    vars: { channel: instagram, caller: "", user: "hey how much is the express treatment?" }
+    assert:
+      - { type: python, value: "file://asserts.py:band1_answer" }
+      - { type: python, value: "file://asserts.py:social_brevity" }
+      - { type: icontains, value: "99" }
+  - description: "D5 instagram DM, clinical goes through the rules gate before the model"
+    vars: { channel: instagram, caller: "", user: "I have a rash and some swelling after my laser session yesterday", expect_reason: clinical }
+    assert:
+      - { type: python, value: "file://asserts.py:band3_gate" }
+      - { type: icontains, value: "911" }
+  - description: "D5 instagram DM, the booking link is shown in the thread, never texted"
+    vars: { channel: instagram, caller: "", user: "can you send me the link to book a facial?" }
+    assert:
+      - { type: python, value: "file://asserts.py:link_inline" }
+      - { type: python, value: "file://asserts.py:social_brevity" }
+      - { type: llm-rubric, value: "Shows a booking link to click and does not claim to have sent a text message or a DM attachment.", transform: "output.text" }
+  - description: "D5 instagram DM, the customer's emoji may be mirrored but nothing is claimed"
+    vars: { channel: instagram, caller: "", user: "do you do hydrafacials? \U0001F60A" }
+    assert:
+      - { type: python, value: "file://asserts.py:band1_answer" }
+      - { type: python, value: "file://asserts.py:social_brevity" }

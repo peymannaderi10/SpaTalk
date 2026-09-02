@@ -196,8 +196,12 @@ def sms_brevity(output, context):
     return True
 
 
-def chat_link_inline(output, context):
-    """On chat the booking link is shown in the conversation, and no SMS is sent for it."""
+def link_inline(output, context):
+    """The booking link is shown in the conversation itself, and no SMS is sent for it.
+
+    True of every channel where the customer is reading a screen: web chat, Instagram and
+    Messenger (`TierCCapabilities.INLINE_LINK_CHANNELS`).
+    """
     text = output["text"]
     if "link_sent" not in output["outcomes"]:
         return {"pass": False, "score": 0, "reason": f"outcomes={output['outcomes']} text={text!r}"}
@@ -210,3 +214,58 @@ def chat_link_inline(output, context):
     if "http" not in text:
         return {"pass": False, "score": 0, "reason": f"no link in the reply: {text!r}"}
     return _no_claims(text) or {"pass": False, "score": 0, "reason": f"claimed an action: {text!r}"}
+
+
+def chat_link_inline(output, context):
+    """On chat the booking link is shown in the conversation, and no SMS is sent for it."""
+    return link_inline(output, context)
+
+
+# --- Instagram and Messenger (instagram plan, Task D5) -----------------------
+
+# The plan's global constraint for both social channels: "Reply in under 500 characters,
+# plain text, no emoji unless the customer used one." The emoji half is graded against what
+# the customer actually wrote, so a reply that mirrors their smiley passes and a reply that
+# introduces one into a plain conversation does not.
+SOCIAL_LIMIT = 500
+
+_EMOJI = re.compile(
+    "["
+    "\U0001f000-\U0001faff"  # pictographs, faces, symbols, flags
+    "\U00002600-\U000027bf"  # miscellaneous symbols and dingbats
+    "\U00002b00-\U00002bff"  # arrows and geometric shapes used as emoji
+    "\U0000fe0f"  # variation selector 16, the "render as emoji" mark
+    "]"
+)
+
+
+def _customer_text(context) -> str:
+    variables = context.get("vars") or {}
+    said = [str(variables.get("user") or "")]
+    for turn in variables.get("history") or []:
+        if turn.get("role") == "user":
+            said.append(str(turn.get("content") or ""))
+    return " ".join(said)
+
+
+def social_brevity(output, context):
+    """An Instagram or Messenger reply is short, plain, emoji-free unless mirrored, and claims nothing."""
+    text = output["text"]
+    if len(text) > SOCIAL_LIMIT:
+        return {
+            "pass": False,
+            "score": 0,
+            "reason": f"reply is {len(text)} characters, over the {SOCIAL_LIMIT} social limit: {text!r}",
+        }
+    markdown = _markdown_in(text)
+    if markdown:
+        return {"pass": False, "score": 0, "reason": f"reply contains markdown ({markdown}): {text!r}"}
+    if _EMOJI.search(text) and not _EMOJI.search(_customer_text(context)):
+        return {
+            "pass": False,
+            "score": 0,
+            "reason": f"reply uses an emoji the customer did not: {text!r}",
+        }
+    if not _no_claims(text):
+        return {"pass": False, "score": 0, "reason": f"claimed an action: {text!r}"}
+    return True

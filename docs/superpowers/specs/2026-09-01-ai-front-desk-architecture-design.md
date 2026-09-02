@@ -289,6 +289,7 @@ At 250 calls, 150 SMS conversations, 100 chat conversations and 300 outbound mes
 | Google (Gemini API, paid tier) | LLM | stated: paid tier prompts not used to improve products | may transit any Google country; Vertex for regional |
 | Amazon SES | email | n/a | ca-central-1 |
 | Slack | delivery, if tenant opts in | tenant's own workspace | tenant's choice |
+| Meta (Instagram, Facebook Pages) | inbound and outbound messages and comments on the tenant's own accounts | n/a: the conversation already lives on Meta's platform; Platform Terms apply, obtain the DPA | Meta's own regions |
 
 Adding any provider is a register entry and a DPA, not just a config change. Telemetry: Pipecat has none by default; Dograh's PostHog default-on is one more reason not to adopt it.
 
