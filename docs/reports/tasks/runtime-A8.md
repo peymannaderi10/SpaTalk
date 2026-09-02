@@ -1,6 +1,6 @@
 # runtime-voice-ledger Task 8: Ledger items and signed action links
 Status: done with deviations
-Commit: <filled in by the follow-up docs commit, matching the convention set by runtime-A2, A3, A6 and A7>
+Commit: b068c2bf9b3372879b8bc404f42a2c4436fab955 (implementation; this report line was filled in by the follow-up docs commit, matching the convention set by runtime-A2, A3, A6 and A7)
 Tests: `uv run pytest tests/test_ledger.py tests/test_links.py -v` -> 3/3 (the plan's expected count); full suite `uv run pytest -q` -> 69/69; `uv run ruff check spatalk tests` -> `All checks passed!` (`scenarios/` does not exist until Task 15, so it was omitted from the lint invocation)
 Interfaces produced: `spatalk.ledger.items` — `OnCreated` alias, `PgLedger(sf, clock, on_created: Callable[[Item, TenantConfig], Awaitable[None]] | None = None)` with `create_item(ref, draft) -> ItemRecord` (satisfies `LedgerPort`), `get(item_id) -> Item | None`, `acknowledge(item_id, actor) -> Item | None`, `resolve(item_id, actor) -> Item | None`, `list_open(tenant_id) -> list[Item]`, `breached(now) -> list[Item]`, `mark_escalated(item_id, now) -> None`; `spatalk.ledger.links` — `SALT = "item-action"`, `ActionClaim(item_id: int, action: str, tenant_id: str)`, `sign_action(secret, item_id, action, tenant_id) -> str`, `verify_action(secret, token, max_age_seconds=604800) -> ActionClaim`.
 
