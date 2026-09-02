@@ -243,10 +243,16 @@ class Brain:
             g = guard(resp.text, has_completed, cfg, replacement="")
             if g.blocked:
                 blocked = True
-                out = await self._caps.capture(ref, CaptureRequest(kind="question"))
+                try:
+                    out = await self._caps.capture(ref, CaptureRequest(kind="question"))
+                    spoken = render_script("cannot_complete", cfg, now, urgent=False)
+                except Exception as e:  # noqa: BLE001  ledger down: nothing was filed, promise nothing
+                    logger.exception("guard could not file the blocked claim: {}", e)
+                    out = Refused(reason="unavailable")
+                    spoken = render(out, cfg, now, channel=ref.channel)
                 outcomes.append(out)
                 band = max(band, 2)
-                parts.insert(0, render_script("cannot_complete", cfg, now, urgent=False))
+                parts.insert(0, spoken)
                 logger.warning("guard blocked model text ({}): {!r}", g.matched, resp.text)
             else:
                 parts.insert(0, g.text)

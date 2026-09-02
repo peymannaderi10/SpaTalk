@@ -6,7 +6,7 @@ import pytest
 BUNDLE = Path(__file__).resolve().parents[1] / "tenants" / "skincentrix"
 
 
-def _world(fixed_clock, responses, sms_number=None):
+def _world(fixed_clock, responses, sms_number=None, ledger=None):
     from spatalk.brain.driver import Brain, FakeLLM
     from spatalk.brain.ports import MemoryLedger, MemorySms
     from spatalk.brain.requests import ConversationRef
@@ -15,7 +15,8 @@ def _world(fixed_clock, responses, sms_number=None):
     cfg = load_bundle(BUNDLE)
     if sms_number:
         cfg = cfg.model_copy(update={"sms_from_number": sms_number})
-    ledger, sms = MemoryLedger(fixed_clock), MemorySms()
+    ledger = ledger if ledger is not None else MemoryLedger(fixed_clock)
+    sms = MemorySms()
     caps = TierCCapabilities(ledger=ledger, sms=sms, clock=fixed_clock)
     llm = FakeLLM(responses)
     ref = ConversationRef(conversation_id=uuid.uuid4(), tenant=cfg, channel="voice", caller_phone="+19055550101")
@@ -86,3 +87,24 @@ async def test_gemini_client_calls_a_tool(fixed_clock):
     resp = await client.complete(build_system_prompt(cfg, "voice", fixed_clock.now()),
                                  [{"role": "user", "content": "Can I talk to a real person"}], build_tools(cfg))
     assert any(tc.name == "escalate" for tc in resp.tool_calls)
+
+
+async def test_guard_block_with_a_dead_ledger_refuses_and_claims_nothing(fixed_clock):
+    """The blocked claim could not be filed, so the caller gets the clinic's number, not a promise."""
+    from spatalk.brain.driver import LLMResponse
+    from spatalk.brain.ports import MemoryLedger
+
+    class ExplodingLedger(MemoryLedger):
+        async def create_item(self, ref, draft):
+            raise RuntimeError("database is down")
+
+    brain, ref, *_ = _world(fixed_clock,
+                            [LLMResponse(text="Done, I've booked you for Thursday at 2.", tool_calls=[])],
+                            ledger=ExplodingLedger(fixed_clock))
+    r = await brain.turn(ref, [], "Book me Thursday at 2")
+    assert r.guard_blocked and [o.kind for o in r.outcomes] == ["refused"]
+    assert r.outcomes[0].reason == "unavailable"
+    assert "905-703-7546" in r.reply
+    low = r.reply.lower()
+    for claim in ("sent", "passed it", "confirm with you", "booked"):
+        assert claim not in low, f"refusal claimed an action: {r.reply!r}"

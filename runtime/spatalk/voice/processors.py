@@ -90,11 +90,16 @@ class OutputGuardProcessor(FrameProcessor):
             self._s.guard_blocks += 1
             self._s.band = max(self._s.band, 2)
             now = self._s.clock.now()
-            await self._s.caps.capture(self._s.ref, CaptureRequest(kind="question"))
+            try:
+                await self._s.caps.capture(self._s.ref, CaptureRequest(kind="question"))
+                spoken = render_script("cannot_complete", self._s.cfg, now, urgent=False)
+            except Exception as e:  # noqa: BLE001  ledger down: nothing was filed, promise nothing
+                logger.exception("guard could not file the blocked claim: {}", e)
+                spoken = render(
+                    Refused(reason="unavailable"), self._s.cfg, now, channel=self._s.ref.channel
+                )
             logger.warning("guard blocked ({}): {!r}", g.matched, sentence)
-            await self.push_frame(
-                LLMTextFrame(text=render_script("cannot_complete", self._s.cfg, now, urgent=False))
-            )
+            await self.push_frame(LLMTextFrame(text=spoken))
             return
         await self.push_frame(LLMTextFrame(text=sentence))
 
