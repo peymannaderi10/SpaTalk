@@ -1,0 +1,31 @@
+name = "spatalk-sms-worker"
+main = "src/index.ts"
+compatibility_date = "2026-08-22"
+# Deploys to <name>.<subdomain>.workers.dev; that URL is what the Telnyx messaging
+# profile points at (docs/runbooks/accounts-and-env.md step 6).
+workers_dev = true
+
+# The runtime the worker fronts. Overridden per environment; the founder sets the
+# production hostname here before `wrangler deploy` (see docs/runbooks/accounts-and-env.md).
+[vars]
+RUNTIME_URL = "https://api.spatalk.ca"
+
+# Secrets (never in this file): EDGE_SHARED_KEY, TELNYX_PUBLIC_KEY, TELNYX_API_KEY.
+# Set with `wrangler secret put <NAME>`; locally with edge/sms-worker/.dev.vars.
+
+# Replace both ids with the output of:
+#   wrangler kv namespace create TENANT_TEXTS
+#   wrangler kv namespace create PENDING
+[[kv_namespaces]]
+binding = "TENANT_TEXTS"
+id = "0000000000000000000000000000ttxt"
+
+[[kv_namespaces]]
+binding = "PENDING"
+id = "0000000000000000000000000pending"
+
+[triggers]
+crons = ["*/5 * * * *"]
+
+[observability]
+enabled = true

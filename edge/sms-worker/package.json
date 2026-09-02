@@ -1,0 +1,19 @@
+{
+  "name": "spatalk-sms-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Cloudflare Worker in front of the Telnyx SMS webhook: offline auto-reply and replay.",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "wrangler types && tsc --noEmit",
+    "dry-run": "wrangler deploy --dry-run",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.22.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.11",
+    "wrangler": "^4.128.0"
+  }
+}

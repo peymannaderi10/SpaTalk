@@ -1,0 +1,5 @@
+# Local secrets for `wrangler dev`. Copy to .dev.vars (gitignored) and fill in.
+# In production these are set with `wrangler secret put <NAME>`.
+EDGE_SHARED_KEY=""
+TELNYX_PUBLIC_KEY=""
+TELNYX_API_KEY=""
