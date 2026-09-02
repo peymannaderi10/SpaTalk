@@ -1,9 +1,8 @@
 # text-channels Task B4: Web chat widget and fallback form
 
 Status: done with deviations
-Commit: the commit whose message is `feat(text): web chat widget over websocket with turnstile
-and fallback form` (hash recorded by the docs commit that follows, the convention set by
-runtime-A8 through A16 and text-channels B1 to B3)
+Commit: fe99fcc (implementation, tests and this report; the hash is recorded by the docs commit
+that follows, the convention set by runtime-A8 through A16 and text-channels B1 to B3)
 Tests: `uv run pytest tests/test_widget.py -q` -> 22/22 (18 of the 21 first written were seen
 failing; the other three were vacuously green, see below); full runtime suite `uv run pytest -q`
 -> 268 passed, 1 skipped of 269 (baseline before this task: 267 of 268 counting the one
