@@ -1,10 +1,10 @@
 # operations plan Task E2: WAL-G backups to R2 and the restore drill
 
 Status: done with deviations
-Commit: <filled in below>
+Commit: 73d6134
 Tests: `uv run pytest -q tests/test_ops_backup_drill.py tests/test_deploy_assets.py` -> 21/21;
-full suite `uv run pytest -q` -> 635/636 (see "Verification run": one failure and one error,
-both from two agents' suites sharing one Postgres, both green on their own)
+full suite `uv run pytest -q` -> 635 passed, 1 skipped (the `GOOGLE_API_KEY` live test) in 184 s,
+run again on a quiet machine after the commit; see "Verification run" for the contended first run
 Interfaces produced: `runtime/scripts/db/{Dockerfile, postgresql.conf, walg.env.example, backup-cron,
 walg-run, entrypoint-walg.sh}`; `runtime/scripts/restore-drill.sh --walg-env --source-url
 [--network --image --target-time --expect-items --max-seconds --rpo-minutes --keep]`;
@@ -129,7 +129,8 @@ Supporting evidence from the same session:
 | `docker build -t spatalk-db:16 ./scripts/db` | exit 0 |
 | `docker compose --profile drill up -d minio minio-setup` | `Bucket created successfully drill/spatalk-backups` |
 | local drill, four runs | table above |
-| full suite `uv run pytest -q` | 633 passed, 1 failed, 1 error, 1 skipped in 945 s |
+| full suite `uv run pytest -q`, first run (two agents' suites on one database) | 633 passed, 1 failed, 1 error, 1 skipped in 945 s |
+| full suite `uv run pytest -q`, re-run after the commit | **635 passed, 1 skipped in 184 s** |
 | `uv run pytest -q tests/test_delivery.py tests/test_edge_sync.py` (the two casualties, alone) | 12 passed in 5.4 s |
 
 The one skip is the `GOOGLE_API_KEY` live test, as always. The failure
