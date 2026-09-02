@@ -1,9 +1,8 @@
 # text-channels Task B2: Text conversation service and the SMS adapter
 
 Status: done with deviations
-Commit: the single commit whose message is
-`feat(text): shared text conversation service and telnyx sms adapter with opt-out and single follow-up`
-(hash reported to the orchestrator; a hash cannot be written into the commit that carries it)
+Commit: 2a305eb (implementation, tests and this report; the hash is recorded by the docs commit
+that follows, the convention set by runtime-A8 through A16)
 Tests: `uv run pytest tests/test_segments.py tests/test_text_service.py tests/test_text_sms.py -q`
 -> 37/37 (all seen failing first); full runtime suite `uv run pytest -q` -> 228 passed, 1 skipped
 of 229 (baseline before this task: 191 passed, 1 skipped). `uv run ruff check spatalk tests scenarios`
