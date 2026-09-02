@@ -321,6 +321,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/internal/tenants/{tenant_id}/integrations/messenger/select": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Select Messenger Page
+         * @description Finish a Page connection when the person administers more than one Page.
+         *
+         *     `GET /messenger/callback` cannot choose for them and cannot repeat the exchange (the
+         *     OAuth code is single use), so it parks the Pages behind an opaque handle and sends the
+         *     browser back to the portal with their names. This is where the choice lands.
+         */
+        post: operations["select_messenger_page_internal_tenants__tenant_id__integrations_messenger_select_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -572,6 +596,30 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+        };
+        /**
+         * MessengerPageSelectIn
+         * @description Which Facebook Page the owner picked, and the handle the callback handed them.
+         */
+        MessengerPageSelectIn: {
+            /** Pending */
+            pending: string;
+            /** Page Id */
+            page_id: string;
+        };
+        /**
+         * MessengerPageSelected
+         * @description The connected Page. No token, encrypted or otherwise, ever crosses this boundary.
+         */
+        MessengerPageSelected: {
+            /** Tenant Id */
+            tenant_id: string;
+            /** Provider */
+            provider: string;
+            /** External Id */
+            external_id: string;
+            /** Display Name */
+            display_name: string;
         };
         /** NumberOut */
         NumberOut: {
@@ -1312,6 +1360,41 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    select_messenger_page_internal_tenants__tenant_id__integrations_messenger_select_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MessengerPageSelectIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessengerPageSelected"];
+                };
             };
             /** @description Validation Error */
             422: {

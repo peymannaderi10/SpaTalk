@@ -53,6 +53,7 @@
   "scripts": {
     "e2e": "npm --prefix e2e-tests run e2e",
     "gen:client": "npx --yes openapi-typescript@7.13.0 ../docs/contracts/runtime-internal.openapi.json -o src/runtime/client.ts",
+    "check:client": "mkdir -p node_modules/.cache && npx --yes openapi-typescript@7.13.0 ../docs/contracts/runtime-internal.openapi.json -o node_modules/.cache/runtime-client.ts && diff -u src/runtime/client.ts node_modules/.cache/runtime-client.ts || { echo 'The generated runtime client and docs/contracts/runtime-internal.openapi.json disagree. Run `npm run gen:client` and commit src/runtime/client.ts.'; exit 1; }",
     "test:unit": "vitest run -c vitest.server.config.ts"
   }
 }

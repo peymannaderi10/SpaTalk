@@ -43,3 +43,117 @@ jobs:
         working-directory: edge/sms-worker
       - run: npm test
         working-directory: edge/sms-worker
+
+  # The portal (Task C8). It owns no tenant, conversation, item or usage data, so its
+  # pages only mean anything against a running runtime: this job stands one up beside
+  # the portal and points both at the same Postgres. One database, two schemas —
+  # Alembic owns `runtime`, Prisma owns `public`, PgBoss owns `pgboss` — which is the
+  # arrangement Task C1's spike settled on.
+  portal:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env: { POSTGRES_USER: spatalk, POSTGRES_PASSWORD: spatalk, POSTGRES_DB: spatalk }
+        ports: ["5432:5432"]
+        options: --health-cmd "pg_isready -U spatalk" --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      # Prisma's URL. The runtime's steps override DATABASE_URL with the same database
+      # under its async driver; nothing else about the two differs.
+      DATABASE_URL: postgresql://spatalk:spatalk@localhost:5432/spatalk
+      # Read by the end-to-end tests alone, to check what the runtime recorded.
+      RUNTIME_DATABASE_URL: postgresql://spatalk:spatalk@localhost:5432/spatalk
+      RUNTIME_INTERNAL_URL: http://localhost:8000
+      # The key the portal presents and the key the runtime accepts are one value.
+      RUNTIME_INTERNAL_KEY: ci-internal-key
+      INTERNAL_API_KEY: ci-internal-key
+      # `global-setup.ts` seeds one tenant, four conversations, four items and a day of
+      # usage before the suite runs. It is a runtime script, so it needs the runtime's
+      # async driver, while everything else in this job's environment is Prisma's.
+      RUNTIME_SEED_COMMAND: env DATABASE_URL=postgresql+asyncpg://spatalk:spatalk@localhost:5432/spatalk uv run python ../portal/e2e-tests/seed_runtime.py
+      JWT_SECRET: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      WASP_WEB_CLIENT_URL: http://localhost:3000
+      WASP_SERVER_URL: http://localhost:3001
+      MAIL_FROM: no-reply@spatalk.test
+      MAIL_FROM_NAME: SpaTalk
+      SMTP_HOST: smtp.invalid
+      SMTP_PORT: "587"
+      SMTP_USERNAME: ci
+      SMTP_PASSWORD: ci
+      # `playwright.config.ts` pins its own Stripe test values for the server it starts;
+      # these only satisfy the server env schema for the other commands. No test in the
+      # suite reaches Stripe.
+      STRIPE_API_KEY: sk_test_ci
+      STRIPE_WEBHOOK_SECRET: whsec_ci
+      STRIPE_PRICE_ID_FRONTDESK: price_ci
+      STRIPE_CUSTOMER_PORTAL_URL: ""
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "24" }
+      - uses: astral-sh/setup-uv@v3
+      - run: npm install -g @wasp.sh/wasp-cli@0.25.0
+      - run: wasp version
+
+      # Drift in either direction is a deliberate commit: the runtime job's pytest fails
+      # when the routes and `docs/contracts/runtime-internal.openapi.json` disagree, and
+      # this step fails when that contract and the generated client disagree. It runs
+      # before anything is built because it is the cheapest thing here.
+      - name: contract drift between the contract and the runtime client
+        run: npm run check:client
+        working-directory: portal
+
+      - run: uv venv --python 3.12 && uv pip install -e ".[dev]"
+        working-directory: runtime
+      - name: the runtime schema
+        run: uv run alembic upgrade head
+        working-directory: runtime
+        env:
+          DATABASE_URL: postgresql+asyncpg://spatalk:spatalk@localhost:5432/spatalk
+      - name: the runtime the portal reads from
+        working-directory: runtime
+        env:
+          DATABASE_URL: postgresql+asyncpg://spatalk:spatalk@localhost:5432/spatalk
+        run: |
+          nohup uv run spatalk serve --host 127.0.0.1 --port 8000 > runtime-serve.log 2>&1 &
+          for _ in $(seq 1 60); do
+            if curl -sf http://localhost:8000/healthz > /dev/null; then exit 0; fi
+            sleep 1
+          done
+          echo "the runtime never answered /healthz"; cat runtime-serve.log; exit 1
+
+      # `wasp start` refuses to run against a database whose migrations are behind, and
+      # the end-to-end suite starts one, so the portal's own schema goes on first.
+      - name: the portal schema
+        run: wasp db migrate-dev < /dev/null
+        working-directory: portal
+      # PORTAL_EMAIL_PROVIDER is deliberately never set in this job: Wasp bakes the email
+      # provider in at compile time and refuses the Dummy one for a production build.
+      # `playwright.config.ts` pins Dummy for the development server it starts, and reads
+      # the verification links out of its output.
+      - run: wasp build
+        working-directory: portal
+      - run: npx tsc -p tsconfig.src.json --noEmit
+        working-directory: portal
+      - run: npm run test:unit
+        working-directory: portal
+      - run: wasp test client run
+        working-directory: portal
+
+      - run: npm ci
+        working-directory: portal/e2e-tests
+      - run: npx playwright install --with-deps chromium
+        working-directory: portal/e2e-tests
+      - run: npx playwright test
+        working-directory: portal/e2e-tests
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: portal-failure-logs
+          path: |
+            portal/e2e-tests/playwright-report
+            portal/e2e-tests/test-results
+            portal/e2e-tests/mail-sink.log
+            runtime/runtime-serve.log
+          if-no-files-found: ignore
