@@ -40,7 +40,7 @@ def test_prompt_states_closed_now_and_honesty_rules():
     assert "closed" in p.lower() and "7:30 p.m." in p
     assert "never say" in p.lower() and "booked" in p.lower()
     assert "$99" in p and "Britannia" in p
-    assert "two sentences" in p.lower()
+    assert f"at most {_cfg().persona.max_sentences_per_turn} sentences" in p.lower()
     assert "do not ask about it" in p.lower() and "suitable or safe" in p.lower()
 
 

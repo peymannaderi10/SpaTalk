@@ -285,7 +285,7 @@ async def test_failed_transfer_falls_back_to_a_captured_urgent_callback(fixed_cl
 
     spoken = [f.text for f in llm.pushed]
     assert spoken[0] == cfg.scripts.transferring
-    assert spoken[1].startswith("Of course.") and "call you back" in spoken[1]
+    assert spoken[1].startswith("Of course") and "call you back" in spoken[1]
     assert session.transferred is False and session.band == 3
     assert ledger.items[0].type == "escalation_human_request"
     assert ledger.items[0].urgency == "urgent"

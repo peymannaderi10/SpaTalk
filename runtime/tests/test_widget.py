@@ -181,7 +181,7 @@ async def test_the_config_endpoint_returns_the_name_greeting_accent_and_site_key
     body = r.json()
     assert r.status_code == 200
     assert body["name"] == "Skincentrix"
-    assert body["greeting"].startswith("Hi, I'm Skincentrix's AI assistant.")
+    assert body["greeting"].startswith("Hi there! I'm Ava, Skincentrix's AI assistant.")
     assert body["turnstile_site_key"] == "0xSITE"
     assert body["accent"].startswith("#")
 

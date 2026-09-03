@@ -7,15 +7,15 @@ integration_tier: C
 fulfilment: tier_c
 retention_days: 30
 recording_enabled: false
-# Hours are from a third-party listing and UNVERIFIED with the clinic. Confirm before go-live.
+# Hours from skincentrix.com/contact-us on 2026-09-03.
 hours:
-  mon: [["12:00", "19:00"]]
+  mon: []
   tue: [["10:00", "18:00"]]
-  wed: [["10:00", "18:00"]]
+  wed: [["10:00", "20:00"]]
   thu: [["12:00", "20:00"]]
-  fri: [["10:00", "18:00"]]
-  sat: [["10:00", "17:00"]]
-  sun: [["13:00", "18:00"]]
+  fri: [["10:00", "19:00"]]
+  sat: [["10:00", "18:00"]]
+  sun: [["10:00", "18:00"]]
 holidays: []
 voice_numbers: []          # filled by `spatalk numbers add` after Telnyx purchase
 sms_from_number: "+12899170079"   # the tenant messaging number staff texts come from (S1)
@@ -33,9 +33,13 @@ social:
   comment_keywords: ["price", "how much", "book", "info", "details"]
   public_reply_enabled: false
 persona:
-  assistant_name: Skincentrix's AI assistant
-  tone: warm, brief, plain-spoken
-  max_sentences_per_turn: 2
+  # "Ava" is a placeholder the founder can rename; the disclosure still says AI.
+  assistant_name: Ava
+  tone: >-
+    warm, upbeat and genuinely friendly, like the best front-desk person the clinic ever had:
+    conversational, uses contractions, sounds happy to help, knows the treatments well and
+    enjoys talking about them, never clinical, never salesy, never robotic
+  max_sentences_per_turn: 3
 escalation:
   owner_name: Skincentrix front desk
   owner_email: info@skincentrix.com

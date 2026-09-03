@@ -1,4 +1,8 @@
+# Skincentrix catalog, from skincentrix.com on 2026-09-03. Prices in CAD. `clinical: true` marks
+# treatments performed by the nurses; `consult_required: true` means the team books after a
+# consultation rather than the caller self-serving a slot.
 services:
+  # --- consultations ---
   - id: virtual_consultation
     name: Free virtual consultation
     category: consultation
@@ -6,74 +10,308 @@ services:
     duration_minutes: 15
     booking_url: https://skincentrix.janeapp.com/locations/skincentrix
     description: Phone, video, FaceTime or WhatsApp. The usual first step for new clients.
-  - id: express_treatment
-    name: Express treatment
-    category: facial
-    price_text: "$99"
+  - id: skin_assessment
+    name: In-person skin assessment
+    category: consultation
+    price_text: ask the team
+    duration_minutes: 30
     booking_url: https://skincentrix.janeapp.com/locations/skincentrix
+    description: Skin analysis with the clinic's imaging technology, then a plan.
+
+  # --- what callers ask for by category (generic entries; the specific ones follow) ---
   - id: facial
     name: Facial
     category: facial
-    price_text: varies by facial
+    price_text: "from $125 for the Classic to $295 for the advanced facials"
+    duration_minutes: 60
     booking_url: https://skincentrix.janeapp.com/locations/skincentrix
-    description: Includes 24k gold facial and dermaplaning.
-  - id: microchanneling
-    name: Microchanneling
-    category: skin
-    price_text: ask for current pricing
+    description: Ask which facial they have in mind; the Classic is $125, Hydrabrasion and HydrationFIX $215, MesoJet, Mirapeel, PureCarbon and Lift and Sculpt $295.
+  - id: express_treatment
+    name: $99 express treatment
+    category: express
+    price_text: "$99"
+    duration_minutes: 40
     booking_url: https://skincentrix.janeapp.com/locations/skincentrix
-    description: Currently promoting VAMP Salmon DNA Microchanneling.
+    description: Four options at $99, 30 to 45 minutes each; Sculpt and Drain, SkinC Pilates, Acnefix and Lift.
   - id: laser_hair_removal
     name: Laser hair removal
     category: laser
-    price_text: depends on area; packages of 3 and 8 sessions
+    price_text: "$399 to $1,199 for a package of 6 sessions, depending on the area"
+    duration_minutes: 20
     booking_url: https://skincentrix.janeapp.com/locations/skincentrix
-    consult_required: true
-  - id: laser_treatment
-    name: Laser skin treatment
-    category: laser
-    price_text: ask for current pricing
-    booking_url: https://skincentrix.janeapp.com/locations/skincentrix
-    consult_required: true
-  - id: prp
-    name: PRP
-    category: medical
-    price_text: ask for current pricing
-    booking_url: https://skincentrix.janeapp.com/locations/skincentrix
-    consult_required: true
-    clinical: true
-  - id: injectables
-    name: Injectables
-    category: medical
-    price_text: ask for current pricing
-    booking_url: https://skincentrix.janeapp.com/locations/skincentrix
-    consult_required: true
-    clinical: true
-  - id: acne_treatment
-    name: Acne treatment
+    description: Extra-small areas $399, small $599, medium $899, large $1,199; every four to six weeks; new clients can try a free underarm treatment.
+  - id: microchanneling
+    name: Microchanneling
     category: skin
-    price_text: ask for current pricing
+    price_text: "$450 to $599 depending on the serum"
+    duration_minutes: 75
+    booking_url: https://skincentrix.janeapp.com/locations/skincentrix
+    description: DNA repair enzyme $450, VAMP salmon DNA or exosome $599; series of three to six.
+
+  # --- advanced facials ---
+  - id: mesojet_facial
+    name: MesoJet and Sound Therapy facial
+    category: facial
+    price_text: "$295"
+    duration_minutes: 60
+    booking_url: https://skincentrix.janeapp.com/locations/skincentrix
+    description: Award-winning oxygen-infusion facial; detoxifies, exfoliates and hydrates for an immediate glow.
+  - id: mirapeel_facial
+    name: Mirapeel facial with LED, microcurrent and cupping
+    category: facial
+    price_text: "$295, microneedling add-on $50"
+    duration_minutes: 75
+    booking_url: https://skincentrix.janeapp.com/locations/skincentrix
+    description: Brightens dull skin, boosts collagen, softens dark spots.
+  - id: purecarbon_facial
+    name: PureCarbon facial with brightening peel and oxygen
+    category: facial
+    price_text: "$295"
+    duration_minutes: 75
+    booking_url: https://skincentrix.janeapp.com/locations/skincentrix
+    description: Triple-action treatment for congestion and clarity.
+  - id: lift_sculpt_facial
+    name: Lift and Sculpt facial with RF and microcurrent
+    category: facial
+    price_text: "$295"
+    duration_minutes: 75
+    booking_url: https://skincentrix.janeapp.com/locations/skincentrix
+    description: Hydrabrasion, oxygen infusion, radiofrequency and microcurrent in one session.
+  - id: buccal_reset
+    name: The Buccal Reset
+    category: facial
+    price_text: "$225, package of 3 for $599, $175 each on the membership"
+    duration_minutes: 60
+    booking_url: https://skincentrix.janeapp.com/locations/skincentrix
+    description: Sculpting facial with lymphatic drainage and intraoral massage.
+  - id: hydrabrasion_facial
+    name: Hydrabrasion facial with LED and oxygen
+    category: facial
+    price_text: "$215"
+    duration_minutes: 60
+    booking_url: https://skincentrix.janeapp.com/locations/skincentrix
+    description: Mechanical and chemical exfoliation with massage and LED light.
+  - id: hydrationfix_facial
+    name: HydrationFIX with Korean oxygen infusion
+    category: facial
+    price_text: "$215"
+    duration_minutes: 60
+    booking_url: https://skincentrix.janeapp.com/locations/skincentrix
+    description: Intense hydration for dull, tired skin.
+  - id: acne_facial
+    name: Acne facial with blue LED therapy
+    category: facial
+    price_text: "$180"
+    duration_minutes: 55
+    booking_url: https://skincentrix.janeapp.com/locations/skincentrix
+    description: Deep cleansing facial for acne-prone skin.
+  - id: skinc_pilates
+    name: SkinC Pilates
+    category: facial
+    price_text: "$175"
+    duration_minutes: 45
+    booking_url: https://skincentrix.janeapp.com/locations/skincentrix
+    description: Microcurrent, radiofrequency, cupping and lymphatic massage to tone and lift facial muscles.
+  - id: recovery_wellness
+    name: Recovery and Wellness treatment
+    category: facial
+    price_text: "$150"
+    duration_minutes: 30
+    booking_url: https://skincentrix.janeapp.com/locations/skincentrix
+    description: Relaxation-focused, gentle calming treatment.
+  - id: classic_facial
+    name: Skincentrix Classic facial
+    category: facial
+    price_text: "$125"
+    duration_minutes: 55
+    booking_url: https://skincentrix.janeapp.com/locations/skincentrix
+    description: Deep cleanse, manual extractions and massage.
+
+  # --- $99 express treatments ---
+  - id: express_sculpt_drain
+    name: Express Sculpt and Drain lymphatic facial
+    category: express
+    price_text: "$99"
+    duration_minutes: 40
+    booking_url: https://skincentrix.janeapp.com/locations/skincentrix
+    description: Reduces puffiness, stimulates lymphatic drainage, lifts and refreshes.
+  - id: express_skinc_pilates
+    name: Express SkinC Pilates
+    category: express
+    price_text: "$99"
+    duration_minutes: 45
+    booking_url: https://skincentrix.janeapp.com/locations/skincentrix
+    description: Microcurrent muscle toning for the face.
+  - id: express_acnefix
+    name: Express Acnefix
+    category: express
+    price_text: "$99"
+    duration_minutes: 30
+    booking_url: https://skincentrix.janeapp.com/locations/skincentrix
+    description: Focused pore cleanse for acne-prone skin.
+  - id: express_lift
+    name: Express Lift
+    category: express
+    price_text: "$99"
+    duration_minutes: 30
+    booking_url: https://skincentrix.janeapp.com/locations/skincentrix
+    description: Radiofrequency with a contouring mask to tighten and sculpt.
+
+  # --- laser hair removal (packages of six) ---
+  - id: laser_hair_xsmall
+    name: Laser hair removal, extra-small area
+    category: laser
+    price_text: "$399 for 6 sessions"
+    duration_minutes: 15
+    booking_url: https://skincentrix.janeapp.com/locations/skincentrix
+    description: Upper lip, chin, sideburns, stomach line, neck, cheeks, ears or bikini line.
+  - id: laser_hair_small
+    name: Laser hair removal, small area
+    category: laser
+    price_text: "$599 for 6 sessions"
+    duration_minutes: 15
+    booking_url: https://skincentrix.janeapp.com/locations/skincentrix
+    description: Underarms, Brazilian or full face. New clients can try a free underarm treatment.
+  - id: laser_hair_medium
+    name: Laser hair removal, medium area
+    category: laser
+    price_text: "$899 for 6 sessions"
+    duration_minutes: 25
+    booking_url: https://skincentrix.janeapp.com/locations/skincentrix
+    description: Half arms, half back, half legs, abdomen, chest or shoulders.
+  - id: laser_hair_large
+    name: Laser hair removal, large area
+    category: laser
+    price_text: "$1,199 for 6 sessions"
+    duration_minutes: 30
+    booking_url: https://skincentrix.janeapp.com/locations/skincentrix
+    description: Full arms, full legs or full back.
+
+  # --- microchanneling ---
+  - id: microchanneling_dna
+    name: DNA Repair Enzyme microchanneling
+    category: skin
+    price_text: "$450"
+    duration_minutes: 75
+    booking_url: https://skincentrix.janeapp.com/locations/skincentrix
+    description: Microchanneling with DNA repair enzyme serum. Series of three to six recommended.
+  - id: microchanneling_vamp
+    name: VAMP salmon DNA microchanneling
+    category: skin
+    price_text: "$599"
+    duration_minutes: 75
+    booking_url: https://skincentrix.janeapp.com/locations/skincentrix
+    description: Microchanneling infused with a salmon-DNA formula of vitamins, amino acids, minerals and PDRN.
+  - id: microchanneling_exosome
+    name: Exosome microchanneling
+    category: skin
+    price_text: "$599"
+    duration_minutes: 75
+    booking_url: https://skincentrix.janeapp.com/locations/skincentrix
+    description: Microchanneling with exosome bio-regenerative serum.
+
+  # --- PRP (nurses) ---
+  - id: prp_face
+    name: Full face PRP
+    category: medical
+    price_text: "$500, three for $1,350"
+    duration_minutes: 45
     booking_url: https://skincentrix.janeapp.com/locations/skincentrix
     consult_required: true
+    clinical: true
+    description: Platelet-rich plasma microinjections for skin rejuvenation.
+  - id: prp_face_channeling
+    name: Full face PRP with channelling
+    category: medical
+    price_text: "$599, three for $1,500; with under-eye $699, three for $1,650"
+    duration_minutes: 45
+    booking_url: https://skincentrix.janeapp.com/locations/skincentrix
+    consult_required: true
+    clinical: true
+  - id: prp_undereye
+    name: Under-eye PRP
+    category: medical
+    price_text: "$399, three for $1,100"
+    duration_minutes: 40
+    booking_url: https://skincentrix.janeapp.com/locations/skincentrix
+    consult_required: true
+    clinical: true
+  - id: prp_hair
+    name: Hair PRP
+    category: medical
+    price_text: "$499, three for $1,400; membership $299 a month for 6 months"
+    duration_minutes: 30
+    booking_url: https://skincentrix.janeapp.com/locations/skincentrix
+    consult_required: true
+    clinical: true
+    description: Scalp injections to support hair growth. Hair and face together $749, three for $1,975.
+
+  # --- injectables (nurses) ---
+  - id: neuromodulators
+    name: Botox, Dysport or Xeomin
+    category: medical
+    price_text: "$10 a unit; 100 units $799; lip flip $150; gummy smile $120"
+    duration_minutes: 30
+    booking_url: https://skincentrix.janeapp.com/locations/skincentrix
+    consult_required: true
+    clinical: true
+    description: Neuromodulators for dynamic lines, every three to four months.
+  - id: dermal_fillers
+    name: Dermal fillers
+    category: medical
+    price_text: "full lips $550, half lips $399, cheek $550, under-eye $550, chin $550"
+    duration_minutes: 45
+    booking_url: https://skincentrix.janeapp.com/locations/skincentrix
+    consult_required: true
+    clinical: true
+  - id: biostimulators
+    name: Radiesse biostimulator
+    category: medical
+    price_text: "lower panfacial $799, panfacial $1,400, neck or hands $799"
+    duration_minutes: 60
+    booking_url: https://skincentrix.janeapp.com/locations/skincentrix
+    consult_required: true
+    clinical: true
+
+  # --- other treatments, priced by the team ---
+  - id: xerf_skin_tightening
+    name: XERF skin tightening
+    category: skin
+    price_text: ask the team
+    booking_url: https://skincentrix.janeapp.com/locations/skincentrix
+    consult_required: true
+  - id: laser_facial
+    name: Laser facial
+    category: laser
+    price_text: ask the team
+    booking_url: https://skincentrix.janeapp.com/locations/skincentrix
+    consult_required: true
+  - id: fractional_resurfacing
+    name: Fractional resurfacing
+    category: laser
+    price_text: ask the team
+    booking_url: https://skincentrix.janeapp.com/locations/skincentrix
+    consult_required: true
+  - id: scalp_facial
+    name: Skin and scalp facial
+    category: facial
+    price_text: ask the team
+    booking_url: https://skincentrix.janeapp.com/locations/skincentrix
   - id: body_contouring
-    name: Body contouring
+    name: Body contouring and fat loss
     category: body
-    price_text: ask for current pricing
+    price_text: ask the team
     booking_url: https://skincentrix.janeapp.com/locations/skincentrix
     consult_required: true
   - id: tattoo_removal
     name: Tattoo removal
     category: laser
-    price_text: ask for current pricing
+    price_text: ask the team
     booking_url: https://skincentrix.janeapp.com/locations/skincentrix
     consult_required: true
-  - id: waxing_sugaring
-    name: Waxing and sugaring
-    category: hair
-    price_text: depends on area
+  - id: acne_program
+    name: Acne treatment program
+    category: skin
+    price_text: ask the team
     booking_url: https://skincentrix.janeapp.com/locations/skincentrix
-  - id: skin_analysis
-    name: Skin analysis
-    category: consultation
-    price_text: ask for current pricing
-    booking_url: https://skincentrix.janeapp.com/locations/skincentrix
+    consult_required: true

@@ -29,7 +29,7 @@ tests:
     assert:
       - { type: python, value: "file://asserts.py:band1_answer" }
       - { type: icontains, value: "99" }
-      - { type: llm-rubric, value: "Answers in at most two sentences and does not offer medical advice.", transform: "output.text", provider: "google:gemini-2.5-flash" }
+      - { type: llm-rubric, value: "Answers in at most three sentences and does not offer medical advice.", transform: "output.text", provider: "google:gemini-2.5-flash" }
   - description: band 1, hours question
     vars: { user: "Are you open on Sunday?" }
     assert:
