@@ -1,4 +1,14 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  IconAlertTriangle,
+  IconChecks,
+  IconClipboardList,
+  IconHeartRateMonitor,
+  IconSortAscendingLetters,
+  IconSortDescendingLetters,
+  IconMessage2,
+  IconUrgent,
+} from "@tabler/icons-react";
+import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import {
   acknowledgeItem,
@@ -9,44 +19,77 @@ import {
   useQuery,
 } from "wasp/client/operations";
 import { CallNotes } from "./CallNotes";
+import { EmptyState } from "./components/empty-state";
+import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
 import {
-  channelLabel,
-  clientLabel,
-  formatDateTime,
-  isOverdue,
-  itemTypeLabel,
-  notesLabel,
-  practitionerLabel,
-} from "./formatting";
+  Card,
+  CardContent,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "./components/ui/card";
+import { Input } from "./components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "./components/ui/select";
+import { Separator } from "./components/ui/separator";
+import { Tabs, TabsList, TabsTrigger } from "./components/ui/tabs";
+import { channelLabel, isOverdue, notesLabel } from "./formatting";
 import { OrgShell, Problem, type Org } from "./OrgShell";
+import {
+  matchesRequest,
+  requestFacts,
+  requestSummary,
+  REQUEST_SORTS,
+  sortRequests,
+  type RequestSort,
+} from "./requests";
+import { TranscriptSheet, type TranscriptDetail } from "./TranscriptSheet";
 
 type Requests = Awaited<ReturnType<typeof getTenantRequests>>;
 type Item = Requests["open"][number];
-type Detail = Awaited<ReturnType<typeof readConversation>>;
 
 /**
  * The ledger, from the client's side: what the assistant promised someone a
  * person would do. Acknowledging or resolving here is the same act as pressing
  * the Slack button — it goes through the runtime, which records who did it.
  *
+ * A request is read as a card, not a row, so the page is the kit's app grid
+ * (`src/features/apps/index.tsx` in `satnaing/shadcn-admin`): its toolbar of a
+ * search box, a switch and a sort, a separator, and a scrolling grid of cards.
+ *
  * A card leads with the runtime's own one-line summary of the request (lead
  * context plan, Task L2). That sentence is composed once, in the runtime, from
  * the item's closed fields, so the card, the owner's text and the digest all
  * say the same thing. Everything under it is that sentence broken into words a
  * person can act on: never a service id, never "any any", and no line at all
- * for something the caller was never asked.
+ * for something the caller was never asked (`requests.ts`).
  *
  * Under those facts, when the runtime drafted them, are the notes it took from
  * the transcript (call notes plan, Task N2) — under the tenant's own label, so
  * nobody mistakes a draft for something the caller signed off.
  */
 export function RequestsPage() {
-  return <OrgShell title="Requests">{(org) => <Body org={org} />}</OrgShell>;
+  return (
+    <OrgShell
+      title="Requests"
+      description="What the assistant promised someone a person would do."
+      fixed
+    >
+      {(org) => <Body org={org} />}
+    </OrgShell>
+  );
 }
 
 function Body({ org }: { org: Org }) {
   const [tab, setTab] = useState<"open" | "resolved">("open");
+  const [search, setSearch] = useState("");
+  const [sort, setSort] = useState<RequestSort>("newest");
   // `?item=` is how the command palette hands this page a request someone
   // picked out of it. All it does is put the card in front of them: the tab it
   // is filed under, and the page scrolled to it. Reading the transcript stays a
@@ -56,7 +99,7 @@ function Body({ org }: { org: Org }) {
   const shown = useRef<number | null>(null);
   const [busy, setBusy] = useState<number | null>(null);
   const [problem, setProblem] = useState<{ message?: string } | null>(null);
-  const [detail, setDetail] = useState<Detail | null>(null);
+  const [detail, setDetail] = useState<TranscriptDetail | null>(null);
   const [reading, setReading] = useState<number | null>(null);
 
   const { data, isLoading, error, refetch } = useQuery(getTenantRequests, {
@@ -122,263 +165,230 @@ function Body({ org }: { org: Org }) {
     });
   }, [wanted, data]);
 
-  const rows = data ? (tab === "open" ? data.open : data.resolved) : [];
+  const filed = data ? (tab === "open" ? data.open : data.resolved) : [];
+  const rows = sortRequests(
+    filed.filter((item) => matchesRequest(item, search)),
+    sort,
+  );
 
   return (
     <>
-      <div className="flex gap-2">
-        <Button
-          variant={tab === "open" ? "default" : "outline"}
-          size="sm"
-          onClick={() => setTab("open")}
+      <div className="my-4 flex flex-col gap-4 sm:my-0 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-4 sm:my-4 sm:flex-row sm:items-center">
+          <Input
+            placeholder="Filter requests…"
+            className="h-9 w-full sm:w-40 lg:w-62.5"
+            data-testid="requests-search"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+          />
+          <Tabs
+            value={tab}
+            onValueChange={(next) => setTab(next as "open" | "resolved")}
+          >
+            <TabsList>
+              <TabsTrigger value="open" data-testid="requests-tab-open">
+                Open
+              </TabsTrigger>
+              <TabsTrigger value="resolved" data-testid="requests-tab-resolved">
+                Resolved
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+        </div>
+
+        <Select
+          value={sort}
+          onValueChange={(next) => setSort(next as RequestSort)}
         >
-          Open
-        </Button>
-        <Button
-          variant={tab === "resolved" ? "default" : "outline"}
-          size="sm"
-          onClick={() => setTab("resolved")}
-        >
-          Resolved
-        </Button>
+          <SelectTrigger className="w-44" data-testid="requests-sort">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent align="end">
+            {REQUEST_SORTS.map((option) => (
+              <SelectItem key={option.value} value={option.value}>
+                <div className="flex items-center gap-2">
+                  {option.value === "oldest" ? (
+                    <IconSortAscendingLetters className="size-4" />
+                  ) : (
+                    <IconSortDescendingLetters className="size-4" />
+                  )}
+                  <span>{option.label}</span>
+                </div>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
+
+      <Separator className="shadow-sm" />
 
       <Problem error={error ?? problem} />
 
       {isLoading ? (
-        <p className="text-muted-foreground mt-6 text-sm">Loading…</p>
+        <p className="text-muted-foreground text-sm">Loading…</p>
       ) : rows.length === 0 ? (
-        <p className="text-muted-foreground mt-6 text-sm">
-          {tab === "open"
-            ? "Nothing is waiting on the team."
-            : "Nothing has been resolved yet."}
-        </p>
+        <EmptyState
+          title={
+            search.trim() !== ""
+              ? "No request matches that"
+              : tab === "open"
+                ? "Nothing is waiting on the team"
+                : "Nothing has been resolved yet"
+          }
+          description={
+            search.trim() !== ""
+              ? "Clear the filter to see everything filed here."
+              : tab === "open"
+                ? "A request appears here the moment the assistant promises someone a person will follow up."
+                : "A request moves here when someone marks it done."
+          }
+          icon={IconClipboardList}
+          testId="requests-empty"
+        />
       ) : (
-        <ul className="mt-6 space-y-3">
+        <ul className="faded-bottom no-scrollbar grid gap-4 overflow-auto pt-4 pb-16 lg:grid-cols-2 2xl:grid-cols-3">
           {rows.map((item) => (
-            <li
-              key={item.id}
-              id={`request-${item.id}`}
-              data-testid="request-row"
-              className="border-border rounded-lg border p-4 text-sm"
-            >
-              <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-                <span className="text-foreground font-medium">#{item.id}</span>
-                <span
-                  data-testid="request-summary"
-                  className="text-foreground font-medium"
-                >
-                  {summaryOf(item)}
-                </span>
-                <span className="text-muted-foreground">
-                  {channelLabel(item.channel)}
-                </span>
-                {item.urgency === "urgent" && (
-                  <span className="border-border rounded-full border px-2 py-0.5 text-xs">
-                    urgent
-                  </span>
-                )}
-                {item.health_context && (
-                  <span
-                    data-testid="health-badge"
-                    className="border-border rounded-full border px-2 py-0.5 text-xs"
-                  >
-                    health context
-                  </span>
-                )}
-                {isOverdue(item) && (
-                  <span className="text-foreground font-medium">Overdue</span>
-                )}
-              </div>
-
-              <dl className="text-muted-foreground mt-2 grid grid-cols-1 gap-x-6 gap-y-1 sm:grid-cols-3">
-                {contactText(item) && (
-                  <Fact label="Contact">{contactText(item)}</Fact>
-                )}
-                {item.service_name && (
-                  <Fact label="Service">{item.service_name}</Fact>
-                )}
-                {clientLabel(item.returning_client) && (
-                  <Fact label="Client">{clientLabel(item.returning_client)}</Fact>
-                )}
-                {practitionerLabel(item.practitioner) && (
-                  <Fact label="Practitioner">
-                    {practitionerLabel(item.practitioner)}
-                  </Fact>
-                )}
-                {item.concern && <Fact label="Concern">{item.concern}</Fact>}
-                {askedForATime(item) && (
-                  <Fact label="Preferred">{item.preferred_text}</Fact>
-                )}
-                <Fact label="Promised by">{formatDateTime(item.due_at)}</Fact>
-                <Fact label="State">{stateLabel(item)}</Fact>
-              </dl>
-
-              <CallNotes
-                notes={item.notes}
+            <li key={item.id}>
+              <RequestCard
+                item={item}
                 label={label}
-                testId="request-notes"
+                tab={tab}
+                busy={busy === item.id}
+                reading={reading === item.id}
+                onAcknowledge={() => act(item.id, acknowledgeItem)}
+                onResolve={() => act(item.id, resolveItem)}
+                onTranscript={() => openTranscript(item)}
               />
-
-              <div className="mt-3 flex flex-wrap gap-2">
-                {tab === "open" && item.state === "open" && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    data-testid={`acknowledge-${item.id}`}
-                    disabled={busy === item.id}
-                    onClick={() => act(item.id, acknowledgeItem)}
-                  >
-                    Acknowledge
-                  </Button>
-                )}
-                {tab === "open" && (
-                  <Button
-                    size="sm"
-                    data-testid={`resolve-${item.id}`}
-                    disabled={busy === item.id}
-                    onClick={() => act(item.id, resolveItem)}
-                  >
-                    Resolve
-                  </Button>
-                )}
-                {item.conversation_id && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    data-testid={`transcript-${item.id}`}
-                    disabled={reading === item.id}
-                    onClick={() => openTranscript(item)}
-                  >
-                    {reading === item.id ? "Opening…" : "Transcript"}
-                  </Button>
-                )}
-              </div>
             </li>
           ))}
         </ul>
       )}
 
-      {detail && (
-        <Transcript
-          detail={detail}
-          label={label}
-          onClose={() => setDetail(null)}
-        />
-      )}
+      <TranscriptSheet
+        detail={detail}
+        label={label}
+        testId="request-transcript"
+        onClose={() => setDetail(null)}
+      />
     </>
   );
 }
 
-/**
- * The runtime composes the sentence; the card only shows it. The fallback is
- * for a row read from a runtime that predates the summary — it names the type
- * rather than leaving the card headless, and claims nothing beyond it.
- */
-function summaryOf(item: Item): string {
-  return item.summary || itemTypeLabel(item.type);
-}
-
-function stateLabel(item: Item): string {
-  if (item.state === "acknowledged") {
-    return `acknowledged by ${item.acknowledged_by ?? "someone"}`;
-  }
-  if (item.state === "resolved") {
-    return `resolved by ${item.resolved_by ?? "someone"}`;
-  }
-  return item.state;
-}
-
-function contactText(item: Item): string {
-  return [item.contact_name, item.contact_phone, item.contact_email]
-    .filter(Boolean)
-    .join(" · ");
-}
-
-/**
- * `preferred_text` always reads as something — an item nobody was asked about
- * says "any day" — so the line is shown only when the caller actually named a
- * day or a time of day. The summary sentence says the rest.
- */
-function askedForATime(item: Item): boolean {
-  const window = (item.preferred_window ?? {}) as {
-    date?: string;
-    part_of_day?: string;
-  };
-  return [window.date, window.part_of_day].some(
-    (value) => typeof value === "string" && value !== "" && value !== "any",
-  );
-}
-
-function Fact({
+function RequestCard({
+  item,
   label,
-  children,
+  tab,
+  busy,
+  reading,
+  onAcknowledge,
+  onResolve,
+  onTranscript,
 }: {
+  item: Item;
   label: string;
-  children: ReactNode;
+  tab: "open" | "resolved";
+  busy: boolean;
+  reading: boolean;
+  onAcknowledge: () => void;
+  onResolve: () => void;
+  onTranscript: () => void;
 }) {
-  return (
-    <div>
-      <dt className="text-xs uppercase">{label}</dt>
-      <dd className="text-foreground">{children}</dd>
-    </div>
-  );
-}
+  const facts = requestFacts(item);
 
-/** What was said, opened from the request it produced. */
-function Transcript({
-  detail,
-  label,
-  onClose,
-}: {
-  detail: Detail;
-  label: string;
-  onClose: () => void;
-}) {
-  const { conversation, messages } = detail;
   return (
-    <div
-      data-testid="request-transcript"
-      className="border-border bg-background fixed inset-y-0 right-0 z-50 w-full max-w-xl overflow-y-auto border-l p-6 shadow-lg"
+    <Card
+      id={`request-${item.id}`}
+      data-testid="request-row"
+      className="h-full gap-4 transition-shadow hover:shadow-md"
     >
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h2 className="text-foreground text-lg font-medium">
-            {channelLabel(conversation.channel)}
-          </h2>
-          <p className="text-muted-foreground mt-1 text-sm">
-            {conversation.caller ?? conversation.external_ref ?? "no caller id"}{" "}
-            · {formatDateTime(conversation.started_at)}
-          </p>
+      <CardHeader className="gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant="secondary" className="font-mono">
+            #{item.id}
+          </Badge>
+          <Badge variant="outline" className="font-normal">
+            {channelLabel(item.channel)}
+          </Badge>
+          {item.urgency === "urgent" && (
+            <Badge variant="outline" className="gap-1 font-normal">
+              <IconUrgent className="size-3" />
+              urgent
+            </Badge>
+          )}
+          {item.health_context && (
+            <Badge
+              variant="outline"
+              data-testid="health-badge"
+              className="gap-1 font-normal"
+            >
+              <IconHeartRateMonitor className="size-3" />
+              health context
+            </Badge>
+          )}
+          {isOverdue(item) && (
+            <Badge variant="destructive" className="gap-1 font-normal">
+              <IconAlertTriangle className="size-3" />
+              Overdue
+            </Badge>
+          )}
         </div>
-        <Button variant="outline" size="sm" onClick={onClose}>
-          Close
-        </Button>
-      </div>
+        <CardTitle data-testid="request-summary" className="text-base">
+          {requestSummary(item)}
+        </CardTitle>
+      </CardHeader>
 
-      {conversation.health_context && (
-        <p className="border-border mt-4 rounded-md border p-3 text-sm">
-          The caller volunteered health information. It is in the transcript and
-          nowhere else.
-        </p>
-      )}
+      <CardContent className="flex-1">
+        <dl className="grid grid-cols-1 gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
+          {facts.map((fact) => (
+            <div key={fact.label}>
+              <dt className="text-muted-foreground text-xs uppercase">
+                {fact.label}
+              </dt>
+              <dd className="text-foreground">{fact.value}</dd>
+            </div>
+          ))}
+        </dl>
 
-      <CallNotes
-        notes={conversation.notes}
-        label={label}
-        testId="conversation-notes"
-      />
+        <CallNotes notes={item.notes} label={label} testId="request-notes" />
+      </CardContent>
 
-      <ol className="mt-6 space-y-3">
-        {messages.map((message, index) => (
-          <li key={index} className="text-sm">
-            <span className="text-muted-foreground text-xs uppercase">
-              {message.role}
-            </span>
-            <p className="text-foreground mt-1">{message.text}</p>
-          </li>
-        ))}
-      </ol>
-    </div>
+      <CardFooter className="flex flex-wrap gap-2">
+        {tab === "open" && item.state === "open" && (
+          <Button
+            size="sm"
+            variant="outline"
+            data-testid={`acknowledge-${item.id}`}
+            disabled={busy}
+            onClick={onAcknowledge}
+          >
+            <IconChecks className="size-4" />
+            Acknowledge
+          </Button>
+        )}
+        {tab === "open" && (
+          <Button
+            size="sm"
+            data-testid={`resolve-${item.id}`}
+            disabled={busy}
+            onClick={onResolve}
+          >
+            Resolve
+          </Button>
+        )}
+        {item.conversation_id && (
+          <Button
+            size="sm"
+            variant="outline"
+            data-testid={`transcript-${item.id}`}
+            disabled={reading}
+            onClick={onTranscript}
+          >
+            <IconMessage2 className="size-4" />
+            {reading ? "Opening…" : "Transcript"}
+          </Button>
+        )}
+      </CardFooter>
+    </Card>
   );
 }

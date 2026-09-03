@@ -80,6 +80,28 @@ export function channelLabel(channel: string): string {
   return CHANNELS[channel] ?? channel;
 }
 
+const CONTROLLERS: Record<string, string> = {
+  ai: "The assistant",
+  human: "A person",
+  closed: "Closed",
+};
+
+/**
+ * `conversations.controller`: who is answering this conversation now. `human`
+ * is the one the front desk cares about — a person took it over and the
+ * assistant has stopped replying — which is what the list's filter is for.
+ * An unfamiliar value is shown as it came, never guessed at.
+ */
+export function controllerLabel(
+  controller: string | null | undefined,
+): string {
+  const value = (controller ?? "").trim();
+  if (value === "") {
+    return "—";
+  }
+  return CONTROLLERS[value] ?? value;
+}
+
 export function isOverdue(
   item: { state: string; due_at: string },
   now: number = Date.now(),

@@ -156,9 +156,15 @@ test.describe("the conversations page", () => {
   });
 
   test("narrows the list to one channel", async () => {
-    await ownerPage.selectOption('select[aria-label="Channel"]', "sms");
+    // The two `select` elements the list used to filter with are gone: the
+    // list is the kit's table and its filters are the kit's faceted ones, a
+    // popover of options over the channel column.
+    await ownerPage.getByRole("button", { name: "Channel" }).click();
+    await ownerPage.getByRole("option", { name: "Text" }).click();
+    await ownerPage.keyboard.press("Escape");
     await expect(ownerPage.getByTestId("conversation-row")).toHaveCount(1);
-    await ownerPage.selectOption('select[aria-label="Channel"]', "");
+
+    await ownerPage.getByTestId("table-reset-filters").click();
     await expect(ownerPage.getByTestId("conversation-row")).toHaveCount(4);
   });
 
@@ -201,9 +207,10 @@ test.describe("the requests page", () => {
     ).toBeVisible(FIRST_RENDER);
     await expect(ownerPage.getByTestId("request-row")).toHaveCount(3);
 
-    await ownerPage.getByRole("button", { name: "Resolved" }).click();
+    // Open and Resolved are the kit's tabs now, not two buttons.
+    await ownerPage.getByRole("tab", { name: "Resolved" }).click();
     await expect(ownerPage.getByTestId("request-row")).toHaveCount(1);
-    await ownerPage.getByRole("button", { name: "Open" }).click();
+    await ownerPage.getByRole("tab", { name: "Open" }).click();
     await expect(ownerPage.getByTestId("request-row")).toHaveCount(3);
   });
 
@@ -233,7 +240,7 @@ test.describe("the requests page", () => {
     );
 
     await expect(ownerPage.getByTestId("request-row")).toHaveCount(2);
-    await ownerPage.getByRole("button", { name: "Resolved" }).click();
+    await ownerPage.getByRole("tab", { name: "Resolved" }).click();
     await expect(ownerPage.getByTestId("request-row")).toHaveCount(2);
   });
 });

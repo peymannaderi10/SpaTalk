@@ -5,6 +5,7 @@ import {
   blockStateLabel,
   channelLabel,
   clientLabel,
+  controllerLabel,
   formatCad,
   formatDuration,
   formatMinutes,
@@ -163,5 +164,19 @@ describe("notesLabel", () => {
 
   test("still says the notes were drafted, whatever the tenant wrote", () => {
     expect(DEFAULT_NOTES_LABEL).toBe("AI notes, drafted from the transcript");
+  });
+});
+
+describe("controllerLabel", () => {
+  test("says who is answering, in the words the list uses", () => {
+    expect(controllerLabel("ai")).toBe("The assistant");
+    expect(controllerLabel("human")).toBe("A person");
+    expect(controllerLabel("closed")).toBe("Closed");
+  });
+
+  test("shows an unfamiliar controller rather than guessing at one", () => {
+    expect(controllerLabel("robot")).toBe("robot");
+    expect(controllerLabel("")).toBe("—");
+    expect(controllerLabel(null)).toBe("—");
   });
 });

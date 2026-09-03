@@ -29,11 +29,19 @@ import {
 type DataTablePaginationProps<TData> = {
   table: Table<TData>;
   className?: string;
+  /**
+   * The page sizes on offer. The kit's list is the default; a table whose
+   * pages come from the runtime a page at a time passes the one size the
+   * runtime actually serves, so the select never offers a size nobody can
+   * honour.
+   */
+  pageSizeOptions?: number[];
 };
 
 export function DataTablePagination<TData>({
   table,
   className,
+  pageSizeOptions = [10, 20, 30, 40, 50],
 }: DataTablePaginationProps<TData>) {
   const currentPage = table.getState().pagination.pageIndex + 1;
   const totalPages = table.getPageCount();
@@ -61,7 +69,7 @@ export function DataTablePagination<TData>({
               <SelectValue placeholder={table.getState().pagination.pageSize} />
             </SelectTrigger>
             <SelectContent side="top">
-              {[10, 20, 30, 40, 50].map((pageSize) => (
+              {pageSizeOptions.map((pageSize) => (
                 <SelectItem key={pageSize} value={`${pageSize}`}>
                   {pageSize}
                 </SelectItem>

@@ -1,7 +1,10 @@
+import { IconAlertTriangle } from "@tabler/icons-react";
 import { type ReactNode } from "react";
 import { Link, useParams } from "react-router";
 import { getOrganization, useQuery } from "wasp/client/operations";
 import { subscriptionProblem } from "../payment/entitlement";
+import { PageHeader } from "./components/page-header";
+import { Alert, AlertDescription, AlertTitle } from "./components/ui/alert";
 import { OrgAppLayout } from "./layout/OrgAppLayout";
 
 /**
@@ -12,6 +15,11 @@ import { OrgAppLayout } from "./layout/OrgAppLayout";
  * The navigation used to be a strip of links above the page. It is now the
  * sidebar `OrgAppLayout` mounts, built from `nav.ts`, so a page added to the
  * Wasp spec cannot quietly become unreachable.
+ *
+ * Inside the shell the page opens with the kit's page header — title, a line
+ * saying what the page is for, and the page's primary buttons — and lays its
+ * content out in the kit's column (`src/features/tasks/index.tsx` in
+ * `satnaing/shadcn-admin`).
  */
 
 export type Org = {
@@ -33,12 +41,24 @@ export type Org = {
 
 export function OrgShell({
   title,
+  description,
+  actions,
   requiresSubscription = true,
+  fixed,
+  fluid,
   children,
 }: {
   title: string;
+  /** One line under the title, in the kit's page header. */
+  description?: ReactNode;
+  /** The page's primary buttons, at the end of the header row. */
+  actions?: ReactNode;
   /** False for the pages a clinic keeps without a subscription. */
   requiresSubscription?: boolean;
+  /** The page fills the shell and scrolls inside itself: what a table wants. */
+  fixed?: boolean;
+  /** Drop the reading-width cap: what a wall of cards wants. */
+  fluid?: boolean;
   children: (org: Org) => ReactNode;
 }) {
   const { orgSlug = "" } = useParams();
@@ -52,7 +72,7 @@ export function OrgShell({
 
   if (isLoading) {
     return (
-      <Frame title={title} slug={orgSlug}>
+      <Frame title={title} description={description} slug={orgSlug}>
         <p className="text-muted-foreground text-sm">Loading…</p>
       </Frame>
     );
@@ -60,7 +80,7 @@ export function OrgShell({
 
   if (error || !org) {
     return (
-      <Frame title={title} slug={orgSlug}>
+      <Frame title={title} description={description} slug={orgSlug}>
         <p className="text-muted-foreground text-sm">
           {error?.message ??
             "This organisation is not open to you. Ask an owner for an invitation."}
@@ -77,7 +97,15 @@ export function OrgShell({
   const closed = !org.entitled;
 
   return (
-    <Frame title={title} slug={org.slug} org={org}>
+    <Frame
+      title={title}
+      description={description}
+      actions={closed && requiresSubscription ? undefined : actions}
+      slug={org.slug}
+      org={org}
+      fixed={fixed}
+      fluid={fluid}
+    >
       {closed && <SubscriptionBanner org={org} />}
       {closed && requiresSubscription ? null : children(org)}
     </Frame>
@@ -96,36 +124,47 @@ export function SubscriptionBanner({ org }: { org: Org }) {
   }
 
   return (
-    <div
-      data-testid="subscription-required"
-      className="border-border mb-8 rounded-md border p-4"
-    >
-      <p className="text-foreground text-sm font-medium">{problem.headline}</p>
-      <p className="text-muted-foreground mt-1 text-sm">{problem.detail}</p>
-      <p className="mt-3 text-sm">
-        {org.role === "OWNER" ? (
-          <Link className="underline" to={`/app/${org.slug}/billing`}>
-            {problem.action === "manage"
-              ? "Update the payment method"
-              : "Subscribe this organisation"}
-          </Link>
-        ) : (
-          `Ask an owner of ${org.name} to sort out the subscription.`
-        )}
-      </p>
-    </div>
+    <Alert data-testid="subscription-required">
+      <IconAlertTriangle />
+      <AlertTitle>{problem.headline}</AlertTitle>
+      <AlertDescription>
+        <p>{problem.detail}</p>
+        <p>
+          {org.role === "OWNER" ? (
+            <Link
+              className="underline underline-offset-4"
+              to={`/app/${org.slug}/billing`}
+            >
+              {problem.action === "manage"
+                ? "Update the payment method"
+                : "Subscribe this organisation"}
+            </Link>
+          ) : (
+            `Ask an owner of ${org.name} to sort out the subscription.`
+          )}
+        </p>
+      </AlertDescription>
+    </Alert>
   );
 }
 
 function Frame({
   title,
+  description,
+  actions,
   slug,
   org,
+  fixed,
+  fluid,
   children,
 }: {
   title: string;
+  description?: ReactNode;
+  actions?: ReactNode;
   slug: string;
   org?: Org;
+  fixed?: boolean;
+  fluid?: boolean;
   children: ReactNode;
 }) {
   return (
@@ -134,9 +173,13 @@ function Frame({
       orgName={org?.name}
       role={org?.role}
       breadcrumbs={[{ label: title }]}
+      fixed={fixed}
+      fluid={fluid}
     >
-      <h1 className="text-foreground text-2xl font-semibold">{title}</h1>
-      <div className="mt-8">{children}</div>
+      <div className="flex flex-1 flex-col gap-4 sm:gap-6">
+        <PageHeader title={title} description={description} actions={actions} />
+        {children}
+      </div>
     </OrgAppLayout>
   );
 }
@@ -147,11 +190,11 @@ export function Problem({ error }: { error: { message?: string } | null }) {
     return null;
   }
   return (
-    <p
-      data-testid="page-problem"
-      className="border-border text-foreground mt-4 rounded-md border p-4 text-sm"
-    >
-      {error.message ?? "Something went wrong."}
-    </p>
+    <Alert variant="destructive" data-testid="page-problem">
+      <IconAlertTriangle />
+      <AlertDescription>
+        {error.message ?? "Something went wrong."}
+      </AlertDescription>
+    </Alert>
   );
 }
