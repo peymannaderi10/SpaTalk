@@ -13,6 +13,8 @@ from datetime import datetime, timezone
 
 from fastapi import WebSocket
 from loguru import logger
+from pipecat.audio.turn.smart_turn.base_smart_turn import SmartTurnParams
+from pipecat.audio.turn.smart_turn.local_smart_turn_v3 import LocalSmartTurnAnalyzerV3
 from pipecat.audio.vad.silero import SileroVADAnalyzer
 from pipecat.frames.frames import EndFrame, TTSSpeakFrame
 from pipecat.pipeline.pipeline import Pipeline
@@ -32,6 +34,10 @@ from pipecat.transports.websocket.fastapi import (
 from pipecat.turns.user_mute.mute_until_first_bot_complete_user_mute_strategy import (
     MuteUntilFirstBotCompleteUserMuteStrategy,
 )
+from pipecat.turns.user_stop.turn_analyzer_user_turn_stop_strategy import (
+    TurnAnalyzerUserTurnStopStrategy,
+)
+from pipecat.turns.user_turn_strategies import UserTurnStrategies
 from pipecat.workers.runner import WorkerRunner
 
 from spatalk.brain.audio_tags import strip_audio_tags
@@ -54,6 +60,31 @@ from spatalk.voice.tokens import verify_stream_token
 # Operations plan, Task E10: live transfer to a staffed back-line, Option A (the leg the
 # TeXML application created is transferred through the Call Control API by its id).
 from spatalk.voice.transfer import make_transfer, transfer_available
+
+
+# --- end of turn ------------------------------------------------------------------------
+# Pipecat's default is Smart Turn v3 with a three-second fallback: when the model judges an
+# utterance unfinished it waits up to 3 s of silence before handing over. Interrupted speech
+# is usually fragmentary, so every barge-in cost the caller about three seconds (founder call
+# 2026-09-03). The model stays, so a complete sentence still ends the turn at once; the wait
+# for an unfinished one is capped at what a person tolerates.
+TURN_END_FALLBACK_SECS = 1.2
+TURN_PRE_SPEECH_MS = 300
+
+
+def user_turn_params() -> LLMUserAggregatorParams:
+    """How the pipeline decides the caller has finished speaking, and when it may listen."""
+    analyzer = LocalSmartTurnAnalyzerV3(
+        params=SmartTurnParams(stop_secs=TURN_END_FALLBACK_SECS, pre_speech_ms=TURN_PRE_SPEECH_MS)
+    )
+    return LLMUserAggregatorParams(
+        vad_analyzer=SileroVADAnalyzer(),
+        user_turn_strategies=UserTurnStrategies(
+            stop=[TurnAnalyzerUserTurnStopStrategy(turn_analyzer=analyzer)],
+        ),
+        # The disclosure cannot be talked over: the caller must hear that this is an AI.
+        user_mute_strategies=[MuteUntilFirstBotCompleteUserMuteStrategy()],
+    )
 
 
 def make_stt(settings):
@@ -195,13 +226,7 @@ async def run_call(websocket: WebSocket, token: str, ctx) -> None:
         messages=[{"role": "system", "content": build_system_prompt(cfg, "voice", now)}],
         tools=tools_schema(cfg, transfer_enabled=can_transfer),
     )
-    user_agg, assistant_agg = LLMContextAggregatorPair(
-        context,
-        user_params=LLMUserAggregatorParams(
-            vad_analyzer=SileroVADAnalyzer(),
-            user_mute_strategies=[MuteUntilFirstBotCompleteUserMuteStrategy()],
-        ),
-    )
+    user_agg, assistant_agg = LLMContextAggregatorPair(context, user_params=user_turn_params())
     stt, tts, llm = make_stt(settings), make_tts(settings), make_llm(settings)
     pipeline = Pipeline(
         [

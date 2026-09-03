@@ -58,3 +58,11 @@ def test_prompt_files_questions_about_the_callers_own_appointment():
     assert "never answer from memory" in p
     assert "never say you cannot help" in p
     assert "capture_request (kind question)" in p
+
+
+def test_prompt_makes_booking_a_short_exchange_that_collects_a_name():
+    from spatalk.brain.prompt import build_system_prompt
+    p = build_system_prompt(_cfg(), "voice", NOW).lower()
+    assert "when they want to book" in p
+    assert "stop describing" in p and "first name" in p
+    assert "never file a booking, callback or reschedule request without a first name" in p
