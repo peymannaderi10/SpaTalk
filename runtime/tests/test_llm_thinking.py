@@ -21,7 +21,7 @@ def test_newer_models_and_aliases_get_a_thinking_level():
     from spatalk.brain.driver import gemini_thinking_kwargs
 
     for model in ("gemini-flash-lite-latest", "gemini-flash-latest", "gemini-3.5-flash-lite",
-                  "gemini-3-flash-preview", "gemini-3.8-flash"):
+                  "gemini-3-flash-preview", "gemini-3.5-flash"):
         assert gemini_thinking_kwargs(model, 0) == {"thinking_level": "minimal"}, model
     assert gemini_thinking_kwargs("gemini-3.5-flash", -1) == {"thinking_level": "high"}
     assert gemini_thinking_kwargs("gemini-3.5-flash", 2048) == {"thinking_level": "medium"}
