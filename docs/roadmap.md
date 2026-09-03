@@ -28,6 +28,7 @@ Where the products differ in kind, not degree: GoHighLevel's assistant is allowe
 | Staff notifications on WhatsApp | `2026-09-02-whatsapp-delivery-plan.md` | W1 committed (destination kind, migration 0008); W2 onward not started. | Meta developer login and a WhatsApp Business number. |
 | Review replies | `2026-09-02-review-replies-plan.md` | Plan only. | Google Business Profile API access for the agency's Cloud project (form; profile verified 60+ days), Meta app review for two page permissions. |
 | WhatsApp as a customer channel | none yet | Not started. | Same Meta prerequisites; write a plan modelled on the Instagram plan. |
+| SMS flood guard | `2026-09-02-sms-flood-guard-plan.md` | Plan only. Queued by the founder on 2026-09-02 to build right after the operations plan final review. | Nothing: no new provider, no new service. |
 | One-click connect for Slack | none yet | Today the agency sets `SKINCENTRIX_SLACK_WEBHOOK` or a bot token in the environment; no button. | An "Add to Slack" OAuth pair in the runtime plus a card on the portal Integrations tab, same shape as the Instagram card. Half a day. |
 | One-click connect for WhatsApp | plan W (later tasks) | Not started. | Meta embedded signup on the same tab. |
 | One-click connect for Google Business Profile | `2026-09-02-review-replies-plan.md` task R4 | Plan only. | Ships with review replies. |
