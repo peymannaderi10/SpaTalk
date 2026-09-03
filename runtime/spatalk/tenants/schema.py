@@ -105,6 +105,14 @@ class Scripts(BaseModel, frozen=True):
     )
     transferring: str = "One moment, I'll connect you to the team."
 
+    # The clinical script for text channels. The voice wording says "hang up and call 911",
+    # which makes no sense in a chat window (QA gate C). Same promise, same emergency sentence.
+    clinical_text: str = (
+        "That's a question for our clinical team, and I don't want to guess. I've sent them "
+        "an urgent request, and someone will contact you {confirm_by}. If this is an "
+        "emergency, please call 911 now."
+    )
+
     @model_validator(mode="after")
     def _no_completion_words(self):
         for key, value in self.__dict__.items():
@@ -112,7 +120,7 @@ class Scripts(BaseModel, frozen=True):
             hits = [b for b in BANNED_SCRIPT_WORDS if b in low]
             if hits:
                 raise ValueError(f"scripts.{key} contains completion wording ({hits})")
-        if "911" not in self.clinical:
+        if "911" not in self.clinical or "911" not in self.clinical_text:
             raise ValueError("scripts.clinical must keep the emergency sentence")
         return self
 

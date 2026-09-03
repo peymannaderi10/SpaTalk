@@ -59,7 +59,8 @@ def make_stt(settings):
     if settings.stt_provider == "deepgram_flux":
         from pipecat.services.deepgram.flux.stt import DeepgramFluxSTTService
 
-        return DeepgramFluxSTTService(api_key=settings.deepgram_api_key)
+        # Deepgram trains on audio unless told not to; the runbook promises we tell it.
+        return DeepgramFluxSTTService(api_key=settings.deepgram_api_key, mip_opt_out=True)
     from pipecat.services.soniox.stt import SonioxSTTService
 
     return SonioxSTTService(
@@ -75,6 +76,15 @@ def make_tts(settings):
         return DeepgramTTSService(
             api_key=settings.deepgram_api_key,
             settings=DeepgramTTSService.Settings(voice="aura-2-thalia-en"),
+        )
+    if settings.tts_provider == "soniox":
+        # Single-vendor speech (founder decision 2026-09-02): the same Soniox key drives
+        # both stages. tts-rt-v2 is Soniox's real-time model; the voice is an env choice.
+        from pipecat.services.soniox.tts import SonioxTTSService, SonioxTTSSettings
+
+        return SonioxTTSService(
+            api_key=settings.soniox_api_key,
+            settings=SonioxTTSSettings(model="tts-rt-v2", voice=settings.soniox_voice),
         )
     from pipecat.services.inworld.tts import InworldTTSService
 

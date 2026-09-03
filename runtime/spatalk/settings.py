@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     inworld_api_key: str = ""
     inworld_voice: str = "Ashley"
     inworld_model: str = "inworld-tts-2"
+    soniox_voice: str = "Bryce"
     google_api_key: str = ""
     llm_model: str = "gemini-2.5-flash"
     stt_provider: str = "soniox"

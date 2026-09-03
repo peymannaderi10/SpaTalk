@@ -53,3 +53,14 @@ def test_refusals_never_claim_anything_was_filed():
         text = render(Refused(reason=reason), _cfg(), NOW).lower()
         assert "905-703-7546" in text
         assert "sent" not in text and "passed" not in text and "confirm with you" not in text
+
+
+def test_clinical_escalation_on_a_text_channel_drops_the_phone_wording():
+    from spatalk.brain.outcomes import Captured
+    from spatalk.brain.renderer import render
+    out = Captured(item_id=9, urgency="urgent", confirm_by=NOW + timedelta(minutes=15), item_type="escalation_clinical")
+    voice = render(out, _cfg(), NOW)
+    text = render(out, _cfg(), NOW, channel="sms")
+    assert "hang up" in voice and "911" in voice
+    assert "hang up" not in text and "at this number" not in text
+    assert "911" in text and "urgent request" in text

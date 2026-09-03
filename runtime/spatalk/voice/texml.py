@@ -55,7 +55,7 @@ async def texml(request: Request):
     # exists, so nothing downstream ever sees the call.
     if await is_own_number(cfg, ctx.registry, caller):
         logger.warning("loop guard: {} refused a call from its own number {}", tenant_id, caller)
-        await log_loop_guard_alert(ctx.sf, tenant_id, caller or "")
+        await log_loop_guard_alert(ctx, tenant_id, caller or "")
         return Response(
             content=say_and_hangup(render_script("loop_guard", cfg, ctx.clock.now(), urgent=False)),
             media_type="application/xml",

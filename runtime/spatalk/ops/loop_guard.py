@@ -18,9 +18,7 @@ a human typed it (`905-703-7546`).
 
 from __future__ import annotations
 
-from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from spatalk.models import AlertLog
 from spatalk.tenants.schema import TenantConfig
 
 # North American Numbering Plan. The tenant bundle is a Canadian clinic; a tenant outside
@@ -74,20 +72,24 @@ async def is_own_number(cfg: TenantConfig, registry, number: str | None) -> bool
     return False
 
 
-async def log_loop_guard_alert(sf: async_sessionmaker, tenant_id: str, number: str) -> None:
-    """Record that a self-call was refused, so a bad forwarding chain is visible.
+async def log_loop_guard_alert(ctx, tenant_id: str, number: str) -> None:
+    """Raise the loop-guard alert through Task E7's `notify`.
 
-    The key is per tenant and per calling number: Task E7's `notify` deduplicates on it, so
-    a number stuck in a forwarding loop raises one alert, not one per ring.
+    One `alert_log` row, one email and one ops text per tenant and calling number inside the
+    dedup window. QA gate C found the earlier version wrote a row nobody was told about and
+    never deduplicated, so a number stuck in a forwarding loop alerted once per ring.
     """
+    from spatalk.ops.alerts import notify
+
     normalised = normalise_e164(number) or (number or "unknown")
-    async with sf() as s, s.begin():
-        s.add(
-            AlertLog(
-                key=f"loop_guard:{tenant_id}:{normalised}",
-                subject=(
-                    f"Loop guard: {tenant_id} refused a call from its own number {normalised}. "
-                    "Check the carrier forwarding chain."
-                ),
-            )
-        )
+    subject = (
+        f"Loop guard: {tenant_id} refused a call from its own number {normalised}. "
+        "Check the carrier forwarding chain."
+    )
+    body = (
+        subject
+        + "\n\nA call arrived from a number this tenant owns or publishes. The assistant said "
+        "the loop-guard script and hung up; no conversation was created. If this repeats, a "
+        "forwarding rule at the carrier points the clinic's line back at the assistant."
+    )
+    await notify(ctx, f"loop_guard:{tenant_id}:{normalised}", subject, body)

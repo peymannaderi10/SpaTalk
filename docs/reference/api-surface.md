@@ -136,7 +136,7 @@ Runtime `runtime/.env`:
 | TELNYX_API_KEY | A | voice, SMS |
 | TELNYX_PUBLIC_KEY | B | SMS without the edge worker |
 | EDGE_SHARED_KEY | B | edge worker and chat fallback |
-| SONIOX_API_KEY, STT_PROVIDER | A | voice |
+| SONIOX_API_KEY, SONIOX_VOICE, STT_PROVIDER | A | voice |
 | INWORLD_API_KEY, INWORLD_VOICE, INWORLD_MODEL, TTS_PROVIDER | A | voice |
 | DEEPGRAM_API_KEY | A | bake-off only |
 | GOOGLE_API_KEY, LLM_MODEL | A | always |

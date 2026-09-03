@@ -135,6 +135,17 @@ async def test_texml_hangs_up_on_a_call_from_our_own_number(client, sf):
     assert OWN_VOICE in alerts[0].subject
 
 
+async def test_a_second_loop_call_inside_the_window_raises_no_second_alert(client, sf):
+    """The alert goes through notify: one row with a sent_at, deduplicated per number."""
+    for sid in ("loop-3", "loop-4"):
+        await client.post(
+            "/telnyx/texml", data={"From": OWN_VOICE, "To": OWN_VOICE, "CallSid": sid}
+        )
+    conversations, alerts = await _counts(sf)
+    assert conversations == 0
+    assert len(alerts) == 1 and alerts[0].sent_at is not None
+
+
 async def test_texml_hangs_up_on_a_call_from_the_clinics_public_phone(client, sf):
     r = await client.post(
         "/telnyx/texml",

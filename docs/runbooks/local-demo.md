@@ -35,7 +35,7 @@ Not needed for the demo: OVH, Cloudflare, AWS SES, Stripe, Meta, Slack, a domain
 TELNYX_API_KEY=...
 TELNYX_PUBLIC_KEY=...        # Telnyx → Auth → Public Key; without it inbound texts are 401
 SONIOX_API_KEY=...
-SONIOX_VOICE=Adrian
+SONIOX_VOICE=Bryce
 STT_PROVIDER=soniox
 TTS_PROVIDER=soniox          # inworld or deepgram_aura2 are the swaps; each needs its own key
 SKINCENTRIX_STAFF_SMS=+1905XXXXXXX   # YOUR mobile, in E.164: every item is texted here

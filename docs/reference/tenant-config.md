@@ -67,6 +67,7 @@ Placeholders: `{name}` business name, `{confirm_by}` rendered due wording, `{ser
 # Required: the disclosure and the band-3 scripts. These are the ones that end the business if wrong.
 disclosure: "Hi, thanks for calling {name}. I'm {name}'s AI assistant. I can answer questions about services, pricing and hours, and take a message for the team. How can I help?"
 clinical: "That's a question for our clinical team, and I don't want to guess. I'm sending them an urgent request right now, and someone will call you back at this number {confirm_by}. If this is an emergency, please hang up and call 911."
+clinical_text: "That's a question for our clinical team, and I don't want to guess. I've sent them an urgent request, and someone will contact you {confirm_by}. If this is an emergency, please call 911 now."   # text channels; default exists
 human_request: "Of course. I'm sending a request to the team now, and someone will call you back at this number {confirm_by}."
 complaint: "I'm sorry to hear that. This needs a person, not an assistant. I'm flagging it to the team as urgent, and someone will call you back at this number {confirm_by}."
 payment: "I can't take or discuss payment details on this line. The team can help with that when they call you back {confirm_by}."

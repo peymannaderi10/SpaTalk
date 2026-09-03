@@ -76,7 +76,7 @@ Gotcha: until toll-free verification passes, SMS from the toll-free number is si
 
 1. console.soniox.com → sign up, add a card (no free credits; about $0.002 per minute of transcription and about $0.012 per minute of generated speech).
 2. API Keys → Create. Copy `SONIOX_API_KEY`. One key serves both stages.
-3. Set `STT_PROVIDER=soniox` and `TTS_PROVIDER=soniox`, and pick a voice from the TTS docs (voices page) → `SONIOX_VOICE` (for example `Adrian`).
+3. Set `STT_PROVIDER=soniox` and `TTS_PROVIDER=soniox`, and pick a voice from the TTS docs (voices page) → `SONIOX_VOICE` (for example `Bryce`, the default).
 4. Ask Soniox support, or check the DPA, that the no-training and no-retention terms on their security page cover text-to-speech as well as transcription; the page names audio and transcripts only.
 
 ## 5. Inworld, text-to-speech (optional swap, 10 minutes)
