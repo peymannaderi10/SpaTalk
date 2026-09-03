@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
   bandLabel,
+  blockStateLabel,
   channelLabel,
   formatCad,
   formatDuration,
@@ -79,5 +80,22 @@ describe("the smaller formatters", () => {
     expect(channelLabel("voice")).toBe("Phone");
     expect(channelLabel("sms")).toBe("Text");
     expect(channelLabel("chat")).toBe("Web chat");
+  });
+});
+
+describe("blockStateLabel", () => {
+  const now = Date.parse("2026-09-02T12:00:00Z");
+
+  test("a block placed by a person has no end", () => {
+    expect(blockStateLabel(null, now)).toBe("Blocked");
+    expect(blockStateLabel(undefined, now)).toBe("Blocked");
+  });
+
+  test("a live flood mute says when it ends", () => {
+    expect(blockStateLabel("2026-09-03T12:00:00Z", now)).toMatch(/^Muted until /);
+  });
+
+  test("a mute that has passed says so", () => {
+    expect(blockStateLabel("2026-09-01T12:00:00Z", now)).toBe("Mute ended");
   });
 });

@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import getpass
 import json
+import re
 from pathlib import Path
 
 import httpx
@@ -22,6 +24,7 @@ edge = typer.Typer()
 texml = typer.Typer()          # carrier-side TeXML the founder pastes (operations plan, E1)
 invoices = typer.Typer()       # what each provider actually billed (operations plan, E9)
 cost = typer.Typer()           # metered cost against those invoices (operations plan, E9)
+sms = typer.Typer()            # the SMS block list (plan F, F2)
 app.add_typer(tenant, name="tenant")
 app.add_typer(numbers, name="numbers")
 app.add_typer(items, name="items")
@@ -29,6 +32,7 @@ app.add_typer(edge, name="edge")
 app.add_typer(texml, name="texml")
 app.add_typer(invoices, name="invoices")
 app.add_typer(cost, name="cost")
+app.add_typer(sms, name="sms")
 
 
 def _ctx():
@@ -65,6 +69,81 @@ def items_list(tenant_id: str):
             f"#{it.id} {it.state:<12} {it.urgency:<6} {it.type:<28} "
             f"due {it.due_at:%Y-%m-%d %H:%M} {it.contact_name or ''} {it.contact_phone or ''}"
         )
+
+
+# --- sms block list (plan F, F2) ---------------------------------------------------------
+# The work is in async functions that return (exit code, lines) so the tests can drive them on
+# the test loop; the typer commands only run them and print.
+E164_RE = re.compile(r"^\+[1-9][0-9]{7,14}$")
+
+
+def _e164_or_exit(number: str) -> str:
+    if not E164_RE.match(number):
+        typer.echo(f"{number} is not an E.164 number (expected +1XXXXXXXXXX)")
+        raise typer.Exit(1)
+    return number
+
+
+async def sms_block_work(ctx, tenant_id: str, number: str, created_by: str) -> tuple[int, str]:
+    from spatalk.text.flood import block
+    from spatalk.text.staff import staff_numbers
+
+    cfg = await ctx.registry.get(tenant_id)
+    if number in staff_numbers(cfg):
+        return 1, f"{number} is a staff number for {tenant_id}; not blocked"
+    await block(ctx, cfg, number, created_by=created_by)
+    return 0, f"{number} blocked for {tenant_id}"
+
+
+async def sms_unblock_work(ctx, tenant_id: str, number: str) -> tuple[int, str]:
+    from spatalk.text.flood import unblock
+
+    if await unblock(ctx, tenant_id, number):
+        return 0, f"{number} removed from {tenant_id}'s block list"
+    return 1, f"no block or mute for {number} on {tenant_id}"
+
+
+async def sms_blocks_work(ctx, tenant_id: str) -> tuple[int, str]:
+    from spatalk.text.flood import list_blocks
+
+    rows = await list_blocks(ctx, tenant_id)
+    if not rows:
+        return 0, f"no blocked or muted numbers for {tenant_id}"
+    lines = []
+    for b in rows:
+        until = "permanent" if b.until is None else f"until {b.until:%Y-%m-%d %H:%M %Z}"
+        lines.append(
+            f"{b.phone:<16} {until:<28} {b.reason:<7} by {b.created_by} "
+            f"at {b.created_at:%Y-%m-%d %H:%M}"
+        )
+    return 0, "\n".join(lines)
+
+
+def _finish(result: tuple[int, str]) -> None:
+    code, text = result
+    typer.echo(text)
+    if code:
+        raise typer.Exit(code)
+
+
+@sms.command("block")
+def sms_block(tenant_id: str, number: str):
+    """Block a number for this tenant for good: its texts are stored, never answered."""
+    number = _e164_or_exit(number)
+    _finish(asyncio.run(sms_block_work(_ctx(), tenant_id, number, f"cli:{getpass.getuser()}")))
+
+
+@sms.command("unblock")
+def sms_unblock(tenant_id: str, number: str):
+    """Lift a block or a flood mute on a number."""
+    number = _e164_or_exit(number)
+    _finish(asyncio.run(sms_unblock_work(_ctx(), tenant_id, number)))
+
+
+@sms.command("blocks")
+def sms_blocks(tenant_id: str):
+    """List the numbers this tenant is not answering by SMS, and why."""
+    _finish(asyncio.run(sms_blocks_work(_ctx(), tenant_id)))
 
 
 @app.command()

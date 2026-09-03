@@ -1,6 +1,7 @@
 import { config, HttpError } from "wasp/server";
 import {
   type AcknowledgeItem,
+  type BlockSmsNumber,
   type DisconnectIntegration,
   type GetTenantConversations,
   type GetTenantIntegrations,
@@ -13,6 +14,7 @@ import {
   type SaveTenantConfig,
   type SelectMessengerPage,
   type StartIntegrationConnect,
+  type UnblockSmsNumber,
 } from "wasp/server/operations";
 import * as z from "zod";
 import {
@@ -58,6 +60,8 @@ export type JsonObject = { [key: string]: JsonValue };
 type Schema = components["schemas"];
 export type UsageDay = Schema["UsageDay"];
 export type UsageTotals = Schema["UsageTotals"];
+/** A number the tenant is not answering by SMS: a flood mute or a person's block (plan F). */
+export type SmsBlock = Schema["SmsBlockOut"];
 export type ConversationRow = Schema["ConversationRow"];
 export type Item = Omit<Schema["ItemOut"], "preferred_window"> & {
   preferred_window: JsonObject;
@@ -414,6 +418,46 @@ export const resolveItem: ResolveItem<z.infer<typeof itemArgs>, Item> = async (
   )) as unknown as Item;
 };
 
+// --- the SMS block list (plan F, F2) ------------------------------------------
+// A person's decision about a number. The runtime refuses a staff number and
+// writes the audit row; the portal only carries the request and the actor.
+
+const E164 = /^\+[1-9]\d{7,14}$/;
+const blockArgs = slugArgs.extend({ phone: z.string().regex(E164) });
+
+export const blockSmsNumber: BlockSmsNumber<
+  z.infer<typeof blockArgs>,
+  SmsBlock
+> = async (rawArgs, context) => {
+  const args = ensureArgsSchemaOrThrowHttpError(blockArgs, rawArgs);
+  const { api, tenantId, actor } = await session(context, args.slug);
+
+  return (await runtimeCall(
+    () =>
+      api.POST("/internal/tenants/{tenant_id}/sms-blocks", {
+        params: { path: { tenant_id: tenantId } },
+        body: { phone: args.phone, actor },
+      }),
+    "that number",
+  )) as unknown as SmsBlock;
+};
+
+export const unblockSmsNumber: UnblockSmsNumber<
+  z.infer<typeof blockArgs>,
+  { removed: boolean }
+> = async (rawArgs, context) => {
+  const args = ensureArgsSchemaOrThrowHttpError(blockArgs, rawArgs);
+  const { api, tenantId, actor } = await session(context, args.slug);
+
+  return (await runtimeCall(
+    () =>
+      api.DELETE("/internal/tenants/{tenant_id}/sms-blocks/{phone}", {
+        params: { path: { tenant_id: tenantId, phone: args.phone }, query: { actor } },
+      }),
+    "that number",
+  )) as unknown as { removed: boolean };
+};
+
 // --- settings --------------------------------------------------------------
 
 export type Settings = {
@@ -425,6 +469,8 @@ export type Settings = {
   schema: JsonObject;
   versions: ConfigVersion[];
   numbers: TenantNumber[];
+  /** Blocked and muted numbers, from the runtime's block list (plan F). */
+  blocks: SmsBlock[];
 };
 
 export const getTenantSettings: GetTenantSettings<
@@ -434,7 +480,7 @@ export const getTenantSettings: GetTenantSettings<
   const { slug } = ensureArgsSchemaOrThrowHttpError(slugArgs, rawArgs);
   const { api, tenantId, access } = await session(context, slug);
 
-  const [current, versions, schema, tenants] = await Promise.all([
+  const [current, versions, schema, tenants, blocks] = await Promise.all([
     runtimeCall(
       () =>
         api.GET("/internal/tenants/{tenant_id}/config", {
@@ -454,6 +500,13 @@ export const getTenantSettings: GetTenantSettings<
       "the settings schema",
     ),
     runtimeCall(() => api.GET("/internal/tenants", {}), "the tenants"),
+    runtimeCall(
+      () =>
+        api.GET("/internal/tenants/{tenant_id}/sms-blocks", {
+          params: { path: { tenant_id: tenantId } },
+        }),
+      "the blocked numbers",
+    ),
   ]);
 
   const summary = tenants.find((tenant) => tenant.id === tenantId);
@@ -466,6 +519,7 @@ export const getTenantSettings: GetTenantSettings<
     schema: schema as JsonObject,
     versions,
     numbers: summary?.numbers ?? [],
+    blocks: blocks as unknown as SmsBlock[],
   };
 };
 

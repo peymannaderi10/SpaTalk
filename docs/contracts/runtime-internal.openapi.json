@@ -1087,6 +1087,209 @@
         }
       }
     },
+    "/internal/tenants/{tenant_id}/sms-blocks": {
+      "get": {
+        "tags": [
+          "internal"
+        ],
+        "summary": "Sms Blocks",
+        "operationId": "sms_blocks_internal_tenants__tenant_id__sms_blocks_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tenant Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SmsBlockOut"
+                  },
+                  "title": "Response Sms Blocks Internal Tenants  Tenant Id  Sms Blocks Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "internal"
+        ],
+        "summary": "Add Sms Block",
+        "operationId": "add_sms_block_internal_tenants__tenant_id__sms_blocks_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tenant Id"
+            }
+          },
+          {
+            "name": "X-Actor",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Actor"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SmsBlockIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SmsBlockOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/tenants/{tenant_id}/sms-blocks/{phone}": {
+      "delete": {
+        "tags": [
+          "internal"
+        ],
+        "summary": "Remove Sms Block",
+        "operationId": "remove_sms_block_internal_tenants__tenant_id__sms_blocks__phone__delete",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tenant Id"
+            }
+          },
+          {
+            "name": "phone",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Phone"
+            }
+          },
+          {
+            "name": "actor",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Actor"
+            }
+          },
+          {
+            "name": "X-Actor",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Actor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SmsBlockRemoved"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/internal/tenants/{tenant_id}/audit/latest": {
       "get": {
         "tags": [
@@ -2474,6 +2677,80 @@
         ],
         "title": "RuntimeHealth"
       },
+      "SmsBlockIn": {
+        "properties": {
+          "phone": {
+            "type": "string",
+            "pattern": "^\\+[1-9][0-9]{7,14}$",
+            "title": "Phone"
+          },
+          "actor": {
+            "type": "string",
+            "title": "Actor"
+          }
+        },
+        "type": "object",
+        "required": [
+          "phone",
+          "actor"
+        ],
+        "title": "SmsBlockIn"
+      },
+      "SmsBlockOut": {
+        "properties": {
+          "phone": {
+            "type": "string",
+            "title": "Phone"
+          },
+          "until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Until"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          },
+          "created_by": {
+            "type": "string",
+            "title": "Created By"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "phone",
+          "until",
+          "reason",
+          "created_by",
+          "created_at"
+        ],
+        "title": "SmsBlockOut"
+      },
+      "SmsBlockRemoved": {
+        "properties": {
+          "removed": {
+            "type": "boolean",
+            "title": "Removed"
+          }
+        },
+        "type": "object",
+        "required": [
+          "removed"
+        ],
+        "title": "SmsBlockRemoved"
+      },
       "TenantCreated": {
         "properties": {
           "id": {
@@ -2536,6 +2813,21 @@
               }
             ],
             "title": "Config Version"
+          },
+          "sms_muted_numbers": {
+            "type": "integer",
+            "title": "Sms Muted Numbers",
+            "default": 0
+          },
+          "sms_blocked_numbers": {
+            "type": "integer",
+            "title": "Sms Blocked Numbers",
+            "default": 0
+          },
+          "sms_replies_today": {
+            "type": "integer",
+            "title": "Sms Replies Today",
+            "default": 0
           }
         },
         "type": "object",

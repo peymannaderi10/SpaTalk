@@ -36,7 +36,7 @@ from fastapi import (
     UploadFile,
 )
 from fastapi.security import APIKeyHeader
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlalchemy import Date, cast, func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
@@ -47,6 +47,7 @@ from spatalk.models import (
     Item,
     Job,
     Message,
+    SmsBlock,
     Tenant,
     TenantConfigVersion,
     TenantNumber,
@@ -55,6 +56,8 @@ from spatalk.models import (
 from spatalk.rates import estimate_cad, load_rates
 from spatalk.tenants.bundle import config_from_texts
 from spatalk.tenants.schema import TenantConfig
+from spatalk.text import flood
+from spatalk.text.staff import staff_numbers
 
 MAX_PAGE_SIZE = 200
 DEFAULT_PAGE_SIZE = 50
@@ -244,6 +247,11 @@ class TenantHealth(BaseModel):
     last_call_at: datetime | None
     last_sms_at: datetime | None
     config_version: int | None
+    # SMS flood guard (plan F, F2): numbers currently muted, numbers blocked for good, and
+    # assistant replies sent today in the tenant's local day.
+    sms_muted_numbers: int = 0
+    sms_blocked_numbers: int = 0
+    sms_replies_today: int = 0
 
 
 class RuntimeHealth(BaseModel):
@@ -799,7 +807,7 @@ async def tenant_latency(
 @router.get("/tenants/{tenant_id}/health", response_model=TenantHealth)
 async def tenant_health(request: Request, tenant_id: str):
     ctx = _ctx(request)
-    await _tenant_config(ctx, tenant_id)
+    cfg = await _tenant_config(ctx, tenant_id)
     now = ctx.clock.now()
     unresolved = Item.state.in_(("open", "acknowledged"))
     async with ctx.sf() as s:
@@ -826,13 +834,91 @@ async def tenant_health(request: Request, tenant_id: str):
                 TenantConfigVersion.tenant_id == tenant_id
             )
         )
+        muted = await s.scalar(
+            select(func.count())
+            .select_from(SmsBlock)
+            .where(SmsBlock.tenant_id == tenant_id, SmsBlock.until.isnot(None), SmsBlock.until > now)
+        )
+        blocked = await s.scalar(
+            select(func.count())
+            .select_from(SmsBlock)
+            .where(SmsBlock.tenant_id == tenant_id, SmsBlock.until.is_(None))
+        )
     return TenantHealth(
         open_items=int(open_items or 0),
         overdue_items=int(overdue or 0),
         last_call_at=last_call,
         last_sms_at=last_sms,
         config_version=version,
+        sms_muted_numbers=int(muted or 0),
+        sms_blocked_numbers=int(blocked or 0),
+        sms_replies_today=await flood.replies_today(ctx, cfg, now),
     )
+
+
+# --- sms blocks (plan F, F2) ---------------------------------------------------------------
+# A person's decision about a number, from the portal: block it for good, or lift a block or
+# a flood mute. Staff numbers cannot be blocked. Every change is an audit row.
+
+E164 = r"^\+[1-9][0-9]{7,14}$"
+
+
+class SmsBlockIn(BaseModel):
+    phone: str = Field(pattern=E164)
+    actor: str
+
+
+class SmsBlockOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    phone: str
+    until: datetime | None
+    reason: str
+    created_by: str
+    created_at: datetime
+
+
+class SmsBlockRemoved(BaseModel):
+    removed: bool
+
+
+@router.get("/tenants/{tenant_id}/sms-blocks", response_model=list[SmsBlockOut])
+async def sms_blocks(request: Request, tenant_id: str):
+    ctx = _ctx(request)
+    await _tenant_config(ctx, tenant_id)
+    return [SmsBlockOut.model_validate(b) for b in await flood.list_blocks(ctx, tenant_id)]
+
+
+@router.post("/tenants/{tenant_id}/sms-blocks", response_model=SmsBlockOut)
+async def add_sms_block(
+    request: Request, tenant_id: str, body: SmsBlockIn, x_actor: ActorHeader = None
+):
+    ctx = _ctx(request)
+    cfg = await _tenant_config(ctx, tenant_id)
+    if body.phone in staff_numbers(cfg):
+        raise HTTPException(
+            status_code=409, detail=f"{body.phone} is a staff number for {tenant_id}"
+        )
+    actor = portal_actor(x_actor, body.actor)
+    await flood.block(ctx, cfg, body.phone, created_by=actor)
+    await write_audit(ctx.sf, actor, "sms.block", "sms_block", body.phone)
+    rows = {b.phone: b for b in await flood.list_blocks(ctx, tenant_id)}
+    return SmsBlockOut.model_validate(rows[body.phone])
+
+
+@router.delete("/tenants/{tenant_id}/sms-blocks/{phone}", response_model=SmsBlockRemoved)
+async def remove_sms_block(
+    request: Request,
+    tenant_id: str,
+    phone: str,
+    actor: Annotated[str, Query()],
+    x_actor: ActorHeader = None,
+):
+    ctx = _ctx(request)
+    await _tenant_config(ctx, tenant_id)
+    if not await flood.unblock(ctx, tenant_id, phone):
+        raise HTTPException(status_code=404, detail=f"no block or mute for {phone}")
+    await write_audit(ctx.sf, portal_actor(x_actor, actor), "sms.unblock", "sms_block", phone)
+    return SmsBlockRemoved(removed=True)
 
 
 # --- operations (operations plan, Task E4) --------------------------------------------

@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import {
+  blockSmsNumber,
   getTenantSettings,
   rollBackTenantConfig,
   saveTenantConfig,
+  unblockSmsNumber,
   useQuery,
 } from "wasp/client/operations";
 import { Button } from "./components/ui/button";
@@ -200,7 +202,20 @@ function Body({ org }: { org: Org }) {
         {tab === "Scripts" && <ScriptsTab {...tabProps} />}
         {tab === "Delivery" && <DeliveryTab {...tabProps} />}
         {tab === "Numbers" && (
-          <NumbersTab config={draft} numbers={data.numbers} />
+          <NumbersTab
+            config={draft}
+            numbers={data.numbers}
+            blocks={data.blocks}
+            readOnly={readOnly}
+            onBlock={async (phone) => {
+              await blockSmsNumber({ slug: org.slug, phone });
+              await refetch();
+            }}
+            onUnblock={async (phone) => {
+              await unblockSmsNumber({ slug: org.slug, phone });
+              await refetch();
+            }}
+          />
         )}
         {tab === "Integrations" && (
           <IntegrationsTab slug={org.slug} readOnly={readOnly} />

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import {
+  blockSmsNumber,
   getTenantConversations,
   readConversation,
   useQuery,
@@ -57,6 +58,18 @@ function Body({ org }: { org: Org }) {
       setReading(null);
     }
   }
+
+  // A texting number can be blocked from its own transcript (plan F). The
+  // runtime refuses staff numbers and writes the audit row.
+  const blockCaller =
+    detail && detail.conversation.channel === "sms" && detail.conversation.caller
+      ? async () => {
+          await blockSmsNumber({
+            slug: org.slug,
+            phone: detail.conversation.caller as string,
+          });
+        }
+      : undefined;
 
   const pages = data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1;
 
@@ -183,7 +196,7 @@ function Body({ org }: { org: Org }) {
       )}
 
       {detail && (
-        <Transcript detail={detail} onClose={() => setDetail(null)} />
+        <Transcript detail={detail} onBlock={blockCaller} onClose={() => setDetail(null)} />
       )}
     </>
   );
@@ -192,11 +205,15 @@ function Body({ org }: { org: Org }) {
 function Transcript({
   detail,
   onClose,
+  onBlock,
 }: {
   detail: Detail;
   onClose: () => void;
+  onBlock?: () => Promise<void>;
 }) {
   const { conversation, messages, items } = detail;
+  const [blocked, setBlocked] = useState(false);
+  const [blockProblem, setBlockProblem] = useState<string | null>(null);
   return (
     <div
       data-testid="transcript-drawer"
@@ -217,6 +234,38 @@ function Transcript({
           Close
         </Button>
       </div>
+
+      {onBlock && (
+        <div className="mt-4 text-sm">
+          {blocked ? (
+            <p data-testid="blocked-note" className="text-muted-foreground">
+              Blocked. Its texts are kept here and never answered. Undo it under
+              Settings, Numbers.
+            </p>
+          ) : (
+            <Button
+              variant="outline"
+              size="sm"
+              data-testid="block-number"
+              onClick={async () => {
+                setBlockProblem(null);
+                try {
+                  await onBlock();
+                  setBlocked(true);
+                } catch (caught) {
+                  setBlockProblem(
+                    (caught as { message?: string }).message ??
+                      "That number could not be blocked.",
+                  );
+                }
+              }}
+            >
+              Block this number
+            </Button>
+          )}
+          {blockProblem && <p className="text-destructive mt-2">{blockProblem}</p>}
+        </div>
+      )}
 
       {conversation.health_context && (
         <p className="border-border mt-4 rounded-md border p-3 text-sm">

@@ -3,6 +3,7 @@ import { action, page, query, route, type Spec } from "@wasp.sh/spec";
 import { ConversationsPage } from "./ConversationsPage" with { type: "ref" };
 import {
   acknowledgeItem,
+  blockSmsNumber,
   disconnectIntegration,
   getTenantConversations,
   getTenantIntegrations,
@@ -15,6 +16,7 @@ import {
   saveTenantConfig,
   selectMessengerPage,
   startIntegrationConnect,
+  unblockSmsNumber,
 } from "./operations" with { type: "ref" };
 import { OverviewPage } from "./OverviewPage" with { type: "ref" };
 import { RequestsPage } from "./RequestsPage" with { type: "ref" };
@@ -61,6 +63,9 @@ export const clientPagesSpec: Spec = [
   action(readConversation, orgEntities),
   action(acknowledgeItem, orgEntities),
   action(resolveItem, orgEntities),
+  // Blocking a number is a person's decision the runtime audits (plan F).
+  action(blockSmsNumber, orgEntities),
+  action(unblockSmsNumber, orgEntities),
   action(saveTenantConfig, orgEntities),
   action(rollBackTenantConfig, orgEntities),
 

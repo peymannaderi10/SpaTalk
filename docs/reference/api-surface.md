@@ -23,6 +23,7 @@ All on the runtime unless marked portal or edge. Auth column says what proves th
 | POST /instagram/deauthorize, /delete | D1 | signed_request | Meta platform requirements |
 | GET /messenger/connect, /callback; GET, POST /messenger/webhook | D3 | as Instagram | Facebook Page |
 | /internal/* | C3, D4, E4 | `X-Internal-Key`, `X-Actor` | portal's only way in; see the portal plan for the full list |
+| GET, POST /internal/tenants/{id}/sms-blocks; DELETE /internal/tenants/{id}/sms-blocks/{phone}?actor= | F2 | `X-Internal-Key`, `X-Actor` | the SMS block list: list, block (409 for a staff number, 422 unless E.164), unblock (404 when absent); every change is an audit row `sms.block` / `sms.unblock`. `GET .../health` gains `sms_muted_numbers`, `sms_blocked_numbers`, `sms_replies_today` |
 | edge: POST /telnyx/sms, POST /chat/fallback, PUT /admin/tenant-texts | B1 | Telnyx signature; `X-Edge-Key` | fallback front door |
 | portal: /login, /signup, /invite/:token, /app/:orgSlug/*, /admin/*, /privacy, /payments-webhook | C1 to C6 | Wasp session; Stripe signature | |
 

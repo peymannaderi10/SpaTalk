@@ -261,6 +261,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/internal/tenants/{tenant_id}/sms-blocks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Sms Blocks */
+        get: operations["sms_blocks_internal_tenants__tenant_id__sms_blocks_get"];
+        put?: never;
+        /** Add Sms Block */
+        post: operations["add_sms_block_internal_tenants__tenant_id__sms_blocks_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/internal/tenants/{tenant_id}/sms-blocks/{phone}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove Sms Block */
+        delete: operations["remove_sms_block_internal_tenants__tenant_id__sms_blocks__phone__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/internal/tenants/{tenant_id}/audit/latest": {
         parameters: {
             query?: never;
@@ -812,6 +847,34 @@ export interface components {
             /** Dead Jobs */
             dead_jobs: number;
         };
+        /** SmsBlockIn */
+        SmsBlockIn: {
+            /** Phone */
+            phone: string;
+            /** Actor */
+            actor: string;
+        };
+        /** SmsBlockOut */
+        SmsBlockOut: {
+            /** Phone */
+            phone: string;
+            /** Until */
+            until: string | null;
+            /** Reason */
+            reason: string;
+            /** Created By */
+            created_by: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** SmsBlockRemoved */
+        SmsBlockRemoved: {
+            /** Removed */
+            removed: boolean;
+        };
         /** TenantCreated */
         TenantCreated: {
             /** Id */
@@ -831,6 +894,21 @@ export interface components {
             last_sms_at: string | null;
             /** Config Version */
             config_version: number | null;
+            /**
+             * Sms Muted Numbers
+             * @default 0
+             */
+            sms_muted_numbers: number;
+            /**
+             * Sms Blocked Numbers
+             * @default 0
+             */
+            sms_blocked_numbers: number;
+            /**
+             * Sms Replies Today
+             * @default 0
+             */
+            sms_replies_today: number;
         };
         /** TenantSummary */
         TenantSummary: {
@@ -1449,6 +1527,110 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TenantHealth"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sms_blocks_internal_tenants__tenant_id__sms_blocks_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SmsBlockOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_sms_block_internal_tenants__tenant_id__sms_blocks_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Actor"?: string | null;
+            };
+            path: {
+                tenant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SmsBlockIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SmsBlockOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_sms_block_internal_tenants__tenant_id__sms_blocks__phone__delete: {
+        parameters: {
+            query: {
+                actor: string;
+            };
+            header?: {
+                "X-Actor"?: string | null;
+            };
+            path: {
+                tenant_id: string;
+                phone: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SmsBlockRemoved"];
                 };
             };
             /** @description Validation Error */

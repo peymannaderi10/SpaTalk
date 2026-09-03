@@ -93,3 +93,14 @@ export function formatCad(amount: number): string {
 export function formatMinutes(minutes: number): string {
   return minutes.toFixed(1);
 }
+
+/** How a blocked or muted number reads in the settings table (plan F). */
+export function blockStateLabel(
+  until: string | null | undefined,
+  now: number = Date.now(),
+): string {
+  if (until == null) return "Blocked";
+  const ends = Date.parse(until);
+  if (Number.isNaN(ends)) return "Muted";
+  return ends > now ? `Muted until ${formatDateTime(until)}` : "Mute ended";
+}
