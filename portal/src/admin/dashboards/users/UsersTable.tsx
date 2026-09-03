@@ -1,3 +1,8 @@
+import {
+  IconChevronLeft,
+  IconChevronRight,
+  IconUsers,
+} from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { useAuth } from "wasp/client/auth";
@@ -7,8 +12,10 @@ import {
   useQuery,
 } from "wasp/client/operations";
 import { type User } from "wasp/entities";
+import { EmptyState } from "../../../client/components/empty-state";
+import { Badge } from "../../../client/components/ui/badge";
+import { Button } from "../../../client/components/ui/button";
 import { Input } from "../../../client/components/ui/input";
-import { Label } from "../../../client/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -17,17 +24,34 @@ import {
   SelectValue,
 } from "../../../client/components/ui/select";
 import { Switch } from "../../../client/components/ui/switch";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "../../../client/components/ui/table";
 import { useDebounce } from "../../../client/hooks/useDebounce";
-import { LoadingSpinner } from "../../layout/LoadingSpinner";
-import { DropdownEditDelete } from "./DropdownEditDelete";
 
 /**
  * Who has an account, and which clinics they can open.
+ *
+ * The table is the kit's user list (`src/features/users` in
+ * `satnaing/shadcn-admin`): its toolbar of a search box and a filter, its
+ * table with a badge per organisation, and its pager. The pages come from the
+ * server, so the pager walks the query rather than a client-side row model.
  *
  * A person carries no subscription: a clinic does (portal plan, Task C6), so
  * the column that used to show a Stripe status shows the organisations this
  * person belongs to instead.
  */
+
+const ADMIN_FILTERS = [
+  { value: "both", label: "Everyone" },
+  { value: "true", label: "Agency admins" },
+  { value: "false", label: "Not admins" },
+];
 
 function AdminSwitch({ id, isAdmin }: Pick<User, "id" | "isAdmin">) {
   const { data: currentUser } = useAuth();
@@ -36,9 +60,8 @@ function AdminSwitch({ id, isAdmin }: Pick<User, "id" | "isAdmin">) {
   return (
     <Switch
       checked={isAdmin}
-      onCheckedChange={(value) =>
-        updateIsUserAdminById({ id: id, isAdmin: value })
-      }
+      aria-label="Agency admin"
+      onCheckedChange={(value) => updateIsUserAdminById({ id: id, isAdmin: value })}
       disabled={isCurrentUser}
     />
   );
@@ -70,141 +93,139 @@ export function UsersTable() {
     [debouncedEmailFilter, isAdminFilter],
   );
 
-  return (
-    <div className="flex flex-col gap-4">
-      <div className="border-border bg-card rounded-sm border shadow-sm">
-        <div className="bg-muted/40 flex w-full flex-col items-start justify-between gap-3 p-6">
-          <span className="text-sm font-medium">Filters:</span>
-          <div className="flex w-full items-center justify-between gap-3 px-2">
-            <div className="relative flex items-center gap-3">
-              <Label
-                htmlFor="email-filter"
-                className="text-muted-foreground text-sm"
-              >
-                email:
-              </Label>
-              <Input
-                type="text"
-                id="email-filter"
-                placeholder="dude@example.com"
-                onChange={(e) => {
-                  const value = e.currentTarget.value;
-                  setEmailFilter(value === "" ? undefined : value);
-                }}
-              />
-              <div className="flex items-center gap-2">
-                <Label
-                  htmlFor="admin-filter"
-                  className="text-muted-foreground ml-2 text-sm"
-                >
-                  isAdmin:
-                </Label>
-                <Select
-                  onValueChange={(value) => {
-                    if (value === "both") {
-                      setIsAdminFilter(undefined);
-                    } else {
-                      setIsAdminFilter(value === "true");
-                    }
-                  }}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="both" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="both">both</SelectItem>
-                    <SelectItem value="true">true</SelectItem>
-                    <SelectItem value="false">false</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            {data?.totalPages && (
-              <div className="flex max-w-60 flex-row items-center">
-                <span className="text-md text-foreground mr-2">page</span>
-                <Input
-                  type="number"
-                  min={1}
-                  defaultValue={currentPage}
-                  max={data?.totalPages}
-                  onChange={(e) => {
-                    const value = parseInt(e.currentTarget.value);
-                    if (
-                      data?.totalPages &&
-                      value <= data?.totalPages &&
-                      value > 0
-                    ) {
-                      setCurrentPage(value);
-                    }
-                  }}
-                  className="w-20"
-                />
-                <span className="text-md text-foreground">
-                  {" "}
-                  /{data?.totalPages}{" "}
-                </span>
-              </div>
-            )}
-          </div>
-        </div>
+  const totalPages = data?.totalPages ?? 1;
 
-        <div className="border-border py-4.5 grid grid-cols-9 border-t-4 px-4 md:px-6">
-          <div className="col-span-3 flex items-center">
-            <p className="font-medium">Email / Username</p>
-          </div>
-          <div className="col-span-4 flex items-center">
-            <p className="font-medium">Organisations</p>
-          </div>
-          <div className="col-span-1 flex items-center">
-            <p className="font-medium">Is Admin</p>
-          </div>
-          <div className="col-span-1 flex items-center">
-            <p className="font-medium"></p>
-          </div>
-        </div>
-        {isLoading && <LoadingSpinner />}
-        {!!data?.users &&
-          data?.users?.length > 0 &&
-          data.users.map((user) => (
-            <div
-              key={user.id}
-              className="py-4.5 grid grid-cols-9 gap-4 px-4 md:px-6"
-            >
-              <div className="col-span-3 flex items-center">
-                <div className="flex flex-col gap-1">
-                  <p className="text-foreground text-sm">{user.email}</p>
-                  <p className="text-foreground text-sm">{user.username}</p>
-                </div>
-              </div>
-              <div className="col-span-4 flex items-center">
-                {user.organizations.length === 0 ? (
-                  <p className="text-muted-foreground text-sm">None</p>
-                ) : (
-                  <ul className="flex flex-wrap gap-x-3 gap-y-1 text-sm">
-                    {user.organizations.map((org) => (
-                      <li key={org.id}>
-                        <Link className="underline" to={`/app/${org.slug}`}>
-                          {org.name}
-                        </Link>
-                        <span className="text-muted-foreground">
-                          {" "}
-                          ({org.role === "OWNER" ? "owner" : "staff"})
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-              <div className="col-span-1 flex items-center">
-                <div className="text-foreground text-sm">
-                  <AdminSwitch id={user.id} isAdmin={user.isAdmin} />
-                </div>
-              </div>
-              <div className="col-span-1 flex items-center">
-                <DropdownEditDelete />
-              </div>
-            </div>
-          ))}
+  return (
+    <div className="flex flex-1 flex-col gap-4">
+      <div
+        className="flex flex-col-reverse items-start gap-2 sm:flex-row sm:items-center"
+        role="toolbar"
+      >
+        <Input
+          placeholder="Filter by email…"
+          data-testid="users-search"
+          className="h-8 w-37.5 lg:w-62.5"
+          onChange={(event) => {
+            const value = event.currentTarget.value;
+            setEmailFilter(value === "" ? undefined : value);
+          }}
+        />
+        <Select
+          value={
+            isAdminFilter === undefined ? "both" : isAdminFilter ? "true" : "false"
+          }
+          onValueChange={(value) =>
+            setIsAdminFilter(value === "both" ? undefined : value === "true")
+          }
+        >
+          <SelectTrigger className="h-8 w-44" data-testid="users-admin-filter">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {ADMIN_FILTERS.map((option) => (
+              <SelectItem key={option.value} value={option.value}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="overflow-hidden rounded-md border">
+        <Table data-testid="users-table" className="min-w-xl">
+          <TableHeader>
+            <TableRow>
+              <TableHead>Email and username</TableHead>
+              <TableHead>Organisations</TableHead>
+              <TableHead className="text-right">Agency admin</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {isLoading ? (
+              <TableRow>
+                <TableCell
+                  colSpan={3}
+                  className="text-muted-foreground h-24 text-center"
+                >
+                  Loading…
+                </TableCell>
+              </TableRow>
+            ) : (data?.users ?? []).length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={3} className="p-0">
+                  <EmptyState
+                    title="Nobody matches that"
+                    description="Clear the filters to see every account."
+                    icon={IconUsers}
+                    className="border-0"
+                  />
+                </TableCell>
+              </TableRow>
+            ) : (
+              (data?.users ?? []).map((user) => (
+                <TableRow key={user.id} data-testid="user-row">
+                  <TableCell>
+                    <div className="flex flex-col gap-0.5">
+                      <span className="font-medium">{user.email}</span>
+                      <span className="text-muted-foreground text-xs">
+                        {user.username}
+                      </span>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    {user.organizations.length === 0 ? (
+                      <span className="text-muted-foreground text-sm">None</span>
+                    ) : (
+                      <div className="flex flex-wrap gap-1">
+                        {user.organizations.map((org) => (
+                          <Badge
+                            key={org.id}
+                            variant="outline"
+                            asChild
+                            className="font-normal"
+                          >
+                            <Link to={`/app/${org.slug}`}>
+                              {org.name} · {org.role === "OWNER" ? "owner" : "staff"}
+                            </Link>
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <AdminSwitch id={user.id} isAdmin={user.isAdmin} />
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </div>
+
+      <div className="flex items-center justify-end gap-2">
+        <span className="text-sm font-medium">
+          Page {currentPage} of {totalPages}
+        </span>
+        <Button
+          variant="outline"
+          className="size-8 p-0"
+          data-testid="users-previous"
+          disabled={currentPage <= 1}
+          onClick={() => setCurrentPage((page) => page - 1)}
+        >
+          <span className="sr-only">Go to previous page</span>
+          <IconChevronLeft className="size-4" />
+        </Button>
+        <Button
+          variant="outline"
+          className="size-8 p-0"
+          data-testid="users-next"
+          disabled={currentPage >= totalPages}
+          onClick={() => setCurrentPage((page) => page + 1)}
+        >
+          <span className="sr-only">Go to next page</span>
+          <IconChevronRight className="size-4" />
+        </Button>
       </div>
     </div>
   );

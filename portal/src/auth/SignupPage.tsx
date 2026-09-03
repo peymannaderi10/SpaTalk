@@ -7,17 +7,23 @@ export function SignupPage() {
   useRedirectIfLoggedIn();
 
   return (
-    <AuthPageLayout>
+    <AuthPageLayout
+      title="Create an account"
+      description="Enter an email and a password. An invitation from a clinic, or from the agency, is what puts an organisation in it."
+      footer={
+        <>
+          Already have an account?{" "}
+          <WaspRouterLink
+            to={routes.LoginRoute.to}
+            className="underline underline-offset-4"
+          >
+            Go to login
+          </WaspRouterLink>
+          .
+        </>
+      }
+    >
       <SignupForm />
-      <br />
-      <span className="text-sm font-medium text-gray-900">
-        I already have an account (
-        <WaspRouterLink to={routes.LoginRoute.to} className="underline">
-          go to login
-        </WaspRouterLink>
-        ).
-      </span>
-      <br />
     </AuthPageLayout>
   );
 }

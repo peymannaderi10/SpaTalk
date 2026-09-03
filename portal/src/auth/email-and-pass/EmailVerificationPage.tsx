@@ -4,15 +4,23 @@ import { AuthPageLayout } from "../AuthPageLayout";
 
 export function EmailVerificationPage() {
   return (
-    <AuthPageLayout>
+    <AuthPageLayout
+      title="Verify your email"
+      description="Open the link we sent you, and this page says so."
+      footer={
+        <>
+          If everything is okay,{" "}
+          <WaspRouterLink
+            to={routes.LoginRoute.to}
+            className="underline underline-offset-4"
+          >
+            go to login
+          </WaspRouterLink>
+          .
+        </>
+      }
+    >
       <VerifyEmailForm />
-      <br />
-      <span className="text-sm font-medium text-gray-900">
-        If everything is okay,{" "}
-        <WaspRouterLink to={routes.LoginRoute.to} className="underline">
-          go to login
-        </WaspRouterLink>
-      </span>
     </AuthPageLayout>
   );
 }

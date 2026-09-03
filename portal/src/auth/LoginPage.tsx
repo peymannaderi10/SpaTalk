@@ -7,27 +7,30 @@ export function LoginPage() {
   useRedirectIfLoggedIn();
 
   return (
-    <AuthPageLayout>
+    <AuthPageLayout
+      title="Sign in"
+      description="Enter your email and password to open your clinic's front desk."
+      footer={
+        <>
+          Don't have an account yet?{" "}
+          <WaspRouterLink
+            to={routes.SignupRoute.to}
+            className="underline underline-offset-4"
+          >
+            Go to signup
+          </WaspRouterLink>
+          . Forgot your password?{" "}
+          <WaspRouterLink
+            to={routes.RequestPasswordResetRoute.to}
+            className="underline underline-offset-4"
+          >
+            Reset it
+          </WaspRouterLink>
+          .
+        </>
+      }
+    >
       <LoginForm />
-      <br />
-      <span className="text-sm font-medium text-gray-900 dark:text-gray-900">
-        Don't have an account yet?{" "}
-        <WaspRouterLink to={routes.SignupRoute.to} className="underline">
-          Go to signup
-        </WaspRouterLink>
-        .
-      </span>
-      <br />
-      <span className="text-sm font-medium text-gray-900">
-        Forgot your password?{" "}
-        <WaspRouterLink
-          to={routes.RequestPasswordResetRoute.to}
-          className="underline"
-        >
-          Reset it
-        </WaspRouterLink>
-        .
-      </span>
     </AuthPageLayout>
   );
 }

@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import { useAuth } from "wasp/client/auth";
 import {
@@ -7,6 +7,8 @@ import {
   useQuery,
 } from "wasp/client/operations";
 import { Link as WaspRouterLink, routes } from "wasp/client/router";
+import { AuthPageLayout } from "../auth/AuthPageLayout";
+import { Alert, AlertDescription } from "../client/components/ui/alert";
 import { Button } from "../client/components/ui/button";
 import {
   forgetPendingInvitation,
@@ -17,6 +19,9 @@ import {
  * The public end of an invitation. Someone who has no account yet lands here
  * first: the token is remembered in the browser, they sign up, and they are
  * brought back to this page to accept.
+ *
+ * It is a signed-out page, so it wears the kit's auth layout: the mark, the
+ * product's name, and one card saying what this invitation is.
  */
 export function InvitePage() {
   const { token = "" } = useParams();
@@ -38,70 +43,67 @@ export function InvitePage() {
   }, [isUserLoading, user, token]);
 
   if (isLoading || isUserLoading) {
-    return <PageShell>Loading…</PageShell>;
+    return (
+      <AuthPageLayout title="Invitation" description="Reading the invitation…">
+        <p className="text-muted-foreground text-sm">Loading…</p>
+      </AuthPageLayout>
+    );
   }
 
   if (error || !invitation) {
     return (
-      <PageShell>
-        <h1 className="text-foreground text-2xl font-semibold">
-          This invitation link is not valid
-        </h1>
-        <p className="text-muted-foreground mt-4 text-sm">
-          Ask whoever invited you to send a new one.
-        </p>
-      </PageShell>
+      <AuthPageLayout
+        title="This invitation link is not valid"
+        description="Ask whoever invited you to send a new one."
+      >
+        <Button variant="outline" asChild>
+          <WaspRouterLink to={routes.LoginRoute.to}>Go to login</WaspRouterLink>
+        </Button>
+      </AuthPageLayout>
     );
   }
 
   if (invitation.status === "accepted") {
     return (
-      <PageShell>
-        <h1 className="text-foreground text-2xl font-semibold">
-          This invitation has already been used
-        </h1>
-        <p className="text-muted-foreground mt-4 text-sm">
-          An invitation works once. Ask an owner of {invitation.organizationName}{" "}
-          for a new one.
-        </p>
-      </PageShell>
+      <AuthPageLayout
+        title="This invitation has already been used"
+        description={`An invitation works once. Ask an owner of ${invitation.organizationName} for a new one.`}
+      >
+        <Button variant="outline" asChild>
+          <WaspRouterLink to={routes.LoginRoute.to}>Go to login</WaspRouterLink>
+        </Button>
+      </AuthPageLayout>
     );
   }
 
   if (invitation.status === "expired") {
     return (
-      <PageShell>
-        <h1 className="text-foreground text-2xl font-semibold">
-          This invitation has expired
-        </h1>
-        <p className="text-muted-foreground mt-4 text-sm">
-          An invitation is good for seven days. Ask an owner of{" "}
-          {invitation.organizationName} for a new one.
-        </p>
-      </PageShell>
+      <AuthPageLayout
+        title="This invitation has expired"
+        description={`An invitation is good for seven days. Ask an owner of ${invitation.organizationName} for a new one.`}
+      >
+        <Button variant="outline" asChild>
+          <WaspRouterLink to={routes.LoginRoute.to}>Go to login</WaspRouterLink>
+        </Button>
+      </AuthPageLayout>
     );
   }
 
   if (!user) {
     return (
-      <PageShell>
-        <h1 className="text-foreground text-2xl font-semibold">
-          You are invited to {invitation.organizationName}
-        </h1>
-        <p className="text-muted-foreground mt-4 text-sm">
-          The invitation was sent to {invitation.email}, as {invitation.role}.
-          Sign up with that address, or log in if you already have an account,
-          and you will come back here to accept.
-        </p>
-        <div className="mt-6 flex gap-3">
-          <WaspRouterLink to={routes.SignupRoute.to}>
-            <Button>Sign up</Button>
-          </WaspRouterLink>
-          <WaspRouterLink to={routes.LoginRoute.to}>
-            <Button variant="outline">Log in</Button>
-          </WaspRouterLink>
+      <AuthPageLayout
+        title={`You are invited to ${invitation.organizationName}`}
+        description={`The invitation was sent to ${invitation.email}, as ${invitation.role}. Sign up with that address, or log in if you already have an account, and you will come back here to accept.`}
+      >
+        <div className="flex gap-3">
+          <Button asChild>
+            <WaspRouterLink to={routes.SignupRoute.to}>Sign up</WaspRouterLink>
+          </Button>
+          <Button variant="outline" asChild>
+            <WaspRouterLink to={routes.LoginRoute.to}>Log in</WaspRouterLink>
+          </Button>
         </div>
-      </PageShell>
+      </AuthPageLayout>
     );
   }
 
@@ -124,28 +126,20 @@ export function InvitePage() {
   }
 
   return (
-    <PageShell>
-      <h1 className="text-foreground text-2xl font-semibold">
-        Join {invitation.organizationName}
-      </h1>
-      <p className="text-muted-foreground mt-4 text-sm">
-        The invitation was sent to {invitation.email}, as {invitation.role}. You
-        are signed in as {user.email ?? user.id}.
-      </p>
-      <div className="mt-6">
+    <AuthPageLayout
+      title={`Join ${invitation.organizationName}`}
+      description={`The invitation was sent to ${invitation.email}, as ${invitation.role}. You are signed in as ${user.email ?? user.id}.`}
+    >
+      <div className="space-y-4">
         <Button onClick={onAccept} disabled={isAccepting}>
           Accept invitation
         </Button>
+        {problem && (
+          <Alert variant="destructive" role="alert">
+            <AlertDescription>{problem}</AlertDescription>
+          </Alert>
+        )}
       </div>
-      {problem && (
-        <p role="alert" className="text-destructive mt-4 text-sm">
-          {problem}
-        </p>
-      )}
-    </PageShell>
+    </AuthPageLayout>
   );
-}
-
-function PageShell({ children }: { children: ReactNode }) {
-  return <main className="mx-auto max-w-3xl px-6 py-16">{children}</main>;
 }

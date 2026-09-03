@@ -1,7 +1,33 @@
+import {
+  IconArrowLeft,
+  IconArrowRight,
+  IconCheck,
+  IconClipboardCheck,
+  IconMailForward,
+} from "@tabler/icons-react";
 import { useState, type ChangeEvent } from "react";
 import { Link } from "react-router";
 import { type AuthUser } from "wasp/auth";
 import { createTenantFromBundle } from "wasp/client/operations";
+import { PageHeader } from "../client/components/page-header";
+import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+} from "../client/components/ui/alert";
+import { Button } from "../client/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "../client/components/ui/card";
+import { Input } from "../client/components/ui/input";
+import { Label } from "../client/components/ui/label";
+import { Textarea } from "../client/components/ui/textarea";
+import { cn } from "../client/utils";
 import {
   BUNDLE_SLOTS,
   emptyBundle,
@@ -17,6 +43,10 @@ import { DefaultLayout } from "./layout/DefaultLayout";
  * Onboarding a client, in the order that leaves the least to undo: name the
  * organisation, give the runtime the bundle it will judge, invite the owner,
  * then read off what still has to be bought and created by hand.
+ *
+ * Four steps in the kit's form idiom (`src/features/settings/profile` in
+ * `satnaing/shadcn-admin`): the registry's label, input and textarea inside
+ * one card per step, with the step's buttons in the card's footer.
  *
  * The portal does not read the bundle. The five files go to the runtime whose
  * loader decides whether they are a tenant, so the wizard and
@@ -109,140 +139,183 @@ export function NewTenantWizard({ user }: { user: AuthUser }) {
 
   return (
     <DefaultLayout user={user}>
-      <h1 className="text-foreground text-2xl font-semibold">New tenant</h1>
+      <div className="flex flex-1 flex-col gap-4 sm:gap-6">
+        <PageHeader
+          title="New tenant"
+          description="Four steps, in the order that leaves the least to undo."
+        />
 
-      <ol className="text-muted-foreground mt-4 flex flex-wrap gap-4 text-sm">
-        {STEPS.map((entry) => (
-          <li
-            key={entry.step}
-            className={
-              entry.step === step ? "text-foreground font-medium" : undefined
-            }
-          >
-            {entry.step}. {entry.title}
-          </li>
-        ))}
-      </ol>
-
-      {problem && (
-        <p
-          data-testid="wizard-problem"
-          className="border-border text-foreground mt-6 rounded-md border p-4 text-sm"
-        >
-          {problem}
-        </p>
-      )}
-
-      {step === 1 && (
-        <section className="mt-8 max-w-xl space-y-4">
-          <Field label="Organisation name">
-            <input
-              name="organizationName"
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              className="border-border w-full rounded-md border px-3 py-2 text-sm"
-            />
-          </Field>
-          <Field label="Address (the client signs in at /app/<slug>)">
-            <input
-              name="organizationSlug"
-              value={slug}
-              onChange={(event) => setSlug(event.target.value)}
-              className="border-border w-full rounded-md border px-3 py-2 text-sm"
-            />
-          </Field>
-          <Next
-            disabled={!organisationReady}
-            onClick={() => setStep(2)}
-            hint={
-              organisationReady
-                ? undefined
-                : "A name, and a slug of lowercase letters, digits and hyphens."
-            }
-          />
-        </section>
-      )}
-
-      {step === 2 && (
-        <section className="mt-8 space-y-6">
-          <div>
-            <p className="text-muted-foreground text-sm">
-              The five files of the tenant bundle. Choose them all at once, or
-              paste them. The front desk service decides whether they are valid;
-              the portal does not read them.
-            </p>
-            <input
-              type="file"
-              multiple
-              data-testid="bundle-files"
-              onChange={takeFiles}
-              className="mt-3 text-sm"
-            />
-          </div>
-
-          {BUNDLE_SLOTS.map((spec) => (
-            <Field
-              key={spec.slot}
-              label={`${spec.filename} — ${spec.description}`}
-            >
-              <textarea
-                name={`bundle-${spec.slot}`}
-                rows={6}
-                value={bundle[spec.slot]}
-                onChange={(event) =>
-                  setBundle({ ...bundle, [spec.slot]: event.target.value })
-                }
-                className="border-border w-full rounded-md border px-3 py-2 font-mono text-xs"
-              />
-            </Field>
+        <ol className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+          {STEPS.map((entry) => (
+            <li key={entry.step} className="flex items-center gap-2">
+              <span
+                className={cn(
+                  "flex size-6 items-center justify-center rounded-full border text-xs",
+                  entry.step === step
+                    ? "bg-primary text-primary-foreground border-transparent"
+                    : entry.step < step
+                      ? "bg-muted text-muted-foreground"
+                      : "text-muted-foreground",
+                )}
+              >
+                {entry.step < step ? (
+                  <IconCheck className="size-3" />
+                ) : (
+                  entry.step
+                )}
+              </span>
+              <span
+                className={cn(
+                  entry.step === step
+                    ? "font-medium"
+                    : "text-muted-foreground",
+                )}
+              >
+                {entry.title}
+              </span>
+            </li>
           ))}
+        </ol>
 
-          <div className="flex items-center gap-4">
-            <Back onClick={() => setStep(1)} />
-            <Next
-              disabled={!bundleReady}
-              onClick={() => setStep(3)}
-              hint={
-                bundleReady
-                  ? undefined
-                  : `Still missing: ${missingSlots(bundle)
-                      .map((slot: BundleSlot) => `${slot}`)
-                      .join(", ")}.`
-              }
-            />
-          </div>
-        </section>
-      )}
+        {problem && (
+          <Alert variant="destructive" data-testid="wizard-problem">
+            <AlertDescription>{problem}</AlertDescription>
+          </Alert>
+        )}
 
-      {step === 3 && (
-        <section className="mt-8 max-w-xl space-y-4">
-          <Field label="Owner's email address">
-            <input
-              name="ownerEmail"
-              value={ownerEmail}
-              onChange={(event) => setOwnerEmail(event.target.value)}
-              className="border-border w-full rounded-md border px-3 py-2 text-sm"
-            />
-          </Field>
-          <p className="text-muted-foreground text-sm">
-            They are emailed a single-use invitation that expires in seven days.
-          </p>
-          <div className="flex items-center gap-4">
-            <Back onClick={() => setStep(2)} />
-            <button
-              type="button"
-              data-testid="wizard-create"
-              disabled={busy || ownerEmail.trim().length === 0}
-              onClick={create}
-              className="border-border rounded-md border px-3 py-1.5 text-sm disabled:opacity-50"
-            >
-              {busy ? "Creating…" : "Create tenant"}
-            </button>
-          </div>
-        </section>
-      )}
+        {step === 1 && (
+          <Card className="max-w-xl">
+            <CardHeader>
+              <CardTitle>The organisation</CardTitle>
+              <CardDescription>
+                What the client signs in to. The slug is the address.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <Field label="Organisation name" htmlFor="organizationName">
+                <Input
+                  id="organizationName"
+                  name="organizationName"
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                />
+              </Field>
+              <Field
+                label="Address (the client signs in at /app/<slug>)"
+                htmlFor="organizationSlug"
+              >
+                <Input
+                  id="organizationSlug"
+                  name="organizationSlug"
+                  value={slug}
+                  onChange={(event) => setSlug(event.target.value)}
+                />
+              </Field>
+            </CardContent>
+            <CardFooter>
+              <Next
+                disabled={!organisationReady}
+                onClick={() => setStep(2)}
+                hint={
+                  organisationReady
+                    ? undefined
+                    : "A name, and a slug of lowercase letters, digits and hyphens."
+                }
+              />
+            </CardFooter>
+          </Card>
+        )}
 
-      {step === 4 && result && <Done result={result} />}
+        {step === 2 && (
+          <Card>
+            <CardHeader>
+              <CardTitle>The bundle</CardTitle>
+              <CardDescription>
+                The five files of the tenant bundle. Choose them all at once, or
+                paste them. The front desk service decides whether they are
+                valid; the portal does not read them.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <Input
+                type="file"
+                multiple
+                data-testid="bundle-files"
+                onChange={takeFiles}
+                className="max-w-md"
+              />
+
+              {BUNDLE_SLOTS.map((spec) => (
+                <Field
+                  key={spec.slot}
+                  label={`${spec.filename} — ${spec.description}`}
+                  htmlFor={`bundle-${spec.slot}`}
+                >
+                  <Textarea
+                    id={`bundle-${spec.slot}`}
+                    name={`bundle-${spec.slot}`}
+                    rows={6}
+                    value={bundle[spec.slot]}
+                    onChange={(event) =>
+                      setBundle({ ...bundle, [spec.slot]: event.target.value })
+                    }
+                    className="font-mono text-xs"
+                  />
+                </Field>
+              ))}
+            </CardContent>
+            <CardFooter className="gap-4">
+              <Back onClick={() => setStep(1)} />
+              <Next
+                disabled={!bundleReady}
+                onClick={() => setStep(3)}
+                hint={
+                  bundleReady
+                    ? undefined
+                    : `Still missing: ${missingSlots(bundle)
+                        .map((slot: BundleSlot) => `${slot}`)
+                        .join(", ")}.`
+                }
+              />
+            </CardFooter>
+          </Card>
+        )}
+
+        {step === 3 && (
+          <Card className="max-w-xl">
+            <CardHeader>
+              <CardTitle>The owner</CardTitle>
+              <CardDescription>
+                They are emailed a single-use invitation that expires in seven
+                days.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Field label="Owner's email address" htmlFor="ownerEmail">
+                <Input
+                  id="ownerEmail"
+                  name="ownerEmail"
+                  value={ownerEmail}
+                  onChange={(event) => setOwnerEmail(event.target.value)}
+                />
+              </Field>
+            </CardContent>
+            <CardFooter className="gap-4">
+              <Back onClick={() => setStep(2)} />
+              <Button
+                type="button"
+                data-testid="wizard-create"
+                disabled={busy || ownerEmail.trim().length === 0}
+                onClick={create}
+              >
+                {busy ? "Creating…" : "Create tenant"}
+              </Button>
+            </CardFooter>
+          </Card>
+        )}
+
+        {step === 4 && result && <Done result={result} />}
+      </div>
     </DefaultLayout>
   );
 }
@@ -255,83 +328,94 @@ function Done({ result }: { result: NewTenant }) {
     .replace(/[^A-Z0-9]/g, "_")}_SLACK_WEBHOOK`;
 
   return (
-    <section className="mt-8 space-y-8">
-      <div
-        data-testid="wizard-result"
-        className="border-border rounded-md border p-4 text-sm"
-      >
-        <p className="text-foreground font-medium">
+    <div className="space-y-4">
+      <Alert data-testid="wizard-result">
+        <IconCheck />
+        <AlertTitle>
           {tenant} is configuration version {result.configVersion} in the front
-          desk service.
-        </p>
-        <p className="text-muted-foreground mt-1">
-          {result.organizationCreated
-            ? "The organisation was created"
-            : "An organisation for this tenant already existed and was kept"}
-          , at{" "}
-          <Link className="underline" to={`/app/${result.organizationSlug}`}>
-            /app/{result.organizationSlug}
-          </Link>
-          .
-        </p>
-      </div>
+          desk service
+        </AlertTitle>
+        <AlertDescription>
+          <p>
+            {result.organizationCreated
+              ? "The organisation was created"
+              : "An organisation for this tenant already existed and was kept"}
+            , at{" "}
+            <Link
+              className="underline underline-offset-4"
+              to={`/app/${result.organizationSlug}`}
+            >
+              /app/{result.organizationSlug}
+            </Link>
+            .
+          </p>
+        </AlertDescription>
+      </Alert>
 
-      <div
-        data-testid="wizard-invitation"
-        className="border-border rounded-md border p-4 text-sm"
-      >
-        <p className="text-foreground font-medium">
-          {result.invitation.email} has been invited as the owner.
-        </p>
-        <p className="text-muted-foreground mt-1 break-all">
-          If the email does not arrive, hand them this link:{" "}
-          {result.invitation.inviteUrl}
-        </p>
-      </div>
+      <Alert data-testid="wizard-invitation">
+        <IconMailForward />
+        <AlertTitle>
+          {result.invitation.email} has been invited as the owner
+        </AlertTitle>
+        <AlertDescription>
+          <p className="break-all">
+            If the email does not arrive, hand them this link:{" "}
+            {result.invitation.inviteUrl}
+          </p>
+        </AlertDescription>
+      </Alert>
 
-      <div data-testid="wizard-checklist">
-        <h2 className="text-foreground text-lg font-medium">
-          What still has to be done by hand
-        </h2>
-        <p className="text-muted-foreground mt-1 text-sm">
-          None of this can be done from the portal. The steps are in{" "}
-          <code>docs/runbooks/accounts-and-env.md</code>.
-        </p>
-        <ul className="mt-3 space-y-3 text-sm">
-          <Todo where="§ 3, steps 4 and 5">
-            Buy the local voice number in Telnyx and assign it to the{" "}
-            <code>spatalk-runtime</code> TeXML application.
-          </Todo>
-          <Todo where="§ 3, steps 6 to 8">
-            Buy the toll-free number, assign it to the <code>spatalk-sms</code>{" "}
-            messaging profile, and submit toll-free verification. Until it
-            passes, texts from that number are dropped.
-          </Todo>
-          <Todo where="§ 3, step 9">
-            Map both numbers to this tenant:
-            <pre className="bg-muted mt-1 overflow-x-auto rounded p-2 text-xs">
-              {`spatalk numbers add <local E.164> ${tenant} voice\nspatalk numbers add <toll-free E.164> ${tenant} sms`}
-            </pre>
-            Then set <code>sms_from_number</code> in the tenant's settings.
-          </Todo>
-          <Todo where="§ 8, step 4">
-            Create the Slack channel <code>{slackChannel}</code>, add an
-            incoming webhook for it, and put the URL in{" "}
-            <code>{webhookVariable}</code> on the runtime. The bundle refers to
-            that variable by name; the secret never goes in the bundle.
-          </Todo>
-          <Todo where="§ 10">
-            Subscribe the organisation to the Front Desk plan so billing starts.
-          </Todo>
-        </ul>
-      </div>
-
-      <p className="text-sm">
-        <Link className="underline" to="/admin/tenants">
-          Back to the tenants table
-        </Link>
-      </p>
-    </section>
+      <Card data-testid="wizard-checklist">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <IconClipboardCheck className="size-5" />
+            What still has to be done by hand
+          </CardTitle>
+          <CardDescription>
+            None of this can be done from the portal. The steps are in{" "}
+            <code>docs/runbooks/accounts-and-env.md</code>.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ul className="space-y-3 text-sm">
+            <Todo where="§ 3, steps 4 and 5">
+              Buy the local voice number in Telnyx and assign it to the{" "}
+              <code>spatalk-runtime</code> TeXML application.
+            </Todo>
+            <Todo where="§ 3, steps 6 to 8">
+              Buy the toll-free number, assign it to the{" "}
+              <code>spatalk-sms</code> messaging profile, and submit toll-free
+              verification. Until it passes, texts from that number are dropped.
+            </Todo>
+            <Todo where="§ 3, step 9">
+              Map both numbers to this tenant:
+              <pre className="bg-muted mt-1 overflow-x-auto rounded p-2 text-xs">
+                {`spatalk numbers add <local E.164> ${tenant} voice\nspatalk numbers add <toll-free E.164> ${tenant} sms`}
+              </pre>
+              Then set <code>sms_from_number</code> in the tenant's settings.
+            </Todo>
+            <Todo where="§ 8, step 4">
+              Create the Slack channel <code>{slackChannel}</code>, add an
+              incoming webhook for it, and put the URL in{" "}
+              <code>{webhookVariable}</code> on the runtime. The bundle refers
+              to that variable by name; the secret never goes in the bundle.
+            </Todo>
+            <Todo where="§ 10">
+              Subscribe the organisation to the Front Desk plan so billing
+              starts.
+            </Todo>
+          </ul>
+        </CardContent>
+        <CardFooter>
+          <Button variant="outline" asChild>
+            <Link to="/admin/tenants">
+              <IconArrowLeft className="size-4" />
+              Back to the tenants table
+            </Link>
+          </Button>
+        </CardFooter>
+      </Card>
+    </div>
   );
 }
 
@@ -354,16 +438,20 @@ function Todo({
 
 function Field({
   label,
+  htmlFor,
   children,
 }: {
   label: string;
+  htmlFor: string;
   children: React.ReactNode;
 }) {
   return (
-    <label className="block">
-      <span className="text-muted-foreground text-xs uppercase">{label}</span>
-      <div className="mt-1">{children}</div>
-    </label>
+    <div className="flex flex-col gap-1.5">
+      <Label htmlFor={htmlFor} className="text-muted-foreground text-xs uppercase">
+        {label}
+      </Label>
+      {children}
+    </div>
   );
 }
 
@@ -377,16 +465,16 @@ function Next({
   hint?: string;
 }) {
   return (
-    <div className="flex items-center gap-3">
-      <button
+    <div className="flex flex-wrap items-center gap-3">
+      <Button
         type="button"
         data-testid="wizard-next"
         disabled={disabled}
         onClick={onClick}
-        className="border-border rounded-md border px-3 py-1.5 text-sm disabled:opacity-50"
       >
         Next
-      </button>
+        <IconArrowRight className="size-4" />
+      </Button>
       {hint && <span className="text-muted-foreground text-xs">{hint}</span>}
     </div>
   );
@@ -394,13 +482,14 @@ function Next({
 
 function Back({ onClick }: { onClick: () => void }) {
   return (
-    <button
+    <Button
       type="button"
+      variant="ghost"
       data-testid="wizard-back"
       onClick={onClick}
-      className="text-muted-foreground hover:text-foreground text-sm underline"
     >
+      <IconArrowLeft className="size-4" />
       Back
-    </button>
+    </Button>
   );
 }

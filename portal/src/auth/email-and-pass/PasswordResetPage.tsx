@@ -4,13 +4,23 @@ import { AuthPageLayout } from "../AuthPageLayout";
 
 export function PasswordResetPage() {
   return (
-    <AuthPageLayout>
+    <AuthPageLayout
+      title="Choose a new password"
+      description="This link works once, and only for a short while."
+      footer={
+        <>
+          If everything is okay,{" "}
+          <WaspRouterLink
+            to={routes.LoginRoute.to}
+            className="underline underline-offset-4"
+          >
+            go to login
+          </WaspRouterLink>
+          .
+        </>
+      }
+    >
       <ResetPasswordForm />
-      <br />
-      <span className="text-sm font-medium text-gray-900">
-        If everything is okay,{" "}
-        <WaspRouterLink to={routes.LoginRoute.to}>go to login</WaspRouterLink>
-      </span>
     </AuthPageLayout>
   );
 }
