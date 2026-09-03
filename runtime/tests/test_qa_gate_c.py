@@ -227,3 +227,139 @@ def test_the_cost_model_runs_and_exits_zero_on_the_researched_rates():
     # silently stopped answering the question it exists for.
     for heading in ("=== VOICE, per call-minute", "=== FIXED platform cost", "=== MARGIN at"):
         assert heading in run.stdout, f"the cost model printed no {heading!r} section"
+
+
+# ===========================================================================
+# QA gate C re-run (2026-09-03). Two more checks the gate makes by hand every
+# time and nothing proved. Appended as their own block; nothing above changed.
+# ===========================================================================
+
+
+# ---------------------------------------------------------------------------
+# 4. The founder's environment reference is complete for the runtime
+# ---------------------------------------------------------------------------
+
+# The founder fills the VPS from `docs/reference/api-surface.md` and copies
+# `runtime/.env.example`. A setting that exists in `Settings` but in neither document is a
+# variable nobody knows to set: the service starts on the default and behaves differently
+# in production from every test. `tests/test_ops_alerts.py` pins the six operations
+# variables; nothing pinned the other forty-two, and nothing at all compared `Settings`
+# against the reference the founder actually reads.
+#
+# Scope note: this asserts the *runtime* half only. The portal's variables live in
+# `portal/.env.server.example` and are the portal suite's to guard; the gate C report
+# records the two that the reference is missing (`PORTAL_EMAIL_PROVIDER`, `MAIL_FROM_NAME`)
+# as a finding rather than failing the runtime suite for a portal document.
+
+
+def _declared_in(text: str) -> set[str]:
+    """Every `NAME=` assignment in a dotenv-shaped file, commented-out lines included."""
+    import re
+
+    return set(re.findall(r"^\s*#?\s*([A-Z][A-Z0-9_]*)=", text, re.M))
+
+
+def test_every_runtime_setting_is_named_in_the_env_example_and_the_api_surface():
+    from spatalk.settings import Settings
+
+    example = (RUNTIME / ".env.example").read_text(encoding="utf-8")
+    surface = (ROOT / "docs" / "reference" / "api-surface.md").read_text(encoding="utf-8")
+    declared = _declared_in(example)
+
+    names = sorted(field.upper() for field in Settings.model_fields)
+    assert len(names) > 40, "Settings shrank unexpectedly; this guard is comparing nothing"
+
+    missing_from_example = [n for n in names if n not in declared]
+    assert not missing_from_example, (
+        "runtime/.env.example does not name these settings, so nobody knows to set them: "
+        f"{missing_from_example}"
+    )
+    missing_from_surface = [n for n in names if n not in surface]
+    assert not missing_from_surface, (
+        "docs/reference/api-surface.md does not name these settings: " f"{missing_from_surface}"
+    )
+
+
+def test_the_env_example_promises_no_variable_nothing_reads():
+    """The other direction: a name in the example that nothing reads is a lie.
+
+    The founder pastes the example into the VPS's `.env`; a variable no code and no bundle
+    reads looks configured and does nothing. Three sources are legitimate readers, and only
+    three: `Settings`; the tenant bundles, which carry destination *names* and never the
+    address itself (CLAUDE.md non-negotiable 5, e.g. `webhook_env: SKINCENTRIX_SLACK_WEBHOOK`);
+    and Caddy, which reads the four host variables out of the same file
+    (`tests/test_deploy_assets.py::test_caddyfile_proxies_both_hosts_to_the_app_container`).
+    """
+    import re
+
+    from spatalk.settings import Settings
+
+    caddy_only = {"API_HOST", "MEDIA_HOST", "APP_HOST", "APP_API_HOST"}
+    read_by_settings = {field.upper() for field in Settings.model_fields}
+    bundles = " ".join(
+        path.read_text(encoding="utf-8") for path in (RUNTIME / "tenants").rglob("*.yaml")
+    )
+    named_by_a_bundle = set(re.findall(r"\b([A-Z][A-Z0-9_]{3,})\b", bundles))
+
+    example = (RUNTIME / ".env.example").read_text(encoding="utf-8")
+    stray = sorted(
+        n
+        for n in _declared_in(example)
+        if n not in read_by_settings and n not in caddy_only and n not in named_by_a_bundle
+    )
+    assert not stray, f"runtime/.env.example names variables nothing reads: {stray}"
+
+
+# ---------------------------------------------------------------------------
+# 5. The loop guard covers every number the tenant owns, not only the voice ones
+# ---------------------------------------------------------------------------
+
+# `spatalk.ops.loop_guard.own_numbers` claims `public_phone`, `sms_from_number` and every
+# entry of `voice_numbers`. `tests/test_ops_loop_guard.py` drives a TeXML POST from the
+# registry-mapped voice number and from the public phone; the messaging number — the one
+# the clinic's own staff are most likely to dial back from, and the one a carrier
+# forwarding rule is most likely to point at the wrong line — had no end-to-end case. The
+# gate runs this by hand against a live `spatalk serve` every time; this is that check,
+# committed.
+
+
+async def test_the_loop_guard_refuses_a_call_from_the_tenants_own_sms_number(sf, registry, fixed_clock):
+    from fastapi import FastAPI
+    from httpx import ASGITransport, AsyncClient
+    from sqlalchemy import func, select
+
+    from spatalk import jobs
+    from spatalk.http.app import attach_router
+    from spatalk.models import AlertLog, Conversation
+    from spatalk.settings import Settings
+    from spatalk.voice.texml import router
+
+    cfg = await registry.get("skincentrix")
+    assert cfg.sms_from_number, "the Skincentrix bundle no longer carries a messaging number"
+
+    app = FastAPI()
+    attach_router(app, router)
+    app.state.ctx = jobs.JobContext(
+        sf=sf,
+        clock=fixed_clock,
+        registry=registry,
+        ledger=None,
+        delivery=None,
+        settings=Settings(_env_file=None, secret_key="s", media_ws_host="media.test"),
+    )
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="https://api.test") as client:
+        r = await client.post(
+            "/telnyx/texml",
+            data={"From": cfg.sms_from_number, "To": "+19055550100", "CallSid": "c-sms-loop"},
+        )
+
+    assert r.status_code == 200
+    # The tenant's fixed wording, and nothing that suggests a call is being connected.
+    assert cfg.scripts.loop_guard in r.text
+    assert "<Hangup/>" in r.text
+    assert "<Stream" not in r.text
+    async with sf() as s:
+        assert await s.scalar(select(func.count()).select_from(Conversation)) == 0
+        keys = list((await s.scalars(select(AlertLog.key))).all())
+    assert keys == [f"loop_guard:skincentrix:{cfg.sms_from_number}"]
