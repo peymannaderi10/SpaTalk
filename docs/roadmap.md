@@ -8,7 +8,7 @@ Last updated 2026-09-02. This page records what SpaTalk has, what is parked with
 |---|---|---|
 | AI receptionist answers calls around the clock | **Built.** Telnyx voice, Pipecat, Soniox, Gemini Flash; disclosure script first; fixed wording for every outcome. | Plan A. |
 | Qualifies leads | **Built, narrower on purpose.** Every request becomes a tracked item with type, service, contact and preferred window; nothing free-text. | The portal shows items per channel and time to action. A "lead" is an item of type `new_booking` or `callback`. |
-| Books appointments | **Tier C: captures, does not book.** The assistant sends the booking link or files a request; a human books in Jane. | Tier A needs a booking platform with a write API. Jane has none. Fresha has none. Acuity, Square Appointments, Mindbody and Zenoti do. Decide tenant by tenant; see "Parked" below. |
+| Books appointments | **Tier C: captures, does not book.** The assistant sends the booking link or files a request; a human books in Jane. | Tier A needs a booking platform with a write API. Jane has a partner-only Developer Platform (developers.jane.app, 2026): approval required, appointments and patients readable, no availability search or appointment creation documented, so it does not yet give Tier A. Fresha has none. Acuity, Square Appointments, Mindbody and Zenoti do. Decide tenant by tenant; see "Parked" below. |
 | Missed-call text-back | **Built.** `missed_call_text` script, `sms.textback` job. | Plan B. Needs the tenant's messaging number (Skincentrix: the 289 local number; toll-free once verified). |
 | Conversations across SMS | **Built.** Telnyx SMS with the Cloudflare edge worker for offline auto-reply and replay. | Plan B. |
 | Facebook and Instagram | **Built.** Instagram DMs and comments (keyword mode), Messenger, public comment reply script. | Plan D. Needs Meta app review before real accounts connect. |
@@ -32,7 +32,7 @@ Where the products differ in kind, not degree: GoHighLevel's assistant is allowe
 | One-click connect for Slack | none yet | Today the agency sets `SKINCENTRIX_SLACK_WEBHOOK` or a bot token in the environment; no button. | An "Add to Slack" OAuth pair in the runtime plus a card on the portal Integrations tab, same shape as the Instagram card. Half a day. |
 | One-click connect for WhatsApp | plan W (later tasks) | Not started. | Meta embedded signup on the same tab. |
 | One-click connect for Google Business Profile | `2026-09-02-review-replies-plan.md` task R4 | Plan only. | Ships with review replies. |
-| Tier A booking | spec §3 (integration tiers) | Not started. | A tenant on a platform with a write API. The capability interface already exists (`fulfilment` in tenant config). |
+| Tier A booking | spec §3 (integration tiers) | Not started. | A tenant on a platform with a write API, or Jane opening appointment creation to partners. Read-only availability from Jane private iCal feeds (polled by us, minutes not hours) is the achievable first step. The capability interface already exists (`fulfilment` in tenant config). |
 | Recording | spec §9 | Deliberately off. | A tenant flag, consent wording in `scripts`, and a retention decision. Not before a lawyer reads it. |
 
 ## Not doing
