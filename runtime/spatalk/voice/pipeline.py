@@ -34,6 +34,9 @@ from pipecat.transports.websocket.fastapi import (
 from pipecat.turns.user_mute.mute_until_first_bot_complete_user_mute_strategy import (
     MuteUntilFirstBotCompleteUserMuteStrategy,
 )
+from pipecat.turns.user_start.min_words_user_turn_start_strategy import (
+    MinWordsUserTurnStartStrategy,
+)
 from pipecat.turns.user_stop.turn_analyzer_user_turn_stop_strategy import (
     TurnAnalyzerUserTurnStopStrategy,
 )
@@ -70,6 +73,11 @@ from spatalk.voice.transfer import make_transfer, transfer_available
 # for an unfinished one is capped at what a person tolerates.
 TURN_END_FALLBACK_SECS = 1.0
 TURN_PRE_SPEECH_MS = 300
+# While the assistant is talking, a caller has to say this many words before it yields.
+# Pipecat's default yields on 200 ms of any sound, so a "mm-hm", a cough or a word of
+# agreement cut every answer short (founder call 2026-09-03). When the assistant is silent
+# a single word still starts the turn, so nothing gets slower.
+INTERRUPT_MIN_WORDS = 3
 
 
 def user_turn_params() -> LLMUserAggregatorParams:
@@ -80,6 +88,7 @@ def user_turn_params() -> LLMUserAggregatorParams:
     return LLMUserAggregatorParams(
         vad_analyzer=SileroVADAnalyzer(),
         user_turn_strategies=UserTurnStrategies(
+            start=[MinWordsUserTurnStartStrategy(min_words=INTERRUPT_MIN_WORDS, use_interim=True)],
             stop=[TurnAnalyzerUserTurnStopStrategy(turn_analyzer=analyzer)],
         ),
         # The disclosure cannot be talked over: the caller must hear that this is an AI.

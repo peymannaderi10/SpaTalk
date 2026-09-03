@@ -43,5 +43,13 @@ def test_the_disclosure_still_cannot_be_talked_over_and_vad_is_on():
     params = user_turn_params()
     assert params.vad_analyzer is not None
     assert any(isinstance(m, MuteUntilFirstBotCompleteUserMuteStrategy) for m in params.user_mute_strategies)
-    # The start strategies are Pipecat's defaults: VAD plus transcription.
-    assert len(params.user_turn_strategies.start) >= 1
+    # Barge-in needs a few real words while the assistant speaks; one word when it is silent.
+    from pipecat.turns.user_start.min_words_user_turn_start_strategy import (
+        MinWordsUserTurnStartStrategy,
+    )
+
+    from spatalk.voice.pipeline import INTERRUPT_MIN_WORDS
+
+    starts = params.user_turn_strategies.start
+    assert len(starts) == 1 and isinstance(starts[0], MinWordsUserTurnStartStrategy)
+    assert starts[0]._min_words == INTERRUPT_MIN_WORDS and 2 <= INTERRUPT_MIN_WORDS <= 4
