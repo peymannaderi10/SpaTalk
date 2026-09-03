@@ -19,10 +19,16 @@ from difflib import SequenceMatcher
 
 _WORD = re.compile(r"[A-Za-z0-9']+")
 
-# A run needs this many words in common with the assistant's speech to count as echo, and
-# may contain gaps of up to this many words the transcriber misheard ("Skid Subjects").
+# A run needs this many words in common with the assistant's speech to count as echo, may
+# contain gaps of up to MAX_GAP_WORDS words the transcriber misheard ("Skid Subjects"), and
+# must begin within the first MAX_LEAD_GAP_WORDS words: echo is what the phone heard first.
+# A match that only starts later is the caller repeating the assistant's phrasing ("Um,
+# have the team give me a call", founder call 2026-09-03). Timing, the other half of the
+# test, lives in RulesGateProcessor: only speech heard while the assistant was talking
+# is scrubbed at all.
 MIN_MATCHED_WORDS = 3
 MAX_GAP_WORDS = 3
+MAX_LEAD_GAP_WORDS = 1
 # How much of the assistant's recent speech is kept for comparison.
 RECENT_WORDS = 120
 
@@ -51,6 +57,8 @@ def scrub_echo(transcript: str, recent_bot: str) -> str:
     for block in SequenceMatcher(None, tw, bw, autojunk=False).get_matching_blocks():
         if block.size >= 2:
             covered.update(range(block.a, block.a + block.size))
+    if not covered or min(covered) > MAX_LEAD_GAP_WORDS:
+        return transcript
 
     end, gap, matched = -1, 0, 0
     for i in range(len(tw)):

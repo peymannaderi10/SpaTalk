@@ -66,7 +66,12 @@ async def test_guard_passes_clean_sentences(fixed_clock):
     down, _ = await run_test(OutputGuardProcessor(session), frames_to_send=frames,
                              expected_down_frames=[LLMFullResponseStartFrame, LLMTextFrame, LLMTextFrame, LLMFullResponseEndFrame],
                              start_timeout=10.0)
-    assert [f.text for f in down if isinstance(f, LLMTextFrame)] == ["The express treatment is $99.", "Want the link?"]
+    texts = [f.text for f in down if isinstance(f, LLMTextFrame)]
+    assert [t.strip() for t in texts] == ["The express treatment is $99.", "Want the link?"]
+    # Each sentence leaves the guard with its trailing space, so the TTS text aggregator
+    # sees "$99. Want" and splits there; without it the caller heard "Welcome!We have"
+    # run together (founder call 2026-09-03 15:56).
+    assert "".join(texts) == "The express treatment is $99. Want the link? "
 
 
 async def test_rules_gate_speaks_script_and_swallows_transcription(fixed_clock):

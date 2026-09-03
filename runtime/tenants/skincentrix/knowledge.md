@@ -15,10 +15,14 @@ Facts below come from skincentrix.com as of 2026-09-03. Prices are in Canadian d
 
 - Online booking is through Jane at skincentrix.janeapp.com. The team can also book, reschedule or cancel for a caller; the assistant passes those requests to them.
 - New clients usually start with a free virtual consultation by phone, video, FaceTime or WhatsApp, or an in-person skin assessment using the clinic's skin-analysis technology.
-- New client offer: a $50 credit toward a first Skincentrix advanced treatment. It applies to advanced facials only and cannot be combined with other promotions.
-- Free underarm laser hair removal treatment is offered to new laser clients as a trial.
 - Financing is available through iFinance Canada: treatment now, monthly payments over time. The team explains plans and eligibility.
 - Gift cards are available. Retail medical-grade skincare (Vivier, plated, Eltraderm and more) is sold in the clinic and online.
+
+## New-client offers
+
+- A $50 credit toward a first Skincentrix advanced treatment. It applies to advanced facials only and cannot be combined with other promotions.
+- A free virtual consultation by phone, video, FaceTime or WhatsApp to plan the first visit, or an in-person skin assessment using the clinic's skin-analysis technology.
+- A free underarm laser hair removal treatment for new laser clients, as a trial.
 
 ## Policies
 

@@ -1,10 +1,10 @@
-# Demo day state, 2026-09-03 (afternoon)
+# Demo day state, 2026-09-03 (late afternoon)
 
 Where everything stands after a day of live test calls on the founder's laptop. Written so a fresh session can pick up without the conversation. Newest facts first; the "How to" section at the end has the exact commands.
 
 ## In flight right now
 
-- **Nothing.** The lead-context verifier findings were closed by an Opus agent (`3ff71a5`, report `docs/reports/tasks/lead-context-fixes.md`; suite 1054 passed, 0 xfail). The bundle was re-imported (config version 12, `team` present) and the runtime restarted at that code on 2026-09-03 ~15:20, so the qualification step, lead fields and one-line summaries are live. Requests filed before the restart carry no lead fields and render generic summaries; new ones carry the facts.
+- **Nothing.** The lead-context verifier findings were closed by an Opus agent (`3ff71a5`, report `docs/reports/tasks/lead-context-fixes.md`; suite 1054 passed, 0 xfail). The bundle was re-imported (config version 12, `team` present) and the runtime restarted at that code on 2026-09-03 ~15:20, so the qualification step, lead fields and one-line summaries are live. The 15:56 and 16:09 calls then produced the booking-flow and echo fixes below; the runtime was restarted at that code with config version 13 at ~16:25. Requests filed before the restart carry no lead fields and render generic summaries; new ones carry the facts.
 - Next candidates, in the founder's order: the delivery-failed webhook (a failed text becomes a request), the cost model refresh for Gemini 3.5 Flash, a promptfoo run on the new model, and the lead follow-up decisions (automatic post-call text, lead record, funnel numbers).
 
 ## What is live on the laptop
@@ -14,7 +14,7 @@ Where everything stands after a day of live test calls on the founder's laptop. 
 | Runtime | `spatalk serve` on port 8000, started from the session shell; log `scratchpad/serve.log` (rotated copies `serve-call*.log`) |
 | Tunnel | `https://radio-gorgeous-try-universities.trycloudflare.com` via `C:\Program Files (x86)\cloudflared\cloudflared.exe`; log `scratchpad/cloudflared.log`. Hostname changes if it restarts |
 | Telnyx | TeXML app `spatalk-demo` (id 3040385824425248764) voice URL and messaging profile `spatalk-sms` (id 4001a064-4921-4479-b618-fe4c44844bf1) webhook both point at the tunnel; number +1 289 917 0079 (voice and SMS) |
-| Skincentrix config | version 12 in the dev database (`spatalk` on `runtime-db-1`, host port 5434), `team` present |
+| Skincentrix config | version 13 in the dev database (`spatalk` on `runtime-db-1`, host port 5434), `team` present |
 | Portal | Wasp dev server in WSL, http://localhost:3000 (client) and :3001 (server); started by `scratchpad/start-portal.ps1`, stopped by `scratchpad/stop-portal.sh`; log `scratchpad/wasp-start.log`; its own database `portal` on the same Postgres; `RUNTIME_INTERNAL_URL` is the tunnel; Dummy email provider prints links to the log |
 | Portal login | peymon18@gmail.com, agency admin (password was given in chat; reset via "Forgot password", link prints to the wasp log) |
 | Mailpit | http://localhost:8025; all runtime email goes here (`SMTP_HOST=localhost`, `SMTP_PORT=1025`) |
@@ -35,6 +35,7 @@ Voice and conversation, in order of impact:
 - Fillers: built (`1fc602b`) then switched off by founder taste; empty by default, opt-in per tenant (`ecac571`).
 - Outcome scripts end with "Is there anything else I can help with?" (`21c30c6`).
 - Knowledge and catalog from skincentrix.com: 1,200 words, 42 services with prices, website hours (Monday closed) (`66decf9`).
+- After the 15:56 and 16:09 calls: the echo scrubber only touches speech the phone picked up while the assistant was talking (plus a one-second tail) and only when the matching words start at the front of the utterance, because "I'd prefer a call from the team" had been dropped as an echo of the question and Ava fell silent; the output guard keeps a space after each sentence so TTS no longer runs "Welcome!We" together; a new caller is asked whether they want to hear the new-client offers before any are recited, a suggested treatment is offered as a choice ("go with that or hear another option") and the name is asked only once they have chosen; `knowledge.md` lists the offers in one section with the $50 credit first (config version 13).
 - Lead context (plan L, `docs/superpowers/plans/2026-09-03-lead-context-plan.md`): `returning_client`, `practitioner`, `concern` on items; `summarize_item`; qualification step; portal card leads with the summary (`69dd0bf`, `13977db`, verifier `7eaf2e8`). CLAUDE.md non-negotiable 2 widened to nine closed fields.
 
 Earlier today: final review and overnight report (`f7fa0b1`), SMS flood guard F1 to F3 (`7f030d7`, `53f9324`, `df60698`), SMS staff delivery gaps (`29e4a9b`), roadmap and review-replies plan, Jane sync probe and runbook, cost sheet artifact (https://claude.ai/code/artifact/9e795b55-0ea0-401b-b43e-0cc6ceef9958).

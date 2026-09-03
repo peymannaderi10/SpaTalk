@@ -9,9 +9,13 @@ so the replacement sentence is true.
 from __future__ import annotations
 
 import re
+import time
+from collections.abc import Callable
 
 from loguru import logger
 from pipecat.frames.frames import (
+    BotStartedSpeakingFrame,
+    BotStoppedSpeakingFrame,
     EndFrame,
     Frame,
     InterimTranscriptionFrame,
@@ -35,19 +39,56 @@ from spatalk.voice.session import VoiceSession
 
 SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
 
+# Echo can only be heard while the assistant's audio is playing at the far end, plus the
+# trip back down the line. Speech that starts later than this after the assistant stopped
+# is the caller, whatever words they use (founder call 2026-09-03 15:56: "I'd prefer a call
+# from the team" was dropped as an echo of "would you prefer a call from the team?" and
+# the assistant fell silent).
+ECHO_TAIL_SECS = 1.0
+
 
 class RulesGateProcessor(FrameProcessor):
     """Sits after STT. Band-3 lexicon hits are answered with the fixed script and the model never runs."""
 
-    def __init__(self, session: VoiceSession):
+    def __init__(self, session: VoiceSession, *, monotonic: Callable[[], float] = time.monotonic):
         super().__init__(name="rules_gate")
         self._s = session
+        self._monotonic = monotonic
+        self._bot_speaking = False
+        self._bot_stopped_at: float | None = None
+        self._utterance_open = False
+        self._may_echo = False
+
+    def _heard_while_assistant_spoke(self) -> bool:
+        if self._bot_speaking:
+            return True
+        return (
+            self._bot_stopped_at is not None
+            and self._monotonic() - self._bot_stopped_at < ECHO_TAIL_SECS
+        )
 
     async def process_frame(self, frame: Frame, direction: FrameDirection):
         await super().process_frame(frame, direction)
+        if isinstance(frame, BotStartedSpeakingFrame):
+            self._bot_speaking = True
+        elif isinstance(frame, BotStoppedSpeakingFrame):
+            self._bot_speaking = False
+            self._bot_stopped_at = self._monotonic()
         if (
             isinstance(frame, (TranscriptionFrame, InterimTranscriptionFrame))
             and direction == FrameDirection.DOWNSTREAM
+        ):
+            if not self._utterance_open:
+                # Decided once per utterance, on its first words: only speech the phone
+                # picked up while the assistant was talking can be the assistant's echo.
+                self._utterance_open = True
+                self._may_echo = self._heard_while_assistant_spoke()
+            if isinstance(frame, TranscriptionFrame):
+                self._utterance_open = False
+        if (
+            isinstance(frame, (TranscriptionFrame, InterimTranscriptionFrame))
+            and direction == FrameDirection.DOWNSTREAM
+            and self._may_echo
         ):
             # The assistant's own voice, heard back through the phone, is not the caller.
             scrubbed = scrub_echo(frame.text, self._s.recent_bot_text)
@@ -143,10 +184,12 @@ class OutputGuardProcessor(FrameProcessor):
                 )
             logger.warning("guard blocked ({}): {!r}", g.matched, sentence)
             self._s.remember_spoken(spoken)
-            await self.push_frame(LLMTextFrame(text=spoken))
+            await self.push_frame(LLMTextFrame(text=spoken + " "))
             return
         self._s.remember_spoken(sentence)
-        await self.push_frame(LLMTextFrame(text=sentence))
+        # The trailing space is for the TTS text aggregator, which otherwise sees
+        # "Welcome!We have" and speaks it as one run-on sentence.
+        await self.push_frame(LLMTextFrame(text=sentence + " "))
 
     async def process_frame(self, frame: Frame, direction: FrameDirection):
         await super().process_frame(frame, direction)
