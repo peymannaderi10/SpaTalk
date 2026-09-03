@@ -109,6 +109,10 @@
     },
     "elevenlabs_flash": {
       "per_1m_chars": 50.0
+    },
+    "soniox_tts": {
+      "per_1m_chars": 14.1,
+      "_note": "soniox.com/pricing 2026-09-02: ~$0.70 per hour of generated speech ($4/1M input text tokens + $21.50/1M output audio tokens); converted at 825 chars per spoken minute -> $0.0117/min -> $14.1 per 1M chars. Latency unbenchmarked. No-training statement covers audio and transcripts; TTS not explicitly named."
     }
   },
   "llm": {
@@ -207,6 +211,12 @@
       "stt": "deepgram_nova3_regular",
       "tts": "elevenlabs_flash",
       "llm": "claude_haiku_45"
+    },
+    "B4 Soniox only (STT + TTS), single vendor": {
+      "tel": "telnyx_ca_conservative",
+      "stt": "soniox_rt",
+      "tts": "soniox_tts",
+      "llm": "gemini_25_flash"
     }
   },
   "text_stacks": {
@@ -253,5 +263,27 @@
     }
   },
   "_per_tenant_fixed_note": "local DID ~1 USD + toll-free ~1-2 USD + SMS add-on 0.10 USD, x1.37",
-  "_fx_source": "Bank of Canada FXUSDCAD daily average 2026-09-01"
+  "_fx_source": "Bank of Canada FXUSDCAD daily average 2026-09-01",
+  "reference_bundles_usd_per_min": {
+    "telnyx_voice_ai_agents_all_in": {
+      "usd_per_min": 0.056,
+      "components": {
+        "voice_engine_stt_tts_orchestration": 0.05,
+        "telephony_local_inbound_us": 0.0032,
+        "llm_kimi_on_telnyx": 0.0032
+      },
+      "cad_per_min_at_fx": 0.0778,
+      "source": "telnyx.com/pricing/voice-ai-agents fetched 2026-09-02 (founder pointer)",
+      "note": "hosted agent; the model loop runs on Telnyx so the output guard, rules gate and template renderer cannot sit between model and speech; 500 concurrent calls, no platform fee, HIPAA included",
+      "add_ons_usd_per_min": {
+        "premium_third_party_models": 0.004,
+        "call_recording": 0.002,
+        "sms_follow_up": 0.004,
+        "agent_knowledge_base": 0.004
+      },
+      "with_knowledge_base_and_sms_follow_up_usd_per_min": 0.064,
+      "with_knowledge_base_and_sms_follow_up_cad_per_min": 0.0889,
+      "calculator_screenshot_2026_09_02": "$0.07/min with all four add-ons at 230,000 min/month"
+    }
+  }
 }
