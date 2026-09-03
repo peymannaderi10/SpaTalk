@@ -703,3 +703,51 @@ def test_neither_script_promises_an_action(word):
     cfg = _cfg()
     assert word not in cfg.scripts.notes_health_line.lower()
     assert word not in cfg.scripts.notes_label.lower()
+
+
+# --- fixes after the first live run (founder call 2026-09-03 16:27, job 41) ----------------
+
+
+def test_ground_matches_word_stems_not_exact_forms():
+    """The model wrote "services" and "customized"; the caller had said "service" and "custom".
+    Three shared stems are three shared words: the sentence is grounded."""
+    from spatalk.ledger.notes import ground
+
+    caller = [
+        "I just want to know what service you guys have for skin pigmentation and stuff.",
+        "Yeah, I want to do a custom one.",
+    ]
+    sentence = "They want to know what services are available for skin pigmentation and are hoping to get a customized plan."
+    assert ground(sentence, caller) == sentence
+    # Still three distinct stems, not one word counted three times.
+    assert ground("Custom customs customized.", ["a custom one"]) is None
+
+
+def test_the_model_reads_the_transcript_as_one_document_not_as_a_chat_to_continue():
+    """Live run 2026-09-03: every call ends on the assistant's goodbye, so the drafting request
+    ended on a model turn and Gemini answered with nothing at all (job 41 stored no notes for
+    a call that asked for a callback). The transcript goes to the model as a single customer
+    message, so the model's reply is the notes, not a continuation."""
+    from spatalk.ledger.notes import _history
+    from spatalk.models import Message
+
+    msgs = [
+        Message(role="assistant", text="Hi there, what can I help you with?"),
+        Message(role="user", text="I want to book a facial."),
+        Message(role="assistant", text="Thanks for calling. Have a great day."),
+    ]
+    history = _history(msgs)
+    assert len(history) == 1 and history[0]["role"] == "user"
+    body = history[0]["content"]
+    assert "customer: I want to book a facial." in body
+    assert "assistant: Thanks for calling. Have a great day." in body
+    assert body.index("customer: I want") < body.index("assistant: Thanks for calling")
+
+
+def test_the_drafting_instruction_forbids_guessing_a_gender():
+    """Live run 2026-09-03: the model wrote "He" for a caller called Payman. A pronoun guessed
+    from a name is a description of the customer, which the notes never carry."""
+    from spatalk.ledger.notes import DRAFTING_SYSTEM
+
+    assert "never guess a gender" in DRAFTING_SYSTEM
+    assert '"they"' in DRAFTING_SYSTEM

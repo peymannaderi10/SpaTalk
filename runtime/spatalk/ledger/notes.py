@@ -88,6 +88,7 @@ DRAFTING_SYSTEM = (
     "anything the assistant said.\n"
     "Never write about a health condition, a medication, a symptom, a pregnancy or a past "
     "procedure, even if the customer mentioned one.\n"
+    "Call the customer \"the customer\" or \"they\"; never guess a gender from a name.\n"
     "If the customer said nothing worth passing on, answer with nothing at all."
 )
 
@@ -95,8 +96,21 @@ DRAFTING_SYSTEM = (
 ROLE_LABELS = {"user": "customer", "assistant": "assistant", "staff": "staff", "system": "system"}
 
 
+# Suffixes stripped before two words are compared, longest first, only when what is left
+# is still a word of four letters or more: "services" and "service", "customized" and
+# "custom" are the same claim (first live run, 2026-09-03). Not a stemmer, a comparison.
+_SUFFIXES = ("ization", "ized", "izes", "ize", "ings", "ing", "ies", "ied", "ed", "es", "s")
+
+
+def _stem(word: str) -> str:
+    for suffix in _SUFFIXES:
+        if word.endswith(suffix) and len(word) - len(suffix) >= 4:
+            return word[: -len(suffix)]
+    return word
+
+
 def _content_words(text: str) -> list[str]:
-    return [w for w in _WORD.findall(text.lower()) if w not in STOP_WORDS]
+    return [_stem(w) for w in _WORD.findall(text.lower()) if w not in STOP_WORDS]
 
 
 def _sentences(text: str) -> list[str]:
@@ -147,15 +161,17 @@ def scrub_health(notes: str, cfg: TenantConfig) -> str:
 
 
 def _history(messages: list[Message]) -> list[dict]:
-    """The transcript as the model reads it, with the roles named."""
-    return [
-        {
-            "role": "user" if m.role != "assistant" else "assistant",
-            "content": f"{ROLE_LABELS.get(m.role, m.role)}: {m.text}",
-        }
-        for m in messages
-        if (m.text or "").strip()
+    """The transcript as the model reads it: one customer message holding the whole call.
+
+    Not a chat to continue. Every call ends on the assistant's goodbye, and a request whose
+    last turn is the model's own gets an empty answer from Gemini (first live run,
+    2026-09-03: job 41 stored nothing for a call that asked for a callback). As one document
+    with the roles named, the model's reply is the notes.
+    """
+    lines = [
+        f"{ROLE_LABELS.get(m.role, m.role)}: {m.text}" for m in messages if (m.text or "").strip()
     ]
+    return [{"role": "user", "content": "Transcript:\n" + "\n".join(lines)}]
 
 
 async def draft_notes(messages: list[Message], cfg: TenantConfig, llm: LLMClient) -> str | None:
