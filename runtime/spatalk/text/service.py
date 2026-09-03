@@ -25,6 +25,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from spatalk import jobs
+from spatalk.brain.audio_tags import strip_audio_tags
 from spatalk.brain.capabilities import load_capabilities
 from spatalk.brain.driver import Brain, LLMClient, TurnResult
 from spatalk.brain.hours import BusinessCalendar
@@ -233,7 +234,8 @@ class TextConversationService:
         turn = await Brain(self._llm, caps, ctx.clock).turn(
             ref, await self.history(conv.id), text
         )
-        replies = self._segments(turn.reply, channel)
+        # A tag meant for a voice is never something a customer reads.
+        replies = self._segments(strip_audio_tags(turn.reply), channel)
         for part in replies:
             await append_message(ctx.sf, conv.id, "assistant", part, at=ctx.clock.now())
             await takeover.mirror_to_thread(ctx, conv.id, part, "assistant")

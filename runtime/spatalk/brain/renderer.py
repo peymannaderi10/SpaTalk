@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from spatalk.brain.audio_tags import strip_audio_tags
 from spatalk.brain.hours import BusinessCalendar, humanize_due
 from spatalk.brain.outcomes import Captured, Completed, LinkSent, Outcome, Refused, Transferred
 from spatalk.tenants.schema import TenantConfig
@@ -57,6 +58,11 @@ def render_script(
 
 def render(outcome: Outcome, cfg: TenantConfig, now: datetime, channel: str = "voice") -> str:
     """Turn a closed outcome into the sentence the caller hears or reads."""
+    text = _render(outcome, cfg, now, channel)
+    return text if channel == "voice" else strip_audio_tags(text)
+
+
+def _render(outcome: Outcome, cfg: TenantConfig, now: datetime, channel: str) -> str:
     s = cfg.scripts
     if isinstance(outcome, Captured):
         urgent = outcome.urgency == "urgent"

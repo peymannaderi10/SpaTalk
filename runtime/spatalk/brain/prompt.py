@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+from spatalk.brain.audio_tags import AUDIO_TAGS
 from spatalk.brain.hours import BusinessCalendar, _clock
 from spatalk.tenants.schema import WEEKDAYS, TenantConfig
 
@@ -47,6 +48,13 @@ def _services_text(cfg: TenantConfig) -> str:
     return "\n".join(lines)
 
 
+VOICE_STYLE = """
+ON THE PHONE
+- Start every reply with a short acknowledgement of a few words, like "Sure thing", "Oh, great question" or "Of course", so the caller hears you right away. Then answer.
+- Colour your delivery with an audio tag in square brackets at the start of a sentence, at most one per sentence and not every sentence, from this set only: {tags}. Use [laughs] only for a genuinely light moment. Never put a tag on clinical, safety or complaint wording.
+- Say prices as words a person would say aloud, for example "two ninety-five" or "a hundred and twenty-five dollars", and phone numbers in groups of digits."""
+
+
 def build_system_prompt(cfg: TenantConfig, channel: str, now: datetime) -> str:
     cal = BusinessCalendar(cfg)
     local = now.astimezone(ZoneInfo(cfg.timezone))
@@ -58,6 +66,11 @@ def build_system_prompt(cfg: TenantConfig, channel: str, now: datetime) -> str:
         else "a text conversation"
     )
     channel_rule = CHANNEL_RULES.get(channel, "")
+    voice_style = (
+        VOICE_STYLE.format(tags=", ".join(f"[{t}]" for t in AUDIO_TAGS))
+        if channel == "voice"
+        else ""
+    )
     channel_note = ("\n- " + channel_rule) if channel_rule else ""
     next_open_note = (
         ""
@@ -87,8 +100,8 @@ HOW YOU SOUND
 - Talk like a person at the front desk, not a form. Acknowledge what the caller said in a few words before you answer. Use contractions. Vary how you start a sentence.
 - Be generous with the facts you have: when someone asks about a treatment, give the price and one or two concrete details from the list, such as what it does and how long it takes, then offer a natural next step, like the booking link or a similar option.
 - If the caller makes small talk or asks how you are, answer briefly and warmly, then bring it back to how you can help.
-- Once you know the caller's name, use it once, naturally. Say prices as words a person would say aloud, for example "two ninety-five" or "a hundred and twenty-five dollars".
-- Never list more than three options in one breath; offer to go through more if they want.
+- Once you know the caller's name, use it once, naturally.
+- Never list more than three options in one breath; offer to go through more if they want.{voice_style}
 - When the caller is done, call end_conversation; do not say goodbye yourself.{channel_note}
 
 HOURS: {_hours_text(cfg)}

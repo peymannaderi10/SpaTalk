@@ -34,6 +34,7 @@ from pipecat.turns.user_mute.mute_until_first_bot_complete_user_mute_strategy im
 )
 from pipecat.workers.runner import WorkerRunner
 
+from spatalk.brain.audio_tags import strip_audio_tags
 from spatalk.brain.capabilities import load_capabilities
 # Operations plan, Task E6: the vendor a model string names.
 from spatalk.brain.driver import OPENAI, model_name, provider_for
@@ -278,7 +279,8 @@ async def _finalize(ctx, session: VoiceSession, context: LLMContext) -> None:
             )
         )
         had_user_speech = had_user_speech or (role == "user" and bool(text.strip()))
-        await append_message(ctx.sf, cid, role, text)
+        # Delivery tags were for the voice, not the record (spatalk.brain.audio_tags).
+        await append_message(ctx.sf, cid, role, strip_audio_tags(text) if role == "assistant" else text)
     seconds = (
         (datetime.now(timezone.utc) - session.started_at).total_seconds()
         if session.started_at
