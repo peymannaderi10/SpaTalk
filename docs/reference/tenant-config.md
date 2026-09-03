@@ -35,8 +35,8 @@ tenants/<id>/
 | persona.assistant_name | string | default "the assistant" | |
 | persona.tone | string | default "warm, brief, plain-spoken" | |
 | persona.max_sentences_per_turn | int | default 2 | |
-| team[] | list | default [] | the people a caller may ask for: each `name` (string, required) and `role` (string, default ""). This list plus `any` is the whole enum for `items.practitioner`; a name outside it is nulled by the ledger and logged [L1] |
-| concerns | list of strings | default `["pigmentation", "acne", "ageing", "dryness", "hair removal", "hair loss", "body contouring", "skin tightening", "tattoo removal", "glow", "other"]` | the cosmetic taxonomy behind `items.concern`. Deliberately not medical: a symptom, a reaction or a condition still routes to the clinical script and lives only in the transcript [L1] |
+| team[] | list | default [] | the people a caller may ask for: each `name` (string, required, max 80 characters, the width of `items.practitioner`) and `role` (string, default ""). This list plus `any` is the whole enum for `items.practitioner`; a name outside it is nulled by the ledger and logged [L1] |
+| concerns | list of strings | default `["pigmentation", "acne", "ageing", "dryness", "hair removal", "hair loss", "body contouring", "skin tightening", "tattoo removal", "glow", "other"]` | the cosmetic taxonomy behind `items.concern`; each entry is at most 40 characters, the width of the column. Deliberately not medical, and enforced: a concern matching the clinical or health-context lexicon is refused at import, and a symptom, a reaction or a condition still routes to the clinical script and lives only in the transcript [L1] |
 | escalation.owner_name, owner_email | string | yes | named owner for breaches |
 | escalation.owner_phone | E.164 or null | | |
 | escalation.urgent_minutes | int | default 15 | |
@@ -61,7 +61,7 @@ tenants/<id>/
 
 Prose. Goes into the cached system prompt verbatim. Keep under 4,000 words. No wording that promises outcomes, no medical claims, no prices that change weekly unless the tenant will maintain them.
 
-A tenant's new-client offers belong here, never in the prompt or in code: the prompt tells the assistant to mention "the clinic's new-client offers listed in the facts" and nothing more, so a clinic that ends an offer edits one file [L1].
+A tenant's new-client offers belong here, never in the prompt or in code: the prompt tells the assistant to mention "the clinic's new-client offers listed in the facts" and nothing more, and only if the facts list any, so a clinic with no offer is never told to name one and a clinic that ends an offer edits one file [L1].
 
 ## guard.yaml
 

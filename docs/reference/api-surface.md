@@ -58,9 +58,9 @@ the owner's SMS and the email all say the same sentence and none of them compose
 | `returning_client` | bool null | true returning, false new, null not asked or not said |
 | `practitioner` | string null | a `team[].name`, or `any` for "no preference" |
 | `concern` | string null | one of the tenant's `concerns` |
-| `summary` | string | `summarize_item(item, cfg)`: the whole request as one sentence, e.g. `"New booking: Mirapeel facial for pigmentation. New client, no practitioner preference. Callback Thursday afternoon."` |
+| `summary` | string | `summarize_item(item, cfg)`: the whole request as one sentence, e.g. `"New booking: Mirapeel facial for pigmentation. New client, no practitioner preference. Callback Thursday 24 September, afternoons."` |
 | `service_name` | string null | the catalog name of `service_id`; null when the item has no service or the catalog dropped it |
-| `preferred_text` | string | `preferred_window` in words: `"any day"`, `"Thursday"`, `"Thursday afternoon"`, `"mornings"`. Never `"any any"` |
+| `preferred_text` | string | `preferred_window` in words: `"any day"`, `"Thursday 24 September"`, `"Thursday 24 September, afternoons"`, `"Thursday"`, `"Thursday afternoon"`, `"mornings"`. A real date keeps its day and month; a weekday the caller named is only a weekday. Never `"any any"` |
 
 The three derived fields are computed on read, never stored, so they cannot drift from the
 columns. `docs/contracts/runtime-internal.openapi.json` is regenerated whenever they change.

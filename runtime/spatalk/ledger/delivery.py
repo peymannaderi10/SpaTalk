@@ -834,9 +834,11 @@ def build_sms_text(
 
     The second line is the summary sentence (lead context plan, Task L1), so the owner can
     act on the lead without opening anything. Lines are dropped, never truncated, and in a
-    fixed order: the health line first (it carries no detail the transcript does not), then
-    the who line, then the summary. The link survives every cut, because a staff member who
-    cannot open the transcript cannot act on the item.
+    fixed order: the summary first, then the health line, then the who line. The summary is
+    the longest line and the most recoverable — every word of it is on the portal card and
+    in the transcript — while the health line tells the owner how to read the call before
+    they make it and the who line is the number they call. The link survives every cut,
+    because a staff member who cannot open the transcript cannot act on the item.
     """
     now = now or datetime.now(timezone.utc)
     prefix = (ESCALATED_PREFIX if escalation else "") + (
@@ -869,8 +871,8 @@ def build_sms_text(
     text = ""
     for with_health, with_who, with_summary in (
         (flagged, True, True),
-        (False, True, True),
-        (False, False, True),
+        (flagged, True, False),
+        (False, True, False),
         (False, False, False),
     ):
         text = gsm7_fold(assemble(with_health, with_who, with_summary))

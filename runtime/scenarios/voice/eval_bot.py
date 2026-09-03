@@ -61,7 +61,11 @@ from spatalk.tenants.bundle import load_bundle  # noqa: E402
 from spatalk.voice.handlers import register_tool_handlers  # noqa: E402
 from spatalk.voice.observers import TurnLatencyObserver, UsageObserver  # noqa: E402
 from spatalk.voice.pipeline import make_llm, make_stt, make_tts  # noqa: E402
-from spatalk.voice.processors import OutputGuardProcessor, RulesGateProcessor  # noqa: E402
+from spatalk.voice.processors import (  # noqa: E402
+    FillerProcessor,
+    OutputGuardProcessor,
+    RulesGateProcessor,
+)
 from spatalk.voice.session import VoiceSession  # noqa: E402
 
 # Which clinic the scenarios are written against. Overridable so a second tenant's wording
@@ -111,7 +115,7 @@ async def bot(runner_args) -> None:
     )
     stt, tts, llm = make_stt(settings), make_tts(settings), make_llm(settings)
     # The production order, with the RTVI processor added so the harness can hear what the
-    # bot does: transport in -> STT -> rules gate -> user aggregator -> LLM
+    # bot does: transport in -> STT -> rules gate -> user aggregator -> filler -> LLM
     #           -> output guard -> TTS -> transport out -> assistant aggregator
     pipeline = Pipeline(
         [
@@ -120,6 +124,7 @@ async def bot(runner_args) -> None:
             stt,
             RulesGateProcessor(session),
             user_agg,
+            FillerProcessor(session),
             llm,
             OutputGuardProcessor(session),
             tts,

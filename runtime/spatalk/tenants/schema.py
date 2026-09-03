@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 from datetime import date
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
+
+# One entry of `TenantConfig.concerns`, bounded by the width of `items.concern`.
+Concern = Annotated[str, Field(max_length=40)]
 
 Weekday = Literal["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
 WEEKDAYS: tuple[str, ...] = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
@@ -37,9 +40,13 @@ class TeamMember(BaseModel, frozen=True):
     The list is the closed vocabulary behind `items.practitioner`: the model may only
     return a name that is in it, or "any" for no preference. A role is written where the
     clinic states one publicly; it is never spoken as a claim about qualifications.
+
+    `name` is bounded by the width of `items.practitioner` (varchar(80)) so a config that
+    could not be written to an item is refused at import, rather than losing a request
+    mid-call to a truncation error.
     """
 
-    name: str
+    name: str = Field(max_length=80)
     role: str = ""
 
 
@@ -273,7 +280,8 @@ class TenantConfig(BaseModel, frozen=True):
     # The two closed vocabularies a request may draw on: who the caller may ask for, and
     # what they may say they are coming in for. Both are config, never prompt text.
     team: list[TeamMember] = Field(default_factory=list)
-    concerns: list[str] = Field(default_factory=lambda: list(DEFAULT_CONCERNS))
+    # Bounded by the width of `items.concern` (varchar(40)), for the same reason as a name.
+    concerns: list[Concern] = Field(default_factory=lambda: list(DEFAULT_CONCERNS))
     services: list[Service]
     knowledge: str
     scripts: Scripts
@@ -293,6 +301,31 @@ class TenantConfig(BaseModel, frozen=True):
                 if not (_valid_hhmm(start) and _valid_hhmm(end) and start < end):
                     raise ValueError(f"bad hours for {day}: {start}-{end}")
         return {d: [tuple(s) for s in v.get(d, [])] for d in WEEKDAYS}
+
+    @model_validator(mode="after")
+    def _concerns_are_cosmetic(self):
+        """Health stays out of the fields, enforced rather than trusted (lead context plan).
+
+        `concerns` is a cosmetic taxonomy: a tenant who adds "rosacea" or "pregnancy" turns
+        a condition into a closed value the ledger will happily write to `items.concern`,
+        where no retention job treats it as clinical detail. Anything medical belongs in the
+        clinical script and the transcript, so a medical concern is refused at import.
+
+        `spatalk.brain.rules` imports this module, so the lexicons are imported here rather
+        than at module level.
+        """
+        from spatalk.brain.rules import DEFAULT_LEXICONS, HEALTH_CONTEXT_DEFAULT
+
+        medical = {w.lower() for w in DEFAULT_LEXICONS["clinical"] + HEALTH_CONTEXT_DEFAULT}
+        for concern in self.concerns:
+            lowered = concern.lower()
+            offending = {lowered, *lowered.split()} & medical
+            if offending:
+                raise ValueError(
+                    f"concern {concern!r} is a clinical or health-context term "
+                    f"({sorted(offending)[0]!r}); concerns are cosmetic only"
+                )
+        return self
 
     def service(self, service_id: str) -> Service | None:
         return next((s for s in self.services if s.id == service_id), None)

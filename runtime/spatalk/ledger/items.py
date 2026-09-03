@@ -22,23 +22,33 @@ def practitioner_for(cfg: TenantConfig, value: str | None) -> str | None:
 
     A name the model invented is dropped and logged rather than stored: the column is a
     closed vocabulary, and losing the whole request over a misheard name would be worse
-    than losing the preference.
+    than losing the preference. The rejected value itself is never logged, only its
+    length: the model returns what the caller said, and that detail lives only in the
+    transcript, which retention reaches (CLAUDE.md non-negotiable 2).
     """
     if not value:
         return None
     if value in cfg.practitioner_names():
         return value
-    logger.warning("tenant {} has no practitioner {!r}; storing none", cfg.id, value)
+    logger.warning(
+        "tenant {} rejected a practitioner not on the team ({} characters); storing none",
+        cfg.id,
+        len(value),
+    )
     return None
 
 
 def concern_for(cfg: TenantConfig, value: str | None) -> str | None:
-    """One of the tenant's `concerns`, or nothing. Same rule, same reason."""
+    """One of the tenant's `concerns`, or nothing. Same rule, same reason, same silence."""
     if not value:
         return None
     if value in cfg.concerns:
         return value
-    logger.warning("tenant {} has no concern {!r}; storing none", cfg.id, value)
+    logger.warning(
+        "tenant {} rejected a concern not in its list ({} characters); storing none",
+        cfg.id,
+        len(value),
+    )
     return None
 
 

@@ -107,7 +107,7 @@ Index: `(conversation_id, id)`.
 | urgency | text | `normal`, `urgent` |
 | service_id | text null | catalog id |
 | contact_name, contact_phone, contact_email | text null | the only contact fields |
-| preferred_window | jsonb | `{date, part_of_day}` |
+| preferred_window | jsonb | `{date, part_of_day}`. `date` is an ISO `YYYY-MM-DD`, a weekday name, or `"any"`; `PreferredWindow` coerces anything else to `"any"`, so no free text reaches the column |
 | channel | text | |
 | health_context | bool | default false |
 | returning_client | bool null | true returning, false new, null not asked or not said [L1] |

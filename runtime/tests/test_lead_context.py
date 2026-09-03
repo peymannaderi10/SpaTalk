@@ -112,6 +112,54 @@ def test_the_skincentrix_bundle_names_the_eleven_people_on_the_site():
     assert cfg.concerns == DEFAULT_CONCERNS
 
 
+def test_a_name_or_a_concern_wider_than_its_column_is_refused_at_import():
+    """`items.practitioner` is varchar(80) and `items.concern` varchar(40) (data-model.md).
+
+    Without the bound, a long name is accepted at import and every item that names that
+    person then fails to write, losing the request mid-call. The config is the cheap place
+    to say no.
+    """
+    from pydantic import ValidationError
+
+    from spatalk.tenants.schema import TeamMember, TenantConfig
+
+    assert TeamMember(name="N" * 80).name == "N" * 80
+    with pytest.raises(ValidationError):
+        TeamMember(name="N" * 81)
+
+    raw = _cfg().model_dump()
+    with pytest.raises(ValidationError):
+        TenantConfig.model_validate({**raw, "team": [{"name": "N" * 200, "role": ""}]})
+    with pytest.raises(ValidationError):
+        TenantConfig.model_validate({**raw, "concerns": ["c" * 41]})
+    # 40 characters is the column, so 40 characters is legal.
+    assert TenantConfig.model_validate({**raw, "concerns": ["c" * 40]}).concerns == ["c" * 40]
+
+
+def test_a_medical_word_cannot_be_configured_as_a_cosmetic_concern():
+    """Global Constraints: "Health stays out of the fields", enforced rather than trusted.
+
+    A tenant who adds "rosacea" turns a condition into a closed value the ledger will write
+    to `items.concern`, where nothing treats it as clinical detail. The shipped defaults are
+    cosmetic and must keep loading.
+    """
+    from pydantic import ValidationError
+
+    from spatalk.tenants.schema import TenantConfig
+
+    raw = _cfg().model_dump()
+    for medical in ("rosacea", "pregnancy", "Botox", "scarring", "sensitive skin"):
+        with pytest.raises(ValidationError):
+            TenantConfig.model_validate({**raw, "concerns": ["pigmentation", medical]})
+    # A word inside a phrase counts too: "post treatment glow" carries a clinical term.
+    with pytest.raises(ValidationError):
+        TenantConfig.model_validate({**raw, "concerns": ["peeling skin"]})
+    assert TenantConfig.model_validate(raw).concerns == DEFAULT_CONCERNS
+    assert TenantConfig.model_validate({**raw, "concerns": ["brightening"]}).concerns == [
+        "brightening"
+    ]
+
+
 # ----- the draft and the request objects ---------------------------------------------------
 
 
@@ -151,6 +199,31 @@ def test_capture_and_booking_link_requests_carry_the_lead_fields():
     link = BookingLinkRequest(service_id="facial", concern="glow", returning_client=False)
     assert link.concern == "glow" and link.returning_client is False
     assert link.practitioner is None
+
+
+def test_the_preferred_window_date_is_a_closed_value_and_never_a_sentence():
+    """CLAUDE.md 2: the window is written straight into JSONB, so it is the last gate.
+
+    The date takes an ISO date, a weekday name or "any", and nothing else. It never raises:
+    a rejected value must cost the preference, never the request the caller is making.
+    """
+    from spatalk.brain.requests import PreferredWindow
+
+    assert PreferredWindow().date == "any"
+    assert PreferredWindow(date="2026-09-24").date == "2026-09-24"
+    assert PreferredWindow(date="Thursday").date == "Thursday"
+    assert PreferredWindow(date="thursday").date == "Thursday"      # stored in one shape
+    for free_text in (
+        "whenever the burn on my arm from the laser settles down",
+        "next week",
+        "tomorrow-ish",
+        "0000-00-00",
+        "the 24th",
+        "",
+        "   ",
+        None,
+    ):
+        assert PreferredWindow(date=free_text).date == "any", free_text
 
 
 class _RecordingLedger:
@@ -270,10 +343,15 @@ def test_preferred_text_reads_like_a_person_wrote_it_and_never_says_any_any():
     from spatalk.ledger.summary import preferred_text
 
     assert preferred_text({"date": "any", "part_of_day": "any"}) == "any day"
-    assert preferred_text({"date": "2026-09-10", "part_of_day": "any"}) == "Thursday"
+    # A real date keeps the day the caller named: "Thursday" three weeks out reads as this
+    # Thursday, which is how a callback gets made on the wrong day.
+    assert preferred_text({"date": "2026-09-10", "part_of_day": "any"}) == "Thursday 10 September"
     assert preferred_text({"date": "2026-09-10", "part_of_day": "afternoon"}) == (
-        "Thursday afternoon"
+        "Thursday 10 September, afternoons"
     )
+    # A weekday the caller named without a date is only a weekday.
+    assert preferred_text({"date": "Thursday", "part_of_day": "any"}) == "Thursday"
+    assert preferred_text({"date": "Thursday", "part_of_day": "afternoon"}) == "Thursday afternoon"
     assert preferred_text({"date": "any", "part_of_day": "morning"}) == "mornings"
     assert preferred_text({"date": "any", "part_of_day": "evening"}) == "evenings"
     assert preferred_text({}) == "any day"
@@ -328,7 +406,7 @@ def test_a_returning_caller_who_asked_for_someone_says_so():
     )
     assert text == (
         "New booking: Full face PRP. Returning client, would like Faisal Rohile. "
-        "Callback Thursday morning."
+        "Callback Thursday 10 September, mornings."
     )
 
 

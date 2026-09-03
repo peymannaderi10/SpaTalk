@@ -1,11 +1,24 @@
 from __future__ import annotations
 
+from datetime import date as date_type
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from spatalk.tenants.schema import TenantConfig
+
+# The weekday names a caller may name instead of a date, as the model is asked to write
+# them. Compared case-insensitively and stored in this capitalisation.
+WEEKDAY_NAMES: tuple[str, ...] = (
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+    "Sunday",
+)
 
 
 class ContactInfo(BaseModel, frozen=True):
@@ -15,8 +28,32 @@ class ContactInfo(BaseModel, frozen=True):
 
 
 class PreferredWindow(BaseModel, frozen=True):
-    date: str = "any"                                   # ISO date or "any"
+    date: str = "any"                                   # ISO date, a weekday name, or "any"
     part_of_day: Literal["morning", "afternoon", "evening", "any"] = "any"
+
+    @field_validator("date", mode="before")
+    @classmethod
+    def _closed_date(cls, v) -> str:
+        """A closed vocabulary: an ISO date, a weekday name, or "any" (CLAUDE.md 2).
+
+        This is the last gate before the ledger writes the window into JSONB, so anything
+        else — a sentence the model wrote in the caller's words, a mangled date — becomes
+        "any" rather than free text on an item. It never raises: the model is told what
+        the field takes, and a rejected value must cost the preference, never the request.
+        """
+        if v is None:
+            return "any"
+        text = str(v).strip()
+        if not text or text.lower() == "any":
+            return "any"
+        try:
+            return date_type.fromisoformat(text).isoformat()
+        except ValueError:
+            pass
+        for day in WEEKDAY_NAMES:
+            if text.lower() == day.lower():
+                return day
+        return "any"
 
 
 CaptureKind = Literal["new_booking", "callback", "question", "training_enquiry"]

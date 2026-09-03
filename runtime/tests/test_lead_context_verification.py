@@ -15,11 +15,12 @@ the words the plan makes it:
   (Global Constraints)
 * "No raw ids, no `"any any"`, no field shown when empty." (Task L2, Interfaces)
 
-Where a promise holds, the test asserts it plainly so the door stays shut. Where it does
-not, the test is marked ``xfail(strict=True)`` and the marker's reason names the plan line
-it breaks: the assertion is what the plan promises, so an XPASS means someone closed the
-gap and the marker should be deleted with the fix. Nothing here changes product code, and
-nothing here weakens an existing test.
+Every test asserts the promise plainly, so the door stays shut. The eight gaps this file
+first recorded as ``xfail(strict=True)`` were closed on 2026-09-03; each marker was deleted
+with its fix, which is what ``strict=True`` was there to force. Two of the assertions moved
+with their fix and say so in the test's own docstring: the preferred-window grid, because a
+real date now carries the day and the month, and the SMS drop order, because the summary is
+now the first line to go rather than the last.
 """
 
 from __future__ import annotations
@@ -110,13 +111,17 @@ def test_the_only_unenumerated_strings_on_a_tool_are_contact_details():
         for tool in ("send_booking_link", "capture_request", "request_appointment_change")
         for field in ("name", "phone", "email")
     }
-    # The two window dates are the one gap, tracked by the strict xfail below; the assertion
-    # is a subset so that closing the gap does not fail this test.
-    known_gap = {
+    # The two window dates cannot be an enum — an ISO date is not a list — so they are the
+    # one string the schema leaves open. `PreferredWindow` closes it instead: anything but a
+    # date, a weekday name or "any" becomes "any" before the ledger sees it, which is what
+    # `test_free_text_in_the_preferred_window_never_reaches_the_items_table` holds shut.
+    closed_downstream = {
         "capture_request.preferred_window.date",
         "request_appointment_change.preferred_window.date",
     }
-    assert set(free) <= contact_details | known_gap, f"a new free string: {sorted(set(free))}"
+    assert set(free) <= contact_details | closed_downstream, (
+        f"a new free string: {sorted(set(free))}"
+    )
     assert not {f for f in free if f.rsplit(".", 1)[-1] in
                 ("practitioner", "concern", "returning_client", "service_id", "kind", "reason")}
 
@@ -199,14 +204,6 @@ async def test_the_ledger_is_the_only_place_an_item_row_is_built(sf, registry, f
     assert writers == ["runtime/spatalk/ledger/items.py"]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Global Constraints: \"Still no free text\". `preferred_window.date` is an "
-        "unenumerated string on capture_request and request_appointment_change, is never "
-        "validated as a date, and is written verbatim into items.preferred_window."
-    ),
-)
 async def test_free_text_in_the_preferred_window_never_reaches_the_items_table(
     sf, registry, fixed_clock
 ):
@@ -239,15 +236,6 @@ async def test_free_text_in_the_preferred_window_never_reaches_the_items_table(
     ), f"free text stored on the item: {row.preferred_window!r}"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "CLAUDE.md 2: \"the detail lives only in the transcript\". "
-        "spatalk/ledger/items.py:31 and :41 echo the rejected value verbatim into a WARNING, "
-        "so a caller's own words — a symptom, a medication — land in the service log, which "
-        "no retention job reaches."
-    ),
-)
 def test_a_rejected_value_is_not_echoed_into_the_service_log():
     from loguru import logger
 
@@ -404,33 +392,34 @@ async def test_the_spoken_outcome_says_nothing_about_the_lead_fields(fixed_clock
 
 
 def test_preferred_text_over_the_whole_grid_of_windows():
-    """Task L1's table, plus the shapes it does not list: null, empty, and a mangled date."""
+    """Task L1's table, plus the shapes it does not list: null, empty, and a mangled date.
+
+    Updated with the fix for this file's own finding: Task L1's table mapped an ISO date to
+    a bare weekday, which loses the day the caller named. A real date now renders as the
+    weekday, the day and the month; a weekday the caller named without a date still renders
+    as the plan's bare weekday, because that is all it is.
+    """
     from spatalk.ledger.summary import preferred_text
 
     assert preferred_text(None) == "any day"
     assert preferred_text({}) == "any day"
     assert preferred_text({"date": "any", "part_of_day": "any"}) == "any day"
-    assert preferred_text({"date": "2026-09-24", "part_of_day": "any"}) == "Thursday"
-    assert preferred_text({"date": "2026-09-24", "part_of_day": "afternoon"}) == "Thursday afternoon"
+    assert preferred_text({"date": "2026-09-24", "part_of_day": "any"}) == "Thursday 24 September"
+    assert preferred_text({"date": "2026-09-24", "part_of_day": "afternoon"}) == (
+        "Thursday 24 September, afternoons"
+    )
+    assert preferred_text({"date": "Thursday", "part_of_day": "any"}) == "Thursday"
+    assert preferred_text({"date": "Thursday", "part_of_day": "afternoon"}) == "Thursday afternoon"
     assert preferred_text({"date": "any", "part_of_day": "morning"}) == "mornings"
     assert preferred_text({"date": "not a date", "part_of_day": "any"}) == "any day"
     assert preferred_text({"date": None, "part_of_day": None}) == "any day"
-    for date_ in (None, "", "any", "2026-09-24", "tomorrow-ish", "0000-00-00"):
+    for date_ in (None, "", "any", "2026-09-24", "Thursday", "tomorrow-ish", "0000-00-00"):
         for part in (None, "", "any", "morning", "afternoon", "evening"):
             out = preferred_text({"date": date_, "part_of_day": part})
             assert "any any" not in out and "None" not in out and out.strip() == out
             assert out
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Task L1 replaces the staff \"Preferred:\" line with preferred_text, whose table maps "
-        "an ISO date to a bare weekday. A caller who names 24 September now reaches the owner "
-        "as \"Thursday\", on the SMS, the email, the Slack card, the digest and the portal "
-        "card alike: the day the caller actually named survives on no channel."
-    ),
-)
 def test_a_date_the_caller_named_survives_to_the_staff_email():
     from spatalk.ledger.delivery import build_email
 
@@ -506,15 +495,6 @@ def test_the_summary_of_a_flagged_item_says_nothing_about_health():
         assert word not in out.lower()
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Global Constraints: \"Health stays out of the fields.\" Nothing enforces that on the "
-        "config: TenantConfig accepts any string in `concerns`, so a tenant editing settings "
-        "in the portal can add \"rosacea\" or \"pregnancy\" and the ledger will then store it "
-        "on items as a valid closed value."
-    ),
-)
 def test_a_tenant_cannot_configure_a_medical_concern():
     from pydantic import ValidationError
 
@@ -526,15 +506,6 @@ def test_a_tenant_cannot_configure_a_medical_concern():
         TenantConfig.model_validate(raw)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "data-model.md gives items.practitioner varchar(80) and items.concern varchar(40), but "
-        "TenantConfig bounds neither, so a longer name in a tenant's `team` is accepted at "
-        "import and every item that names that person then fails to write "
-        "(asyncpg StringDataRightTruncationError), losing the request at call time."
-    ),
-)
 def test_the_config_cannot_hold_a_value_wider_than_its_column():
     from pydantic import ValidationError
 
@@ -612,18 +583,13 @@ def test_the_owner_text_of_an_ordinary_lead_carries_the_whole_story(fixed_clock)
     assert "Callback afternoons" in text
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Task L1 adds the summary to the owner's SMS but puts it last in the drop order "
-        "(spatalk/ledger/delivery.py:870-875), so the 154-character sentence outranks both "
-        "the health-context warning and the caller's own number. A breached, health-flagged "
-        "booking whose caller gave an email address now arrives without "
-        "\"Caller mentioned a health condition; read the transcript first.\" — a line that "
-        "fitted in two segments before this task."
-    ),
-)
 def test_the_summary_never_outranks_the_health_line_or_the_callers_number(fixed_clock):
+    """The drop order is summary, then health line, then who line (fixed 2026-09-03).
+
+    Every word of the summary is on the portal card and in the transcript; the health line
+    tells the owner how to read the call before they make it, and the who line is the number
+    they call. So the sentence is the first thing to go, not the last.
+    """
     from spatalk.ledger.delivery import SMS_HEALTH_LINE, build_sms_text
 
     item = _item(
@@ -681,15 +647,6 @@ def test_the_prompt_contains_no_script_and_no_offer_wording():
     assert "$50 credit" in cfg.knowledge
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Global Constraints: \"it never invents a discount\". The instruction to \"mention the "
-        "clinic's new-client offers listed in the facts\" is unconditional "
-        "(spatalk/brain/prompt.py:112), so a tenant whose knowledge file lists no offer still "
-        "tells the model to name one."
-    ),
-)
 def test_a_tenant_with_no_offers_is_not_told_to_mention_one():
     from spatalk.brain.prompt import build_system_prompt
 
@@ -705,15 +662,6 @@ def test_a_tenant_with_no_offers_is_not_told_to_mention_one():
     ), f"unconditional offer instruction: {clause!r}"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Task L1: `concern` is an enum drawn from `cfg.concerns`, and the ledger silently nulls "
-        "anything else. The parameter's own description tells the model the opposite — \"in "
-        "their own terms\" (spatalk/brain/tools.py:60) — so a model that obeys it loses the "
-        "concern and writes the caller's words into the service log instead."
-    ),
-)
 def test_the_concern_parameter_does_not_invite_the_callers_own_words():
     from spatalk.brain.tools import build_tools
 

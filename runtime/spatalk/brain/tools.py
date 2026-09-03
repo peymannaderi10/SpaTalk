@@ -24,7 +24,14 @@ WINDOW = {
     "type": "object",
     "description": "When the caller would like to come in.",
     "properties": {
-        "date": {"type": "string", "description": "ISO date YYYY-MM-DD, or 'any'"},
+        "date": {
+            "type": "string",
+            "description": (
+                "An ISO date YYYY-MM-DD, a weekday name such as 'Thursday', or 'any'. "
+                "Nothing else: anything the caller said in their own words is not a date "
+                "and is discarded."
+            ),
+        },
         "part_of_day": {"type": "string", "enum": ["morning", "afternoon", "evening", "any"]},
     },
 }
@@ -57,8 +64,8 @@ def _lead_context(cfg: TenantConfig) -> dict:
             "type": "string",
             "enum": list(cfg.concerns),
             "description": (
-                "What the caller says they want help with, in their own terms. "
-                "Omit unless they said."
+                "The closest of the listed concerns to what the caller says they want "
+                "help with. Omit unless they said."
             ),
         },
     }

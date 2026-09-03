@@ -68,6 +68,21 @@ PART_OF_DAY_PLURAL: dict[str, str] = {
     "evening": "evenings",
 }
 
+MONTH_NAMES: tuple[str, ...] = (
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+)
+
 
 class HasItemFields(Protocol):
     """What the summary reads: `runtime.items` columns, and nothing else."""
@@ -86,22 +101,32 @@ def type_label(item_type: str) -> str:
 
 
 def preferred_text(window: dict[str, Any] | None) -> str:
-    """A preferred window in words: "any day", "Thursday", "Thursday afternoon", "mornings".
+    """A preferred window in words: "any day", "Thursday 24 September, afternoons", "mornings".
 
-    Never "any any", never a bare ISO date, and never a date the model mangled: a `date`
-    that does not parse is treated as no date at all.
+    A caller who names a real day is telling the team when to reach them, so the day they
+    named has to survive: an ISO date renders as the weekday, the day and the month
+    ("Thursday 24 September"), because a bare "Thursday" three weeks out reads as this
+    Thursday. A weekday the caller named without a date is only a weekday, and renders as
+    one. Never "any any", never a bare ISO date, and never a date the model mangled: a
+    `date` that does not parse is treated as no date at all.
     """
     window = window or {}
     raw_date = window.get("date") or "any"
     part = window.get("part_of_day") or "any"
-    day = ""
+    day, dated = "", False
     if raw_date != "any":
         try:
-            day = DAY_NAMES[date.fromisoformat(str(raw_date)).weekday()]
+            on = date.fromisoformat(str(raw_date))
         except (TypeError, ValueError):
-            day = ""
+            # Not a date: the closed vocabulary also allows a weekday the caller named.
+            day = next((d for d in DAY_NAMES if d.lower() == str(raw_date).lower()), "")
+        else:
+            day = f"{DAY_NAMES[on.weekday()]} {on.day} {MONTH_NAMES[on.month - 1]}"
+            dated = True
     if day and part != "any":
-        return f"{day} {part}"
+        # A dated day already reads as a phrase, so the part of day follows a comma.
+        plural = PART_OF_DAY_PLURAL.get(part, part)
+        return f"{day}, {plural}" if dated else f"{day} {part}"
     if day:
         return day
     if part != "any":

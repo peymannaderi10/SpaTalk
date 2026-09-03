@@ -127,7 +127,14 @@ def test_a_flagged_item_adds_the_health_line_and_an_urgent_one_says_so(fixed_clo
     assert "URGENT" in urgent and "within 15 minutes" in urgent
 
 
-def test_the_message_drops_the_health_line_then_the_who_line_but_never_the_link(fixed_clock):
+def test_the_message_drops_the_summary_then_the_health_line_then_the_who_line(fixed_clock):
+    """The drop order, re-ordered on 2026-09-03: summary, then health line, then who line.
+
+    It used to be health, who, summary, which made the 154-character sentence outrank both
+    the warning that tells the owner how to read the call and the number they call back on.
+    Every word of the sentence is on the portal card and in the transcript; neither of the
+    other two lines is recoverable from a phone.
+    """
     from spatalk.ledger.delivery import SMS_STAFF_LIMIT, build_sms_text
 
     cfg, links = _cfg(), _links()
@@ -139,16 +146,15 @@ def test_the_message_drops_the_health_line_then_the_who_line_but_never_the_link(
         fixed_clock.now(),
     )
     assert len(text) <= SMS_STAFF_LIMIT
-    # The health line goes first: it carries no detail the transcript does not.
+    # Nothing survives a 545-character name but the head, the due line and the link.
     assert "health condition" not in text
-    # Then the who line, since the name alone will not fit three segments.
     assert "Wollaston" not in text
     assert text.endswith("Transcript: https://api.test/a/tok7")
     assert "Reply ACK 7 or DONE 7." in text
 
-    # A name that fits once the health line is gone keeps the who line. The padding is
-    # measured rather than guessed: a name ten characters short of the limit leaves room
-    # for neither the 62-character health line nor anything else.
+    # A name that fits once the summary and the health line are gone keeps the who line. The
+    # padding is measured rather than guessed: a name ten characters short of the limit
+    # leaves room for neither the 62-character health line nor anything else.
     bare = build_sms_text(_item(fixed_clock, contact_name="D"), cfg, links, fixed_clock.now())
     padded = "D" * (SMS_STAFF_LIMIT - len(bare) - 10)
     middling = build_sms_text(
