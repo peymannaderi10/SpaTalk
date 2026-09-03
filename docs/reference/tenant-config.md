@@ -77,10 +77,10 @@ complaint: "I'm sorry to hear that. This needs a person, not an assistant. I'm f
 payment: "I can't take or discuss payment details on this line. The team can help with that when they call you back {confirm_by}."
 
 # Required: outcome wording.
-captured: "I've sent that to the team as a request. Someone will confirm with you {confirm_by}."
+captured: "I've sent that to the team as a request. Someone will confirm with you {confirm_by}. Is there anything else I can help with?"
 link_sent: "I've just texted you the booking link for {service}. Is there anything else I can help with?"
-link_captured: "I'll have the team send you the booking link for {service}. Someone will be in touch {confirm_by}."
-cannot_complete: "I can't complete that from here, but I've passed it to the team and someone will confirm with you {confirm_by}."
+link_captured: "I'll have the team send you the booking link for {service}. Someone will be in touch {confirm_by}. Is there anything else I can help with?"
+cannot_complete: "I can't complete that from here, but I've passed it to the team and someone will confirm with you {confirm_by}. Is there anything else I can help with?"
 goodbye: "Thanks for calling {name}. Have a great day."
 
 # Defaults exist for everything below. They never promise an action.

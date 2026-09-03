@@ -14,7 +14,7 @@ def test_render_captured_uses_template_and_due_wording():
     from spatalk.brain.outcomes import Captured
     from spatalk.brain.renderer import render
     out = Captured(item_id=7, urgency="normal", confirm_by=NOW + timedelta(hours=3), item_type="callback")
-    assert render(out, _cfg(), NOW) == "I've sent that to the team as a request. Someone will confirm with you by 5:00 p.m. today."
+    assert render(out, _cfg(), NOW) == "I've sent that to the team as a request. Someone will confirm with you by 5:00 p.m. today. Is there anything else I can help with?"
 
 
 def test_render_link_sent_names_service():
