@@ -26,12 +26,20 @@ async def start_conversation(
 
 
 async def append_message(
-    sf: async_sessionmaker, conversation_id: uuid.UUID, role: str, text: str
+    sf: async_sessionmaker,
+    conversation_id: uuid.UUID,
+    role: str,
+    text: str,
+    at: datetime | None = None,
 ) -> None:
+    """Store one message. `at` stamps it with the application clock (the text service does
+    this so the SMS flood guard can count messages in business time); the database default
+    applies otherwise."""
     if not text.strip():
         return
+    extra = {"created_at": at} if at is not None else {}
     async with sf() as s, s.begin():
-        s.add(Message(conversation_id=conversation_id, role=role, text=text))
+        s.add(Message(conversation_id=conversation_id, role=role, text=text, **extra))
 
 
 async def end_conversation(

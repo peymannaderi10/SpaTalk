@@ -189,11 +189,14 @@ class TextConversationService:
         sender: str | None,
         text: str,
         provider_message_id: str | None,
+        suppressed_reason: str | None = None,
     ) -> InboundResult:
         """Take one customer message and produce what the channel should send back.
 
         ``provider_message_id`` is the dedup key. Pass ``None`` when the adapter has already
         claimed it (the SMS router does, because it must dedup before the STOP keywords).
+        ``suppressed_reason`` (plan F: ``blocked``, ``muted``, ``capped``) stores the message
+        and stops there: no model call, no reply, no follow-up.
         """
         ctx = self._ctx
         cfg = await ctx.registry.get(tenant_id)
@@ -203,11 +206,14 @@ class TextConversationService:
         ):
             logger.info("duplicate {} message {} ignored", channel, provider_message_id)
             return InboundResult(conv.id, suppressed=True, reason="duplicate")
-        await append_message(ctx.sf, conv.id, "user", text)
+        await append_message(ctx.sf, conv.id, "user", text, at=ctx.clock.now())
         # Staff read the conversation in Slack, whoever is answering it (Task B5).
         await takeover.mirror_to_thread(ctx, conv.id, text, "customer")
         await self._touch(conv.id)
         await self._meter(cfg.id, conv.id, channel, USAGE_UNITS[channel][0], 1)
+        if suppressed_reason is not None:
+            logger.info("{} text from {} stored and not answered: {}", channel, sender, suppressed_reason)
+            return InboundResult(conv.id, suppressed=True, reason=suppressed_reason)
 
         if channel == "sms" and sender and await is_opted_out(ctx.sf, tenant_id, sender):
             logger.info("sender opted out of {} texts; nothing sent", tenant_id)
@@ -229,7 +235,7 @@ class TextConversationService:
         )
         replies = self._segments(turn.reply, channel)
         for part in replies:
-            await append_message(ctx.sf, conv.id, "assistant", part)
+            await append_message(ctx.sf, conv.id, "assistant", part, at=ctx.clock.now())
             await takeover.mirror_to_thread(ctx, conv.id, part, "assistant")
         await self._finish_turn(conv, turn)
         if replies:

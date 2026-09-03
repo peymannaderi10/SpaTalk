@@ -23,6 +23,7 @@ from spatalk.brain.renderer import render_script
 from spatalk.ledger.delivery import build_list_sms
 from spatalk.models import AuditLog
 from spatalk.text import takeover
+from spatalk.text.flood import inbound_verdict, paused_notice_once
 from spatalk.text.staff import parse_staff_command, staff_numbers
 from spatalk.text.service import (
     TextConversationService,
@@ -261,6 +262,27 @@ async def inbound_sms(request: Request):
     # "Reply ACK 4821 or DONE 4821", so the number it reached must be recognised here.
     if sender and sender in staff_numbers(cfg):
         return await _staff_reply(ctx, cfg, sender, text)
+
+    # --- sms flood guard (plan F, F1) ---
+    # Blocked, muted or capped: the text is stored on the conversation and nothing is
+    # generated or sent, except one fixed "paused" notice per sender per day when the whole
+    # tenant has hit its ceiling. Carrier keywords were answered above; staff never get here.
+    if sender:
+        verdict = await inbound_verdict(ctx, cfg, sender, ctx.clock.now())
+        if verdict != "ok":
+            await _service(ctx).handle_inbound(
+                tenant_id=tenant_id,
+                channel="sms",
+                external_id=sender,
+                sender=sender,
+                text=text,
+                provider_message_id=None,
+                suppressed_reason=verdict,
+            )
+            now = ctx.clock.now()
+            if verdict == "capped" and await paused_notice_once(ctx, cfg, sender, now):
+                await _send(ctx, cfg, sender, render_script("sms_paused", cfg, now, urgent=False))
+            return {"ok": True, "suppressed": verdict}
 
     # An opted-out sender is filtered inside the service, which still stores the message.
     result = await _service(ctx).handle_inbound(

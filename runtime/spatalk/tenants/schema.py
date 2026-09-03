@@ -113,6 +113,13 @@ class Scripts(BaseModel, frozen=True):
         "emergency, please call 911 now."
     )
 
+    # The one text a sender may get while the tenant's assistant is paused on SMS (plan F).
+    # It names no reply time: nothing is generated until the local day rolls over.
+    sms_paused: str = (
+        "Thanks for texting {name}. The assistant is paused right now. A member of the team "
+        "will read your message, or you can call {phone}."
+    )
+
     @model_validator(mode="after")
     def _no_completion_words(self):
         for key, value in self.__dict__.items():
@@ -129,6 +136,22 @@ class SocialSettings(BaseModel, frozen=True):
     comment_mode: Literal["off", "keyword", "all"] = "keyword"
     comment_keywords: list[str] = Field(default_factory=list)
     public_reply_enabled: bool = False
+
+
+class SmsGuard(BaseModel, frozen=True):
+    """Bounds on what one number, or one tenant's day, may cost on SMS (plan F).
+
+    A sender past `burst_limit` texts in `burst_window_minutes`, or past `daily_limit` in a
+    local day, is muted for `mute_hours`. A tenant whose assistant has sent
+    `tenant_daily_replies` texts in a local day is paused until the day rolls over. Every
+    suppressed text is still stored; only the reply and the model call are withheld.
+    """
+
+    burst_limit: int = Field(default=12, ge=1)
+    burst_window_minutes: int = Field(default=10, ge=1)
+    daily_limit: int = Field(default=40, ge=1)
+    mute_hours: int = Field(default=24, ge=1)
+    tenant_daily_replies: int = Field(default=400, ge=1)
 
 
 class Lexicons(BaseModel, frozen=True):
@@ -217,6 +240,7 @@ class TenantConfig(BaseModel, frozen=True):
     escalation: Escalation
     delivery: Delivery
     social: SocialSettings = SocialSettings()
+    sms_guard: SmsGuard = SmsGuard()
 
     @field_validator("hours")
     @classmethod

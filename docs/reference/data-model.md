@@ -166,6 +166,16 @@ Index: `(record_type, record_id)`. Retention 2 years.
 | phone | text | E.164 |
 | created_at | timestamptz | |
 
+### sms_blocks [F1]
+| tenant_id | text | PK with phone; FK tenants |
+| phone | text | E.164 |
+| until | timestamptz null | null = permanent block; otherwise a flood mute that is forgotten once passed |
+| reason | text | `flood` \| `manual` |
+| created_by | text | `system:flood`, `cli:<user>`, `user:<id>` |
+| created_at | timestamptz | |
+
+Index: `(tenant_id, until)`. Retention: none; rows are few and a mute is deleted when it expires.
+
 ### textbacks [B3]
 | id | bigserial PK | |
 | tenant_id, phone | text | |

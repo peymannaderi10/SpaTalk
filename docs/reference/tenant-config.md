@@ -43,6 +43,10 @@ tenants/<id>/
 | delivery.destinations[] | list | yes | each: `kind` (`slack`, `email`, `webhook`, `whatsapp` [W1], `sms` [S1]), `webhook_env` (env var name for slack or webhook), `address` (email), `address_env` (env var name holding the value: required for `whatsapp` and `sms`, an alternative to `address` for `email`) [W1] [S1], `channel_id` (Slack channel id when a bot token is used) [B5], `urgent_only` bool |
 | delivery.digest_time_local | `HH:MM` | default 07:30 | |
 | delivery.staff_phone_numbers | list E.164 | default [] | staff who may work the ledger by SMS: `#<id> <words>` relay [B5], and `ACK`/`DONE`/`LIST` [S2]. The number every `sms` destination's `address_env` resolves to is authorised the same way without being listed here [S2] |
+| sms_guard.burst_limit, sms_guard.burst_window_minutes | int, int | default 12, 10 | a number past this many texts in this many minutes is muted [F1] |
+| sms_guard.daily_limit | int | default 40 | texts per local day from one number before it is muted [F1] |
+| sms_guard.mute_hours | int | default 24 | how long a flood mute lasts; a person can block permanently instead [F1] |
+| sms_guard.tenant_daily_replies | int | default 400 | assistant SMS replies per local day before the assistant pauses on SMS until midnight [F1] |
 | social.comment_mode | `off` `keyword` `all` | default `keyword` | [D2] |
 | social.comment_keywords | list | default [] | [D2] |
 | social.public_reply_enabled | bool | default false | [D2] |
@@ -98,6 +102,7 @@ dm_greeting: "Hi, this is {name}'s assistant."                                  
 loop_guard: "This line is answered by the clinic's assistant and cannot transfer to itself. Please call back from another number."
 failover: "We can't take your call right now. Please text us at {sms_number} or book online at {booking_url}."                # carrier-hosted bin, pasted from `spatalk texml failover-bin`
 transferring: "One moment, I'll connect you to the team."
+sms_paused: "Thanks for texting {name}. The assistant is paused right now. A member of the team will read your message, or you can call {phone}."   # once per sender per day when sms_guard.tenant_daily_replies is reached [F1]
 ```
 
 Rules for editing: every script that mentions the team must keep `{confirm_by}` so the caller hears a time; no script may contain "booked", "confirmed" or "scheduled"; `clinical` must keep the emergency sentence; `disclosure` must say it is an AI in the first two sentences.

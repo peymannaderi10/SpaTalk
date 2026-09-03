@@ -207,6 +207,26 @@ class SmsOptout(Base):
     )
 
 
+class SmsBlock(Base):
+    """A number this tenant will not answer by SMS (plan F, F1).
+
+    `until` set: a timed mute after a flood, forgotten once it passes. `until` null: a
+    permanent block, placed by a person from the portal or the CLI. Either way the number's
+    texts are still stored on its conversation; only replies and model calls stop.
+    """
+
+    __tablename__ = "sms_blocks"
+    __table_args__ = (Index("ix_sms_blocks_tenant_until", "tenant_id", "until"),)
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("runtime.tenants.id"), primary_key=True)
+    phone: Mapped[str] = mapped_column(String(32), primary_key=True)
+    until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reason: Mapped[str] = mapped_column(String(16))          # flood | manual
+    created_by: Mapped[str] = mapped_column(String(120))     # system:flood | cli:<user> | user:<id>
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
 class Textback(Base):
     """One missed-call text-back per caller per day (text-channels plan, Task B3)."""
 

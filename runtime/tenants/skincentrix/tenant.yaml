@@ -21,6 +21,13 @@ voice_numbers: []          # filled by `spatalk numbers add` after Telnyx purcha
 sms_from_number: "+12899170079"   # the tenant messaging number staff texts come from (S1)
 transfer_number: null      # UNVERIFIED: a TELUS extension that does not forward to us
 booking_url_default: https://skincentrix.janeapp.com/locations/skincentrix
+# SMS flood guard (plan F): the defaults, written out so the clinic can see and change them.
+sms_guard:
+  burst_limit: 12
+  burst_window_minutes: 10
+  daily_limit: 40
+  mute_hours: 24
+  tenant_daily_replies: 400
 social:
   comment_mode: keyword
   comment_keywords: ["price", "how much", "book", "info", "details"]
