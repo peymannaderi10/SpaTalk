@@ -15,10 +15,14 @@ import {
  * QA gate B: switching organisations.
  *
  * The gate's portal row names "login, org switch". Logging in is covered by
- * `auth.spec.ts`; the switcher in the navigation bar had no test at all, in
- * this suite or in the client one, so this is that proof: a person who belongs
- * to two organisations is offered exactly those two, and picking the other one
- * lands on its pages.
+ * `auth.spec.ts`; the switcher had no test at all, in this suite or in the
+ * client one, so this is that proof: a person who belongs to two organisations
+ * is offered exactly those two, and picking the other one lands on its pages.
+ *
+ * The switcher moved with the reskin (Task R1) from a `select` in the
+ * navigation bar to a menu at the top of the sidebar, so the three assertions
+ * that read `option` elements now open the menu instead. What they assert is
+ * unchanged, and `aria-label="Organisation"` came with it.
  *
  * It is also the second half of the authorisation row from the client's side.
  * `orgs.spec.ts` proves a stranger is refused one organisation; here a member
@@ -115,18 +119,24 @@ test.describe("switching between organisations", () => {
       clientPage.getByRole("heading", { name: FIRST.name }),
     ).toBeVisible(FIRST_RENDER);
 
-    const switcher = clientPage.getByLabel("Organisation");
+    const switcher = clientPage.getByTestId("org-switcher");
     await expect(switcher).toBeVisible();
-    const offered = await switcher.locator("option").allTextContents();
+    await expect(clientPage.getByLabel("Organisation")).toBeVisible();
+
+    await switcher.click();
+    const offered = await clientPage
+      .getByRole("menuitem")
+      .allTextContents();
     expect(offered).toContain(FIRST.name);
     expect(offered).toContain(SECOND.name);
     // The third organisation exists, and is none of this person's business.
     expect(offered).not.toContain(UNRELATED.name);
+    await clientPage.keyboard.press("Escape");
   });
 
   test("picking the other one lands on its pages", async () => {
-    const switcher = clientPage.getByLabel("Organisation");
-    await switcher.selectOption(SECOND.slug);
+    await clientPage.getByTestId("org-switcher").click();
+    await clientPage.getByTestId(`org-switcher-${SECOND.slug}`).click();
 
     await clientPage.waitForURL(`**/app/${SECOND.slug}`, FIRST_RENDER);
     await expect(
@@ -135,7 +145,9 @@ test.describe("switching between organisations", () => {
     await expect(
       clientPage.getByRole("heading", { name: FIRST.name }),
     ).toHaveCount(0);
-    await expect(clientPage.getByLabel("Organisation")).toHaveValue(SECOND.slug);
+    await expect(clientPage.getByTestId("org-switcher")).toContainText(
+      SECOND.name,
+    );
   });
 
   test("the organisation it was never offered stays refused by the server", async () => {

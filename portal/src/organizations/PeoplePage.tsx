@@ -9,6 +9,7 @@ import {
 } from "wasp/client/operations";
 import { Button } from "../client/components/ui/button";
 import { Input } from "../client/components/ui/input";
+import { OrgAppLayout } from "../client/layout/OrgAppLayout";
 import { type OrgRole } from "./roles";
 
 /**
@@ -31,12 +32,12 @@ export function PeoplePage({ user }: { user: AuthUser }) {
   const [isInviting, setIsInviting] = useState(false);
 
   if (isLoading) {
-    return <PageShell>Loading…</PageShell>;
+    return <PageShell slug={orgSlug}>Loading…</PageShell>;
   }
 
   if (error || !org) {
     return (
-      <PageShell>
+      <PageShell slug={orgSlug}>
         <h1 className="text-foreground text-2xl font-semibold">
           This organisation is not open to you
         </h1>
@@ -50,7 +51,7 @@ export function PeoplePage({ user }: { user: AuthUser }) {
 
   if (org.role !== "OWNER") {
     return (
-      <PageShell>
+      <PageShell slug={orgSlug} org={org}>
         <h1 className="text-foreground text-2xl font-semibold">
           Settings are for owners
         </h1>
@@ -100,7 +101,7 @@ export function PeoplePage({ user }: { user: AuthUser }) {
   }
 
   return (
-    <PageShell>
+    <PageShell slug={orgSlug} org={org}>
       <h1 className="text-foreground text-2xl font-semibold">
         People in {org.name}
       </h1>
@@ -229,6 +230,30 @@ function messageOf(caught: unknown): string {
   return "That did not work. Try again.";
 }
 
-function PageShell({ children }: { children: ReactNode }) {
-  return <main className="mx-auto max-w-3xl px-6 py-16">{children}</main>;
+/**
+ * People is a sidebar item under Account, so the page renders inside the app
+ * shell like every other page in an organisation. Every branch of this file —
+ * loading, refused, not an owner, and the list itself — goes through here, so
+ * a refusal keeps the navigation rather than dropping the reader on a page
+ * with no way out.
+ */
+function PageShell({
+  slug,
+  org,
+  children,
+}: {
+  slug: string;
+  org?: { name: string; slug: string; role: OrgRole };
+  children: ReactNode;
+}) {
+  return (
+    <OrgAppLayout
+      orgSlug={org?.slug ?? slug}
+      orgName={org?.name}
+      role={org?.role}
+      breadcrumbs={[{ label: "People" }]}
+    >
+      {children}
+    </OrgAppLayout>
+  );
 }

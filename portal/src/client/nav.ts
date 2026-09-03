@@ -79,6 +79,12 @@ const SETTINGS_TABS: { label: string; tab: string; icon: TablerIcon }[] = [
   { label: "Versions", tab: "versions", icon: IconHistory },
 ];
 
+/**
+ * The agency's own section. Named rather than typed out twice because the
+ * admin shell shows this section and nothing else.
+ */
+export const PLATFORM_SECTION = "Platform";
+
 export const NAV_SECTIONS: NavSection[] = [
   {
     title: "Front desk",
@@ -136,7 +142,7 @@ export const NAV_SECTIONS: NavSection[] = [
     ],
   },
   {
-    title: "Platform",
+    title: PLATFORM_SECTION,
     items: [
       {
         label: "Dashboard",
@@ -204,6 +210,17 @@ export function visibleSections(ctx: NavContext): NavSection[] {
     ...section,
     items: section.items.filter((item) => item.visible(ctx)),
   })).filter((section) => section.items.length > 0);
+}
+
+/**
+ * What the admin shell shows: the agency's own section, and nothing from any
+ * organisation, because `/admin` is not about one. Empty for anyone who is not
+ * an agency admin, which is the same answer `visibleSections` gives.
+ */
+export function platformSections(ctx: NavContext): NavSection[] {
+  return visibleSections(ctx).filter(
+    (section) => section.title === PLATFORM_SECTION,
+  );
 }
 
 /** Every item in every section, in sidebar order. */

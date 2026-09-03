@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router";
 import {
   blockSmsNumber,
   getTenantSettings,
@@ -43,6 +44,26 @@ const TABS = [
 
 type Tab = (typeof TABS)[number];
 
+/**
+ * The tab is in the URL, not in React state, so the eight Setup items in the
+ * sidebar can each open the one they name. `nav.ts` spells the slugs, and they
+ * are the labels lowercased; `tabSlug` and `tabFromSlug` are the only two
+ * places that has to be true.
+ *
+ * A URL with no `tab` — someone's bookmark from before this existed, or a
+ * plain click on Settings — opens Hours, which is what the page opened on
+ * before the tab was addressable.
+ */
+export const DEFAULT_TAB: Tab = "Hours";
+
+export function tabSlug(tab: Tab): string {
+  return tab.toLowerCase();
+}
+
+export function tabFromSlug(slug: string | null | undefined): Tab {
+  return TABS.find((tab) => tabSlug(tab) === slug?.toLowerCase()) ?? DEFAULT_TAB;
+}
+
 export function SettingsPage() {
   return <OrgShell title="Settings">{(org) => <Body org={org} />}</OrgShell>;
 }
@@ -52,7 +73,16 @@ function Body({ org }: { org: Org }) {
     slug: org.slug,
   });
 
-  const [tab, setTab] = useState<Tab>("Hours");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab = tabFromSlug(searchParams.get("tab"));
+  const setTab = (next: Tab) => {
+    const params = new URLSearchParams(searchParams);
+    params.set("tab", tabSlug(next));
+    // Replace, not push: moving between tabs is not a place a person expects
+    // the back button to walk them through, and it did not use to be one.
+    setSearchParams(params, { replace: true });
+  };
+
   const [draft, setDraft] = useState<Draft | null>(null);
   const [loadedVersion, setLoadedVersion] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
@@ -66,6 +96,17 @@ function Body({ org }: { org: Org }) {
       setLoadedVersion(data.version);
     }
   }, [data, loadedVersion]);
+
+  // A URL with no tab is written out to the one it is showing, so the sidebar
+  // can mark the item a person is actually on. Replaced, not pushed: nobody
+  // asked to visit two URLs.
+  useEffect(() => {
+    if (searchParams.get("tab") === null) {
+      const params = new URLSearchParams(searchParams);
+      params.set("tab", tabSlug(DEFAULT_TAB));
+      setSearchParams(params, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
 
   if (isLoading || !data || !draft) {
     return error ? (

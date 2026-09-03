@@ -3,7 +3,12 @@ import * as React from "react";
 import { useNavigate } from "react-router";
 
 import { useColorMode } from "../../hooks/useColorMode";
-import { navPath, visibleSections, type NavContext } from "../../nav";
+import {
+  navPath,
+  visibleSections,
+  type NavContext,
+  type NavSection,
+} from "../../nav";
 import {
   CommandDialog,
   CommandEmpty,
@@ -39,11 +44,14 @@ export function CommandMenu({
   open,
   onOpenChange,
   context,
+  sections,
   actions = [],
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   context: NavContext;
+  /** The pages to offer; by default, every one this viewer may see. */
+  sections?: NavSection[];
   actions?: CommandAction[];
 }) {
   const navigate = useNavigate();
@@ -57,7 +65,7 @@ export function CommandMenu({
     [onOpenChange],
   );
 
-  const sections = visibleSections(context);
+  const pages = sections ?? visibleSections(context);
   const actionGroups = [...new Set(actions.map((action) => action.group))];
 
   return (
@@ -67,7 +75,7 @@ export function CommandMenu({
         <ScrollArea type="hover" className="h-72 pe-1">
           <CommandEmpty>No results found.</CommandEmpty>
 
-          {sections.map((section) => (
+          {pages.map((section) => (
             <CommandGroup key={section.title} heading={section.title}>
               {section.items.map((item) => (
                 <CommandItem

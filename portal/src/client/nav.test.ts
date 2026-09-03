@@ -6,6 +6,7 @@ import {
   navPath,
   navRoute,
   NAV_SECTIONS,
+  platformSections,
   ROUTES_OFF_THE_SIDEBAR,
   visibleSections,
 } from "./nav";
@@ -158,6 +159,26 @@ describe("the sidebar model", () => {
 
     const staff = visibleSections({ orgSlug: "skincentrix", role: "STAFF", isAdmin: false });
     expect(staff.map((section) => section.title)).not.toContain("Platform");
+  });
+
+  it("gives the admin shell the platform section and nothing else", () => {
+    const sections = platformSections({
+      orgSlug: "",
+      role: "STAFF",
+      isAdmin: true,
+    });
+    expect(sections.map((section) => section.title)).toEqual(["Platform"]);
+    expect(sections[0].items.map((item) => item.testId)).toEqual(
+      NAV_SECTIONS.find((section) => section.title === "Platform")!.items.map(
+        (item) => item.testId,
+      ),
+    );
+  });
+
+  it("gives the admin shell nothing at all for someone who is not an admin", () => {
+    expect(
+      platformSections({ orgSlug: "", role: "OWNER", isAdmin: false }),
+    ).toEqual([]);
   });
 
   it("fills the organisation into a path and leaves the query alone", () => {

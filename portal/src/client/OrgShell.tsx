@@ -1,12 +1,17 @@
 import { type ReactNode } from "react";
-import { Link, useLocation, useParams } from "react-router";
+import { Link, useParams } from "react-router";
 import { getOrganization, useQuery } from "wasp/client/operations";
 import { subscriptionProblem } from "../payment/entitlement";
+import { OrgAppLayout } from "./layout/OrgAppLayout";
 
 /**
- * The frame every client page sits in: the organisation it is about, the
- * navigation between its pages, and the one place a refusal is turned into a
+ * The frame every client page sits in: the organisation it is about, the app
+ * shell it is navigated from, and the one place a refusal is turned into a
  * sentence instead of a blank screen.
+ *
+ * The navigation used to be a strip of links above the page. It is now the
+ * sidebar `OrgAppLayout` mounts, built from `nav.ts`, so a page added to the
+ * Wasp spec cannot quietly become unreachable.
  */
 
 export type Org = {
@@ -112,13 +117,6 @@ export function SubscriptionBanner({ org }: { org: Org }) {
   );
 }
 
-const PAGES = [
-  { label: "Overview", path: "overview" },
-  { label: "Conversations", path: "conversations" },
-  { label: "Requests", path: "requests" },
-  { label: "Settings", path: "settings" },
-] as const;
-
 function Frame({
   title,
   slug,
@@ -130,63 +128,16 @@ function Frame({
   org?: Org;
   children: ReactNode;
 }) {
-  const location = useLocation();
-
   return (
-    <main className="mx-auto max-w-6xl px-6 py-10">
-      <p className="text-muted-foreground text-sm">
-        {org ? (
-          <Link className="underline" to={`/app/${org.slug}`}>
-            {org.name}
-          </Link>
-        ) : (
-          slug
-        )}
-      </p>
-      <h1 className="text-foreground mt-1 text-2xl font-semibold">{title}</h1>
-
-      <nav className="border-border mt-6 flex flex-wrap gap-4 border-b pb-2 text-sm">
-        {PAGES.map((page) => {
-          const to = `/app/${slug}/${page.path}`;
-          const current = location.pathname === to;
-          return (
-            <Link
-              key={page.path}
-              to={to}
-              className={
-                current
-                  ? "text-foreground font-medium"
-                  : "text-muted-foreground hover:text-foreground"
-              }
-            >
-              {page.label}
-            </Link>
-          );
-        })}
-        {org?.role === "OWNER" && (
-          <>
-            <Link
-              to={`/app/${slug}/billing`}
-              className={
-                location.pathname === `/app/${slug}/billing`
-                  ? "text-foreground font-medium"
-                  : "text-muted-foreground hover:text-foreground"
-              }
-            >
-              Billing
-            </Link>
-            <Link
-              to={`/app/${slug}/settings/people`}
-              className="text-muted-foreground hover:text-foreground"
-            >
-              People
-            </Link>
-          </>
-        )}
-      </nav>
-
+    <OrgAppLayout
+      orgSlug={slug}
+      orgName={org?.name}
+      role={org?.role}
+      breadcrumbs={[{ label: title }]}
+    >
+      <h1 className="text-foreground text-2xl font-semibold">{title}</h1>
       <div className="mt-8">{children}</div>
-    </main>
+    </OrgAppLayout>
   );
 }
 

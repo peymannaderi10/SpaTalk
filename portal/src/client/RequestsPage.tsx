@@ -1,4 +1,5 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useSearchParams } from "react-router";
 import {
   acknowledgeItem,
   getTenantRequests,
@@ -46,6 +47,13 @@ export function RequestsPage() {
 
 function Body({ org }: { org: Org }) {
   const [tab, setTab] = useState<"open" | "resolved">("open");
+  // `?item=` is how the command palette hands this page a request someone
+  // picked out of it. All it does is put the card in front of them: the tab it
+  // is filed under, and the page scrolled to it. Reading the transcript stays a
+  // click, because reading one is an audited act nobody has asked for yet.
+  const [searchParams] = useSearchParams();
+  const wanted = Number(searchParams.get("item")) || null;
+  const shown = useRef<number | null>(null);
   const [busy, setBusy] = useState<number | null>(null);
   const [problem, setProblem] = useState<{ message?: string } | null>(null);
   const [detail, setDetail] = useState<Detail | null>(null);
@@ -101,6 +109,19 @@ function Body({ org }: { org: Org }) {
     }
   }
 
+  useEffect(() => {
+    if (!wanted || !data || shown.current === wanted) {
+      return;
+    }
+    shown.current = wanted;
+    setTab(data.resolved.some((item) => item.id === wanted) ? "resolved" : "open");
+    requestAnimationFrame(() => {
+      document
+        .getElementById(`request-${wanted}`)
+        ?.scrollIntoView({ block: "center" });
+    });
+  }, [wanted, data]);
+
   const rows = data ? (tab === "open" ? data.open : data.resolved) : [];
 
   return (
@@ -137,6 +158,7 @@ function Body({ org }: { org: Org }) {
           {rows.map((item) => (
             <li
               key={item.id}
+              id={`request-${item.id}`}
               data-testid="request-row"
               className="border-border rounded-lg border p-4 text-sm"
             >

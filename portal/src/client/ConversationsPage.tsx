@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router";
 import {
   blockSmsNumber,
   getTenantConversations,
@@ -83,6 +84,24 @@ function Body({ org }: { org: Org }) {
           });
         }
       : undefined;
+
+  // `?conversation=` is how the command palette hands this page a conversation
+  // someone picked out of it. Opening one is exactly what clicking its row
+  // does, audited read and all, so the deep link does the same thing once.
+  const [searchParams] = useSearchParams();
+  const wanted = searchParams.get("conversation");
+  const opened = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!wanted || opened.current === wanted) {
+      return;
+    }
+    opened.current = wanted;
+    void open(wanted);
+    // `open` is redefined on every render; the ref above is what keeps this to
+    // one read per conversation, so it is deliberately not a dependency.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wanted]);
 
   const pages = data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1;
 
