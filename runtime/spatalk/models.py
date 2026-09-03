@@ -125,6 +125,12 @@ class Item(Base):
     preferred_window: Mapped[dict] = mapped_column(JSONB, default=dict)
     channel: Mapped[str] = mapped_column(String(16))
     health_context: Mapped[bool] = mapped_column(Boolean, default=False)
+    # --- lead context (plan L, Task L1) ---
+    # Closed values, written only after the ledger has checked them against the tenant's
+    # `team` and `concerns`. Null means the caller was not asked or did not say.
+    returning_client: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    practitioner: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    concern: Mapped[str | None] = mapped_column(String(40), nullable=True)
     # open | acknowledged | resolved | expired
     state: Mapped[str] = mapped_column(String(16), default="open")
     due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

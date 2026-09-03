@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Awaitable, Callable
 
+from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
@@ -14,6 +15,31 @@ from spatalk.models import Item
 from spatalk.tenants.schema import TenantConfig
 
 OnCreated = Callable[[Item, TenantConfig], Awaitable[None]]
+
+
+def practitioner_for(cfg: TenantConfig, value: str | None) -> str | None:
+    """"any", a name on the tenant's team, or nothing (lead context plan, Task L1).
+
+    A name the model invented is dropped and logged rather than stored: the column is a
+    closed vocabulary, and losing the whole request over a misheard name would be worse
+    than losing the preference.
+    """
+    if not value:
+        return None
+    if value in cfg.practitioner_names():
+        return value
+    logger.warning("tenant {} has no practitioner {!r}; storing none", cfg.id, value)
+    return None
+
+
+def concern_for(cfg: TenantConfig, value: str | None) -> str | None:
+    """One of the tenant's `concerns`, or nothing. Same rule, same reason."""
+    if not value:
+        return None
+    if value in cfg.concerns:
+        return value
+    logger.warning("tenant {} has no concern {!r}; storing none", cfg.id, value)
+    return None
 
 
 class PgLedger:
@@ -38,6 +64,9 @@ class PgLedger:
                 preferred_window=draft.preferred_window.model_dump(),
                 channel=ref.channel,
                 health_context=draft.health_context,
+                returning_client=draft.returning_client,
+                practitioner=practitioner_for(ref.tenant, draft.practitioner),
+                concern=concern_for(ref.tenant, draft.concern),
                 due_at=due,
                 owner=ref.tenant.escalation.owner_email,
             )

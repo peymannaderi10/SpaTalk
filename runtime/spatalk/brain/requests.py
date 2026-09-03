@@ -24,7 +24,20 @@ ChangeKind = Literal["reschedule", "cancel"]
 EscalateReason = Literal["human_request", "clinical", "complaint", "payment", "legal", "unsure"]
 
 
-class CaptureRequest(BaseModel, frozen=True):
+class LeadContext(BaseModel, frozen=True):
+    """What the assistant learned while qualifying the caller (lead context plan, Task L1).
+
+    Every value is closed: a boolean, a `team[].name` or "any", and one of the tenant's
+    `concerns`. Unknown values are nulled in the ledger, so a hallucinated name costs the
+    request nothing and stores nothing.
+    """
+
+    returning_client: bool | None = None
+    practitioner: str | None = None
+    concern: str | None = None
+
+
+class CaptureRequest(LeadContext, frozen=True):
     kind: CaptureKind
     service_id: str | None = None
     contact: ContactInfo = ContactInfo()
@@ -37,7 +50,7 @@ class AppointmentChangeRequest(BaseModel, frozen=True):
     preferred_window: PreferredWindow = PreferredWindow()
 
 
-class BookingLinkRequest(BaseModel, frozen=True):
+class BookingLinkRequest(LeadContext, frozen=True):
     service_id: str
     contact: ContactInfo = ContactInfo()
 

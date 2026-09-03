@@ -30,6 +30,40 @@ WINDOW = {
 }
 
 
+def _lead_context(cfg: TenantConfig) -> dict:
+    """The three qualification answers, as closed values (lead context plan, Task L1).
+
+    Still no notes parameter and still no free string: a boolean, the team by name plus
+    "any", and the tenant's own concern list. Everything optional; the model fills only
+    what the caller actually said.
+    """
+    return {
+        "returning_client": {
+            "type": "boolean",
+            "description": (
+                "True if the caller has been to the clinic before, false if they are new. "
+                "Omit unless they said."
+            ),
+        },
+        "practitioner": {
+            "type": "string",
+            "enum": cfg.practitioner_names(),
+            "description": (
+                "Who the caller would like to see. 'any' when they were asked and have no "
+                "preference. Omit if it never came up."
+            ),
+        },
+        "concern": {
+            "type": "string",
+            "enum": list(cfg.concerns),
+            "description": (
+                "What the caller says they want help with, in their own terms. "
+                "Omit unless they said."
+            ),
+        },
+    }
+
+
 def _contact() -> dict:
     # name/phone/email are the only free strings the model may fill; they are contact details,
     # not notes. There is no notes parameter anywhere in this file, by design (spec §5).
@@ -53,6 +87,7 @@ def build_tools(cfg: TenantConfig, transfer_enabled: bool = False) -> list[Funct
     tool list is built here rather than cached on the tenant.
     """
     service_ids = [s.id for s in cfg.services]
+    lead = _lead_context(cfg)
     tools = [
         FunctionSchema(
             name="send_booking_link",
@@ -64,6 +99,7 @@ def build_tools(cfg: TenantConfig, transfer_enabled: bool = False) -> list[Funct
             properties={
                 "service_id": {"type": "string", "enum": service_ids},
                 "contact": _contact(),
+                **lead,
             },
             required=["service_id"],
         ),
@@ -81,6 +117,7 @@ def build_tools(cfg: TenantConfig, transfer_enabled: bool = False) -> list[Funct
                 "service_id": {"type": "string", "enum": service_ids},
                 "contact": _contact(),
                 "preferred_window": WINDOW,
+                **lead,
             },
             required=["kind"],
         ),

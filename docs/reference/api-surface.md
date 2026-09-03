@@ -46,6 +46,25 @@ authorised sender writes reaches the model, and no reply text ever becomes item 
 (`action` `ack` or `resolve`, `record_type` `item`). An id from another tenant, and an id
 already resolved, are both answered `No open item` and change nothing.
 
+## The item shape the portal reads (`ItemOut`, L1)
+
+Every `/internal/*` response that carries an item — `GET /internal/tenants/{id}/items`,
+`GET /internal/conversations/{id}`, `POST /internal/items/{id}/acknowledge` and `/resolve` —
+returns every `runtime.items` column plus three fields the runtime derives, so the portal,
+the owner's SMS and the email all say the same sentence and none of them compose wording.
+
+| field | type | meaning |
+|---|---|---|
+| `returning_client` | bool null | true returning, false new, null not asked or not said |
+| `practitioner` | string null | a `team[].name`, or `any` for "no preference" |
+| `concern` | string null | one of the tenant's `concerns` |
+| `summary` | string | `summarize_item(item, cfg)`: the whole request as one sentence, e.g. `"New booking: Mirapeel facial for pigmentation. New client, no practitioner preference. Callback Thursday afternoon."` |
+| `service_name` | string null | the catalog name of `service_id`; null when the item has no service or the catalog dropped it |
+| `preferred_text` | string | `preferred_window` in words: `"any day"`, `"Thursday"`, `"Thursday afternoon"`, `"mornings"`. Never `"any any"` |
+
+The three derived fields are computed on read, never stored, so they cannot drift from the
+columns. `docs/contracts/runtime-internal.openapi.json` is regenerated whenever they change.
+
 ## Provider payload shapes for fixtures
 
 These are the shapes the tests replay. They match the providers' documented formats as of 2026-09; if a provider test fails on a field name, check the current doc and fix the fixture, not the parser's intent.

@@ -275,6 +275,20 @@ def _contact(d: dict | None) -> ContactInfo:
     )
 
 
+def _lead(args: dict) -> dict:
+    """The three qualification answers as the model returned them (lead context, Task L1).
+
+    Nothing is coerced and nothing is guessed: an empty string is "did not say", and a name
+    or a concern the tenant does not have is dropped later, by the ledger.
+    """
+    returning = args.get("returning_client")
+    return {
+        "returning_client": returning if isinstance(returning, bool) else None,
+        "practitioner": args.get("practitioner") or None,
+        "concern": args.get("concern") or None,
+    }
+
+
 def _window(d: dict | None) -> PreferredWindow:
     d = d or {}
     return PreferredWindow(
@@ -297,6 +311,7 @@ async def dispatch_tool(
                 BookingLinkRequest(
                     service_id=args.get("service_id", ""),
                     contact=_contact(args.get("contact")),
+                    **_lead(args),
                 ),
             )
         elif name == "capture_request":
@@ -307,6 +322,7 @@ async def dispatch_tool(
                     service_id=args.get("service_id"),
                     contact=_contact(args.get("contact")),
                     preferred_window=_window(args.get("preferred_window")),
+                    **_lead(args),
                 ),
             )
         elif name == "request_appointment_change":

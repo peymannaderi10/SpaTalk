@@ -31,6 +31,36 @@ class Service(BaseModel, frozen=True):
     description: str = ""
 
 
+class TeamMember(BaseModel, frozen=True):
+    """One person a caller may ask for by name (lead context plan, Task L1).
+
+    The list is the closed vocabulary behind `items.practitioner`: the model may only
+    return a name that is in it, or "any" for no preference. A role is written where the
+    clinic states one publicly; it is never spoken as a claim about qualifications.
+    """
+
+    name: str
+    role: str = ""
+
+
+# The cosmetic concern taxonomy behind `items.concern`. It is deliberately not medical:
+# anything about a symptom, a reaction or a condition still routes to the clinical script
+# and lives only in the transcript (CLAUDE.md non-negotiables 1 and 2).
+DEFAULT_CONCERNS: tuple[str, ...] = (
+    "pigmentation",
+    "acne",
+    "ageing",
+    "dryness",
+    "hair removal",
+    "hair loss",
+    "body contouring",
+    "skin tightening",
+    "tattoo removal",
+    "glow",
+    "other",
+)
+
+
 class Persona(BaseModel, frozen=True):
     assistant_name: str = "the assistant"
     tone: str = "warm, brief, plain-spoken"
@@ -239,6 +269,11 @@ class TenantConfig(BaseModel, frozen=True):
     transfer_number: str | None = None    # staffed back-line for live transfer (E10)
     booking_url_default: str
     persona: Persona = Persona()
+    # --- lead context (plan L, Task L1) ---
+    # The two closed vocabularies a request may draw on: who the caller may ask for, and
+    # what they may say they are coming in for. Both are config, never prompt text.
+    team: list[TeamMember] = Field(default_factory=list)
+    concerns: list[str] = Field(default_factory=lambda: list(DEFAULT_CONCERNS))
     services: list[Service]
     knowledge: str
     scripts: Scripts
@@ -261,3 +296,7 @@ class TenantConfig(BaseModel, frozen=True):
 
     def service(self, service_id: str) -> Service | None:
         return next((s for s in self.services if s.id == service_id), None)
+
+    def practitioner_names(self) -> list[str]:
+        """The values `items.practitioner` may hold: "any" first, then the team by name."""
+        return ["any"] + [m.name for m in self.team]

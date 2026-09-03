@@ -24,6 +24,15 @@ class ItemDraft(BaseModel, frozen=True):
     preferred_window: PreferredWindow = PreferredWindow()
     # Caller volunteered a condition or medication; staff read the transcript. No free text.
     health_context: bool = False
+    # --- lead context (plan L, Task L1) -----------------------------------------------
+    # Three more closed values, so a request reads as a lead instead of a type label. None
+    # means the caller was not asked or did not say; nothing here is ever guessed.
+    returning_client: bool | None = None
+    # A `team[].name` or "any" (no preference). The ledger nulls anything else: validating
+    # here would reject the whole draft and lose the request over a hallucinated name.
+    practitioner: str | None = None
+    # One of the tenant's `concerns`; cosmetic only. Health still goes to the transcript.
+    concern: str | None = None
 
 
 class ItemRecord(BaseModel, frozen=True):

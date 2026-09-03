@@ -53,6 +53,7 @@ from spatalk.models import (
     TenantNumber,
     UsageEvent,
 )
+from spatalk.ledger.summary import preferred_text, summarize_item
 from spatalk.rates import estimate_cad, load_rates
 from spatalk.tenants.bundle import config_from_texts
 from spatalk.tenants.schema import TenantConfig
@@ -217,6 +218,10 @@ class ItemOut(BaseModel):
     preferred_window: dict[str, Any]
     channel: str
     health_context: bool
+    # --- lead context (plan L, Task L1) ---
+    returning_client: bool | None
+    practitioner: str | None
+    concern: str | None
     state: str
     due_at: datetime
     owner: str
@@ -226,6 +231,29 @@ class ItemOut(BaseModel):
     resolved_at: datetime | None
     resolved_by: str | None
     created_at: datetime
+    # Derived in the runtime so the portal, the owner's SMS and the email say one thing.
+    summary: str
+    service_name: str | None
+    preferred_text: str
+
+
+# The three fields above that are composed rather than read from a column.
+DERIVED_ITEM_FIELDS = ("summary", "service_name", "preferred_text")
+
+
+def item_out(item: Item, cfg: TenantConfig) -> ItemOut:
+    """One item as the portal sees it: its columns plus the derived, deterministic wording."""
+    known = cfg.service(item.service_id) if item.service_id else None
+    return ItemOut(
+        **{
+            name: getattr(item, name)
+            for name in ItemOut.model_fields
+            if name not in DERIVED_ITEM_FIELDS
+        },
+        summary=summarize_item(item, cfg),
+        service_name=known.name if known else None,
+        preferred_text=preferred_text(item.preferred_window),
+    )
 
 
 class ConversationDetail(BaseModel):
@@ -700,6 +728,7 @@ async def read_conversation(
         "conversation",
         str(conversation_id),
     )
+    cfg = await _tenant_config(ctx, conv.tenant_id)
     row = _conversation_row(conv, len(items))
     return ConversationDetail(
         conversation=ConversationFull(
@@ -709,7 +738,7 @@ async def read_conversation(
             external_ref=conv.external_ref,
         ),
         messages=[MessageOut.model_validate(m) for m in messages],
-        items=[ItemOut.model_validate(i) for i in items],
+        items=[item_out(i, cfg) for i in items],
     )
 
 
@@ -737,7 +766,8 @@ async def tenant_items(
                 .limit(page_size)
             )
         ).all()
-    return [ItemOut.model_validate(i) for i in rows]
+    cfg = await _tenant_config(ctx, tenant_id)
+    return [item_out(i, cfg) for i in rows]
 
 
 async def _transition(request: Request, item_id: int, body: ActorIn, x_actor: str | None, verb):
@@ -748,7 +778,7 @@ async def _transition(request: Request, item_id: int, body: ActorIn, x_actor: st
     if item is None:
         raise HTTPException(status_code=404, detail=f"unknown item {item_id}")
     await write_audit(ctx.sf, portal_actor(x_actor, body.actor), verb, "item", str(item_id))
-    return ItemOut.model_validate(item)
+    return item_out(item, await _tenant_config(ctx, item.tenant_id))
 
 
 @router.post("/items/{item_id}/acknowledge", response_model=ItemOut)

@@ -40,6 +40,32 @@ persona:
     conversational, uses contractions, sounds happy to help, knows the treatments well and
     enjoys talking about them, never clinical, never salesy, never robotic
   max_sentences_per_turn: 3
+# The people a caller may ask for by name (lead context plan, L1). Names and roles from
+# skincentrix.com and knowledge.md; this list, plus "any", is the whole of what the model
+# may return for `practitioner`. `concerns` is left to the schema default.
+team:
+  - name: Sabah Shaikh
+    role: founder and aesthetician, leads the facial and skin programs
+  - name: Amanda Coutts
+    role: clinical manager and medical aesthetician
+  - name: Faisal Rohile
+    role: BScN RN, master injector
+  - name: Anne Perez
+    role: RPN, injectables and PRP
+  - name: Ruru Ahlam
+    role: aesthetician
+  - name: Helen Courbetis
+    role: aesthetician
+  - name: Alexandra Debski
+    role: aesthetician
+  - name: Sanober Ijaz
+    role: aesthetician
+  - name: Mariam Khaizaran
+    role: aesthetician
+  - name: Hala Saeed
+    role: aesthetician
+  - name: Emma Walker
+    role: aesthetician
 escalation:
   owner_name: Skincentrix front desk
   owner_email: info@skincentrix.com

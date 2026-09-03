@@ -99,7 +99,7 @@ Indexes: `(tenant_id, started_at desc)`; `(tenant_id, channel, external_ref, las
 
 Index: `(conversation_id, id)`.
 
-### items [Task 7; health_context added]
+### items [Task 7; health_context added; lead context added L1]
 | id | serial PK | short number staff can quote, e.g. `#4821` |
 | tenant_id | text FK | |
 | conversation_id | uuid FK null | |
@@ -110,6 +110,9 @@ Index: `(conversation_id, id)`.
 | preferred_window | jsonb | `{date, part_of_day}` |
 | channel | text | |
 | health_context | bool | default false |
+| returning_client | bool null | true returning, false new, null not asked or not said [L1] |
+| practitioner | varchar(80) null | a `team[].name` or `any`; anything else is nulled and logged [L1] |
+| concern | varchar(40) null | one of the tenant's `concerns`; cosmetic only, never medical [L1] |
 | state | text | `open`, `acknowledged`, `resolved`, `expired` |
 | due_at | timestamptz | business-hours arithmetic |
 | owner | text | escalation owner email |
@@ -117,7 +120,9 @@ Index: `(conversation_id, id)`.
 | acknowledged_by, resolved_by | text null | |
 | created_at | timestamptz | |
 
-There is no free-text column on this table and there must never be one.
+There is no free-text column on this table and there must never be one. The three lead-context columns are closed vocabularies drawn from the tenant config, checked by the ledger on write.
+
+The request summary staff read (`"New booking: Mirapeel facial for pigmentation. New client, no practitioner preference. Callback Thursday afternoon."`) is **derived, never stored**: `spatalk.ledger.summary.summarize_item(item, cfg)` composes it from these columns and fixed labels, so it cannot drift from the fields. The SMS, email, Slack and portal renderings all call it.
 
 Indexes: `(tenant_id, state, due_at)`; partial `(due_at) where state = 'open' and escalated_at is null` for the breach scan.
 

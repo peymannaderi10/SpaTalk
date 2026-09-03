@@ -18,25 +18,10 @@ import unicodedata
 
 from spatalk.conversations import record_usage
 from spatalk.ledger.links import sign_action
+from spatalk.ledger.summary import TYPE_LABELS, preferred_text, summarize_item
 from spatalk.models import Item, WhatsAppWindow
 from spatalk.tenants.schema import Destination, TenantConfig
 from spatalk.text import takeover
-
-TYPE_LABELS = {
-    "callback": "Callback requested",
-    "new_booking": "Wants to book",
-    "question": "Question for the team",
-    "training_enquiry": "Training course enquiry",
-    "reschedule": "Reschedule request",
-    "cancel": "Cancellation request",
-    "send_link": "Send booking link",
-    "escalation_human_request": "Asked for a person",
-    "escalation_clinical": "CLINICAL question",
-    "escalation_complaint": "COMPLAINT",
-    "escalation_payment": "Payment question",
-    "escalation_legal": "Legal question",
-    "escalation_unsure": "Assistant was unsure",
-}
 
 
 @dataclass(frozen=True)
@@ -60,26 +45,25 @@ def build_links(settings, item: Item) -> ActionLinks:
 
 
 def _summary(item: Item, cfg: TenantConfig, now: datetime) -> list[str]:
+    """The staff lines for one item: the type line, the summary sentence, then the facts.
+
+    Line 0 names the type and the channel and is what a header repeats; line 1 is the one
+    sentence every channel shows (lead context plan, Task L1), composed by
+    :func:`spatalk.ledger.summary.summarize_item` from closed columns and fixed labels.
+    """
     known = cfg.service(item.service_id) if item.service_id else None
     service = known.name if known else None
     window = item.preferred_window or {}
-    when = ", ".join(
-        x
-        for x in (
-            window.get("date") if window.get("date") not in (None, "any") else None,
-            window.get("part_of_day") if window.get("part_of_day") not in (None, "any") else None,
-        )
-        if x
-    )
     lines = [
         f"{TYPE_LABELS.get(item.type, item.type)} via {item.channel}",
+        summarize_item(item, cfg),
         f"Who: {item.contact_name or 'name not given'} "
         f"{item.contact_phone or ''} {item.contact_email or ''}".strip(),
     ]
     if service:
         lines.append(f"Service: {service}")
-    if when:
-        lines.append(f"Preferred: {when}")
+    if window.get("date") not in (None, "any") or window.get("part_of_day") not in (None, "any"):
+        lines.append(f"Preferred: {preferred_text(window)}")
     lines.append(f"Due: {humanize_due(item.due_at, now, cfg.timezone, item.urgency == 'urgent')}")
     if getattr(item, "health_context", False):
         lines.append(
@@ -87,6 +71,12 @@ def _summary(item: Item, cfg: TenantConfig, now: datetime) -> list[str]:
             "read the transcript before calling back"
         )
     return lines
+
+
+def _body_lines(item: Item, cfg: TenantConfig, now: datetime) -> list[str]:
+    """The same lines for a body with no header of its own: the summary sentence first."""
+    head, summary, *rest = _summary(item, cfg, now)
+    return [summary, head, *rest]
 
 
 def build_slack_blocks(
@@ -148,7 +138,7 @@ def build_email(
     item: Item, cfg: TenantConfig, links: ActionLinks, now: datetime | None = None
 ) -> tuple[str, str]:
     now = now or datetime.now(timezone.utc)
-    lines = _summary(item, cfg, now)
+    lines = _body_lines(item, cfg, now)
     prefix = "URGENT: " if item.urgency == "urgent" else ""
     subject = f"{prefix}{cfg.name} front desk #{item.id}: {TYPE_LABELS.get(item.type, item.type)}"
     body = (
@@ -842,9 +832,11 @@ def build_sms_text(
 ) -> str:
     """One tracked item as at most three SMS segments, ending in the transcript link.
 
-    Lines are dropped, never truncated, and in a fixed order: the health line first (it
-    carries no detail the transcript does not), then the who line. The link survives every
-    cut, because a staff member who cannot open the transcript cannot act on the item.
+    The second line is the summary sentence (lead context plan, Task L1), so the owner can
+    act on the lead without opening anything. Lines are dropped, never truncated, and in a
+    fixed order: the health line first (it carries no detail the transcript does not), then
+    the who line, then the summary. The link survives every cut, because a staff member who
+    cannot open the transcript cannot act on the item.
     """
     now = now or datetime.now(timezone.utc)
     prefix = (ESCALATED_PREFIX if escalation else "") + (
@@ -854,6 +846,7 @@ def build_sms_text(
         f"{prefix}{cfg.name} front desk #{item.id}: "
         f"{TYPE_LABELS.get(item.type, item.type)} via {item.channel}."
     )
+    summary = summarize_item(item, cfg)
     who = f"Who: {_sms_who(item)}."
     urgent = item.urgency == "urgent"
     due = f"Due {humanize_due(item.due_at, now, cfg.timezone, urgent)}."
@@ -861,8 +854,10 @@ def build_sms_text(
     tail = f"Transcript: {links.transcript_url}"
     flagged = bool(getattr(item, "health_context", False))
 
-    def assemble(with_health: bool, with_who: bool) -> str:
+    def assemble(with_health: bool, with_who: bool, with_summary: bool) -> str:
         parts = [head]
+        if with_summary:
+            parts.append(summary)
         if with_who:
             parts.append(who)
         parts.append(due)
@@ -872,8 +867,13 @@ def build_sms_text(
         return " ".join(parts)
 
     text = ""
-    for with_health, with_who in ((flagged, True), (False, True), (False, False)):
-        text = gsm7_fold(assemble(with_health, with_who))
+    for with_health, with_who, with_summary in (
+        (flagged, True, True),
+        (False, True, True),
+        (False, False, True),
+        (False, False, False),
+    ):
+        text = gsm7_fold(assemble(with_health, with_who, with_summary))
         if _fits_staff_sms(text):
             return text
     # Nothing left to drop: cut the front, keep the link whole. Measured in segments, so a

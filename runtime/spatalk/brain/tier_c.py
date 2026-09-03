@@ -48,6 +48,9 @@ class TierCCapabilities:
                 service_id=req.service_id,
                 contact=_with_caller(ref, req.contact),
                 preferred_window=req.preferred_window,
+                returning_client=req.returning_client,
+                practitioner=req.practitioner,
+                concern=req.concern,
             ),
         )
 
@@ -90,6 +93,9 @@ class TierCCapabilities:
                     urgency="normal",
                     service_id=service.id,
                     contact=contact,
+                    returning_client=req.returning_client,
+                    practitioner=req.practitioner,
+                    concern=req.concern,
                 ),
             )
         return Refused(reason="no_contact")
