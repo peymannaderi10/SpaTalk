@@ -28,3 +28,4 @@ loop_guard: "This line is answered by the clinic's assistant and cannot transfer
 failover: "We can't take your call right now. Please text us at {sms_number} or book online at {booking_url}."
 transferring: "One moment, I'll connect you to the team."
 sms_paused: "Thanks for texting {name}. The assistant is paused right now. A member of the team will read your message, or you can call {phone}."
+fillers: ["Okay.", "Let me check.", "One moment."]

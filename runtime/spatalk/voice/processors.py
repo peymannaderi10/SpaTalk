@@ -15,6 +15,7 @@ from pipecat.frames.frames import (
     EndFrame,
     Frame,
     InterruptionFrame,
+    LLMContextFrame,
     LLMFullResponseEndFrame,
     LLMFullResponseStartFrame,
     LLMTextFrame,
@@ -66,6 +67,34 @@ class RulesGateProcessor(FrameProcessor):
                 if self._s.worker is not None:
                     await self._s.worker.queue_frames([EndFrame()])
                 return
+        await self.push_frame(frame, direction)
+
+
+class FillerProcessor(FrameProcessor):
+    """Sits between the user aggregator and the LLM.
+
+    The model's first token takes about 0.7 s after the caller stops, and the caller hears
+    every millisecond of it as silence. The moment a turn is handed to the model, this
+    speaks one short fixed sentence from ``scripts.fillers`` ("Okay.", "Let me check."),
+    rotating so it does not repeat, so the caller hears a response within a third of a
+    second while the answer forms. The prompt tells the model the acknowledgement has been
+    spoken, so it goes straight to the answer. The filler never enters the model's context
+    or the transcript: it is for the ear, not the record.
+    """
+
+    def __init__(self, session: VoiceSession):
+        super().__init__(name="filler")
+        self._s = session
+        self._turn = 0
+
+    async def process_frame(self, frame: Frame, direction: FrameDirection):
+        await super().process_frame(frame, direction)
+        if isinstance(frame, LLMContextFrame) and direction == FrameDirection.DOWNSTREAM:
+            fillers = list(self._s.cfg.scripts.fillers)
+            if fillers and not self._s.ended:
+                text = fillers[self._turn % len(fillers)]
+                self._turn += 1
+                await self.push_frame(TTSSpeakFrame(text=text, append_to_context=False))
         await self.push_frame(frame, direction)
 
 

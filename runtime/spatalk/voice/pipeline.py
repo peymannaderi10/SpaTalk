@@ -54,7 +54,7 @@ from spatalk.ops.latency import session_stage_ms
 from spatalk.text.textback import schedule_missed_call_textback
 from spatalk.voice.handlers import register_tool_handlers
 from spatalk.voice.observers import TurnLatencyObserver, UsageObserver
-from spatalk.voice.processors import OutputGuardProcessor, RulesGateProcessor
+from spatalk.voice.processors import FillerProcessor, OutputGuardProcessor, RulesGateProcessor
 from spatalk.voice.session import VoiceSession
 from spatalk.voice.tokens import verify_stream_token
 # Operations plan, Task E10: live transfer to a staffed back-line, Option A (the leg the
@@ -68,7 +68,7 @@ from spatalk.voice.transfer import make_transfer, transfer_available
 # is usually fragmentary, so every barge-in cost the caller about three seconds (founder call
 # 2026-09-03). The model stays, so a complete sentence still ends the turn at once; the wait
 # for an unfinished one is capped at what a person tolerates.
-TURN_END_FALLBACK_SECS = 1.2
+TURN_END_FALLBACK_SECS = 1.0
 TURN_PRE_SPEECH_MS = 300
 
 
@@ -236,6 +236,7 @@ async def run_call(websocket: WebSocket, token: str, ctx) -> None:
             stt,
             RulesGateProcessor(session),
             user_agg,
+            FillerProcessor(session),
             llm,
             OutputGuardProcessor(session),
             tts,

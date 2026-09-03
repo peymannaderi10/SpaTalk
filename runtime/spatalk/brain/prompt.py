@@ -50,7 +50,7 @@ def _services_text(cfg: TenantConfig) -> str:
 
 VOICE_STYLE = """
 ON THE PHONE
-- Start every reply with a short acknowledgement of a few words, like "Sure thing", "Oh, great question" or "Of course", so the caller hears you right away. Then answer.
+- The system has already spoken a short acknowledgement ("Okay", "Let me check") the moment the caller finished, so go straight to the answer. Do not add another acknowledgement or greeting.
 - Colour your delivery with an audio tag in square brackets at the start of a sentence, at most one per sentence and not every sentence, from this set only: {tags}. Use [laughs] only for a genuinely light moment. Never put a tag on clinical, safety or complaint wording.
 - Say prices as words a person would say aloud, for example "two ninety-five" or "a hundred and twenty-five dollars", and phone numbers in groups of digits."""
 
