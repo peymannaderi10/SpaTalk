@@ -2,15 +2,18 @@ import { useState } from "react";
 import {
   blockSmsNumber,
   getTenantConversations,
+  getTenantSettings,
   readConversation,
   useQuery,
 } from "wasp/client/operations";
+import { CallNotes } from "./CallNotes";
 import { Button } from "./components/ui/button";
 import {
   bandLabel,
   channelLabel,
   formatDateTime,
   formatDuration,
+  notesLabel,
 } from "./formatting";
 import { OrgShell, Problem, type Org } from "./OrgShell";
 
@@ -20,6 +23,9 @@ type Detail = Awaited<ReturnType<typeof readConversation>>;
  * Every conversation the assistant has had, and — one audited click away — what
  * was said. The list never shows a whole phone number; the runtime masks it to
  * the last four digits before it leaves the data plane.
+ *
+ * A transcript opens under the notes the runtime drafted from it, when there
+ * are any, labelled with the tenant's own wording (call notes plan, Task N2).
  */
 export function ConversationsPage() {
   return (
@@ -44,6 +50,13 @@ function Body({ org }: { org: Org }) {
   const [detail, setDetail] = useState<Detail | null>(null);
   const [reading, setReading] = useState<string | null>(null);
   const [problem, setProblem] = useState<{ message?: string } | null>(null);
+
+  // The tenant's wording for the notes label, from the configuration the
+  // settings page already reads: one request for the page, none per transcript.
+  // A failure here is not shown — `notesLabel` falls back to the runtime's own
+  // default rather than leaving the transcript unopenable.
+  const { data: settings } = useQuery(getTenantSettings, { slug: org.slug });
+  const label = notesLabel(settings?.config);
 
   async function open(conversationId: string) {
     setProblem(null);
@@ -196,7 +209,12 @@ function Body({ org }: { org: Org }) {
       )}
 
       {detail && (
-        <Transcript detail={detail} onBlock={blockCaller} onClose={() => setDetail(null)} />
+        <Transcript
+          detail={detail}
+          label={label}
+          onBlock={blockCaller}
+          onClose={() => setDetail(null)}
+        />
       )}
     </>
   );
@@ -204,10 +222,12 @@ function Body({ org }: { org: Org }) {
 
 function Transcript({
   detail,
+  label,
   onClose,
   onBlock,
 }: {
   detail: Detail;
+  label: string;
   onClose: () => void;
   onBlock?: () => Promise<void>;
 }) {
@@ -273,6 +293,12 @@ function Transcript({
           nowhere else.
         </p>
       )}
+
+      <CallNotes
+        notes={conversation.notes}
+        label={label}
+        testId="conversation-notes"
+      />
 
       <ol className="mt-6 space-y-3">
         {messages.map((message, index) => (

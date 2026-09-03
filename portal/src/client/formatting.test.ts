@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
+  DEFAULT_NOTES_LABEL,
   bandLabel,
   blockStateLabel,
   channelLabel,
@@ -9,6 +10,7 @@ import {
   formatMinutes,
   isOverdue,
   itemTypeLabel,
+  notesLabel,
   practitionerLabel,
 } from "./formatting";
 
@@ -129,5 +131,37 @@ describe("practitionerLabel", () => {
     expect(practitionerLabel(undefined)).toBe("");
     expect(practitionerLabel("")).toBe("");
     expect(practitionerLabel("   ")).toBe("");
+  });
+});
+
+describe("notesLabel", () => {
+  test("uses the tenant's own wording for the drafted notes", () => {
+    expect(
+      notesLabel({
+        scripts: { notes_label: "Notes drafted by the assistant" },
+      }),
+    ).toBe("Notes drafted by the assistant");
+  });
+
+  test("falls back to the runtime's default when the config is not loaded", () => {
+    expect(notesLabel()).toBe(DEFAULT_NOTES_LABEL);
+    expect(notesLabel(undefined)).toBe(DEFAULT_NOTES_LABEL);
+    expect(notesLabel(null)).toBe(DEFAULT_NOTES_LABEL);
+    expect(notesLabel({})).toBe(DEFAULT_NOTES_LABEL);
+    expect(notesLabel({ scripts: {} })).toBe(DEFAULT_NOTES_LABEL);
+  });
+
+  test("never labels the notes with something that is not wording", () => {
+    expect(notesLabel({ scripts: { notes_label: "   " } })).toBe(
+      DEFAULT_NOTES_LABEL,
+    );
+    expect(notesLabel({ scripts: { notes_label: 7 } })).toBe(
+      DEFAULT_NOTES_LABEL,
+    );
+    expect(notesLabel({ scripts: null })).toBe(DEFAULT_NOTES_LABEL);
+  });
+
+  test("still says the notes were drafted, whatever the tenant wrote", () => {
+    expect(DEFAULT_NOTES_LABEL).toBe("AI notes, drafted from the transcript");
   });
 });

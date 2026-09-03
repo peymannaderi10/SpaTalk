@@ -2,10 +2,12 @@ import { useState, type ReactNode } from "react";
 import {
   acknowledgeItem,
   getTenantRequests,
+  getTenantSettings,
   readConversation,
   resolveItem,
   useQuery,
 } from "wasp/client/operations";
+import { CallNotes } from "./CallNotes";
 import { Button } from "./components/ui/button";
 import {
   channelLabel,
@@ -13,6 +15,7 @@ import {
   formatDateTime,
   isOverdue,
   itemTypeLabel,
+  notesLabel,
   practitionerLabel,
 } from "./formatting";
 import { OrgShell, Problem, type Org } from "./OrgShell";
@@ -32,6 +35,10 @@ type Detail = Awaited<ReturnType<typeof readConversation>>;
  * say the same thing. Everything under it is that sentence broken into words a
  * person can act on: never a service id, never "any any", and no line at all
  * for something the caller was never asked.
+ *
+ * Under those facts, when the runtime drafted them, are the notes it took from
+ * the transcript (call notes plan, Task N2) — under the tenant's own label, so
+ * nobody mistakes a draft for something the caller signed off.
  */
 export function RequestsPage() {
   return <OrgShell title="Requests">{(org) => <Body org={org} />}</OrgShell>;
@@ -47,6 +54,14 @@ function Body({ org }: { org: Org }) {
   const { data, isLoading, error, refetch } = useQuery(getTenantRequests, {
     slug: org.slug,
   });
+
+  // The label over the notes is the tenant's wording, from `scripts.notes_label`
+  // in its configuration — the same query the settings page reads, so it is one
+  // request for the page and none per card. Its failure is never shown: the
+  // requests are what this page is for, and `notesLabel` has the runtime's own
+  // default to fall back on.
+  const { data: settings } = useQuery(getTenantSettings, { slug: org.slug });
+  const label = notesLabel(settings?.config);
 
   async function act(
     itemId: number,
@@ -177,6 +192,12 @@ function Body({ org }: { org: Org }) {
                 <Fact label="State">{stateLabel(item)}</Fact>
               </dl>
 
+              <CallNotes
+                notes={item.notes}
+                label={label}
+                testId="request-notes"
+              />
+
               <div className="mt-3 flex flex-wrap gap-2">
                 {tab === "open" && item.state === "open" && (
                   <Button
@@ -217,7 +238,11 @@ function Body({ org }: { org: Org }) {
       )}
 
       {detail && (
-        <Transcript detail={detail} onClose={() => setDetail(null)} />
+        <Transcript
+          detail={detail}
+          label={label}
+          onClose={() => setDetail(null)}
+        />
       )}
     </>
   );
@@ -281,9 +306,11 @@ function Fact({
 /** What was said, opened from the request it produced. */
 function Transcript({
   detail,
+  label,
   onClose,
 }: {
   detail: Detail;
+  label: string;
   onClose: () => void;
 }) {
   const { conversation, messages } = detail;
@@ -313,6 +340,12 @@ function Transcript({
           nowhere else.
         </p>
       )}
+
+      <CallNotes
+        notes={conversation.notes}
+        label={label}
+        testId="conversation-notes"
+      />
 
       <ol className="mt-6 space-y-3">
         {messages.map((message, index) => (

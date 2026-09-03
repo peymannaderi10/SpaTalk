@@ -624,6 +624,10 @@ export interface components {
             caller: string | null;
             /** External Ref */
             external_ref: string | null;
+            /** Notes */
+            notes: string | null;
+            /** Notes At */
+            notes_at: string | null;
         };
         /** ConversationPage */
         ConversationPage: {
@@ -780,6 +784,8 @@ export interface components {
             service_name: string | null;
             /** Preferred Text */
             preferred_text: string;
+            /** Notes */
+            notes: string | null;
         };
         /** LatencyDay */
         LatencyDay: {

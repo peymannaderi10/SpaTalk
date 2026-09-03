@@ -132,3 +132,24 @@ export function blockStateLabel(
   if (Number.isNaN(ends)) return "Muted";
   return ends > now ? `Muted until ${formatDateTime(until)}` : "Mute ended";
 }
+
+/**
+ * The label the notes are read under. The runtime drafts the notes from the
+ * transcript, so the reader has to see that they were drafted before they see
+ * the sentences — and the wording of that is the tenant's, in
+ * `scripts.notes_label`, not the portal's.
+ *
+ * The default is the runtime's own default, used only until the tenant's
+ * configuration has loaded (or when a runtime that predates call notes answers
+ * without the script). It is the one place the portal spells the words out.
+ */
+export const DEFAULT_NOTES_LABEL = "AI notes, drafted from the transcript";
+
+export function notesLabel(config?: unknown): string {
+  const scripts = (config as { scripts?: unknown } | null | undefined)?.scripts;
+  const label = (scripts as { notes_label?: unknown } | null | undefined)
+    ?.notes_label;
+  return typeof label === "string" && label.trim() !== ""
+    ? label.trim()
+    : DEFAULT_NOTES_LABEL;
+}
