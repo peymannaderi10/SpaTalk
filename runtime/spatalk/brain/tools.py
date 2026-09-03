@@ -57,8 +57,9 @@ def build_tools(cfg: TenantConfig, transfer_enabled: bool = False) -> list[Funct
         FunctionSchema(
             name="send_booking_link",
             description=(
-                "Text the caller the online booking link for one service. "
-                "Use when they want to book and are happy to self-serve."
+                "Text the caller the online booking link for one service. Only after the "
+                "caller has said they want to book AND has agreed to receive the link by text. "
+                "Never on a price, hours or information question: answer those in words."
             ),
             properties={
                 "service_id": {"type": "string", "enum": service_ids},

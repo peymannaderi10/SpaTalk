@@ -80,3 +80,13 @@ def test_the_only_thing_that_changes_between_calls_is_at_the_end_of_the_prompt()
     assert a.split("RIGHT NOW")[0] == b.split("RIGHT NOW")[0]
     assert a.index("RIGHT NOW") > a.index("FACTS ABOUT")
     assert "set up" in a and "not even when offering help" in a
+
+
+def test_a_greeting_is_not_a_question_and_tools_wait_to_be_asked():
+    from spatalk.brain.prompt import build_system_prompt
+    p = build_system_prompt(_cfg(), "voice", NOW).lower()
+    assert "is a greeting, not a question" in p and "never describe how things are here" in p
+    assert "answered in words, never with a tool" in p
+    from spatalk.brain.tools import build_tools
+    link = next(t for t in build_tools(_cfg()) if t.name == "send_booking_link")
+    assert "never on a price" in link.description.lower()

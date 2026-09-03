@@ -38,3 +38,11 @@ def test_the_voice_llm_carries_the_right_thinking_field_for_its_model():
     legacy = make_llm(Settings(_env_file=None, secret_key="s", google_api_key="k", llm_model="gemini-2.5-flash"))
     assert legacy._settings.thinking.thinking_budget == 0
     assert legacy._settings.thinking.thinking_level is None
+
+
+def test_models_that_reject_minimal_get_low():
+    from spatalk.brain.driver import gemini_thinking_kwargs
+
+    assert gemini_thinking_kwargs("gemini-3.7-flash", 0) == {"thinking_level": "low"}
+    assert gemini_thinking_kwargs("gemini-3.8-flash", 0) == {"thinking_level": "low"}
+    assert gemini_thinking_kwargs("gemini-3.5-flash", 0) == {"thinking_level": "minimal"}

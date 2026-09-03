@@ -13,6 +13,8 @@ The three structural-honesty layers are visible here, top to bottom:
 
 from __future__ import annotations
 
+import re
+
 import json
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -102,6 +104,9 @@ def model_name(model: str) -> str:
     return name
 
 
+_NO_MINIMAL = re.compile(r"gemini-3\.(7|8|9)")
+
+
 def gemini_thinking_kwargs(model: str, budget: int) -> dict:
     """The thinking field a Gemini model accepts, from the budget the caller means.
 
@@ -113,7 +118,9 @@ def gemini_thinking_kwargs(model: str, budget: int) -> dict:
     if "2.5" in model or "2.0" in model:
         return {"thinking_budget": budget}
     if budget == 0:
-        return {"thinking_level": "minimal"}
+        # 3.7 and 3.8 reject "minimal" (400: Thinking level MINIMAL not supported); "low" is
+        # their floor. Probed 2026-09-03.
+        return {"thinking_level": "low" if _NO_MINIMAL.search(model) else "minimal"}
     if budget < 0:
         return {"thinking_level": "high"}
     return {"thinking_level": "medium"}
