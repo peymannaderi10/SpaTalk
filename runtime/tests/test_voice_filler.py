@@ -72,7 +72,7 @@ def test_fillers_are_short_fixed_wording_in_the_bundle():
     cfg = _cfg()
     assert len(cfg.scripts.fillers) >= 2
     for text in cfg.scripts.fillers:
-        assert len(text.split()) <= 3, text
+        assert len(text.split()) <= 5, text
         assert not any(w in text.lower() for w in ("booked", "confirmed", "sent", "done"))
 
 

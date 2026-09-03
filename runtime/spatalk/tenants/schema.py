@@ -122,7 +122,7 @@ class Scripts(BaseModel, frozen=True):
 
     # Spoken by the system the instant a phone turn is handed to the model, rotating, so the
     # caller never waits in silence for the first token (voice only; never in a transcript).
-    fillers: list[str] = Field(default_factory=lambda: ["Okay.", "Let me check.", "One moment."])
+    fillers: list[str] = Field(default_factory=lambda: ["Okay, let me check.", "Alright, one moment.", "Let me have a look."])
 
     @model_validator(mode="after")
     def _no_completion_words(self):

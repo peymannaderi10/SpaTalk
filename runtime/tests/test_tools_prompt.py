@@ -66,3 +66,17 @@ def test_prompt_makes_booking_a_short_exchange_that_collects_a_name():
     assert "when they want to book" in p
     assert "stop describing" in p and "first name" in p
     assert "never file a booking, callback or reschedule request without a first name" in p
+
+
+def test_the_only_thing_that_changes_between_calls_is_at_the_end_of_the_prompt():
+    """The model caches a shared prefix; the clock line must not sit in front of it."""
+    from datetime import timedelta
+
+    from spatalk.brain.prompt import build_system_prompt
+    cfg = _cfg()
+    a = build_system_prompt(cfg, "voice", NOW)
+    b = build_system_prompt(cfg, "voice", NOW + timedelta(days=1, hours=3))
+    assert a != b
+    assert a.split("RIGHT NOW")[0] == b.split("RIGHT NOW")[0]
+    assert a.index("RIGHT NOW") > a.index("FACTS ABOUT")
+    assert "set up" in a and "not even when offering help" in a
