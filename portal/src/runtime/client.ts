@@ -744,6 +744,12 @@ export interface components {
             channel: string;
             /** Health Context */
             health_context: boolean;
+            /** Returning Client */
+            returning_client: boolean | null;
+            /** Practitioner */
+            practitioner: string | null;
+            /** Concern */
+            concern: string | null;
             /** State */
             state: string;
             /**
@@ -768,6 +774,12 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /** Summary */
+            summary: string;
+            /** Service Name */
+            service_name: string | null;
+            /** Preferred Text */
+            preferred_text: string;
         };
         /** LatencyDay */
         LatencyDay: {

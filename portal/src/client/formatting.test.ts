@@ -3,11 +3,13 @@ import {
   bandLabel,
   blockStateLabel,
   channelLabel,
+  clientLabel,
   formatCad,
   formatDuration,
   formatMinutes,
   isOverdue,
   itemTypeLabel,
+  practitionerLabel,
 } from "./formatting";
 
 describe("bandLabel", () => {
@@ -97,5 +99,35 @@ describe("blockStateLabel", () => {
 
   test("a mute that has passed says so", () => {
     expect(blockStateLabel("2026-09-01T12:00:00Z", now)).toBe("Mute ended");
+  });
+});
+
+describe("clientLabel", () => {
+  test("says in words whether the caller had been in before", () => {
+    expect(clientLabel(false)).toBe("New client");
+    expect(clientLabel(true)).toBe("Returning client");
+  });
+
+  test("says nothing at all when the question was never asked", () => {
+    expect(clientLabel(null)).toBe("");
+    expect(clientLabel(undefined)).toBe("");
+  });
+});
+
+describe("practitionerLabel", () => {
+  test("names the person the caller asked for", () => {
+    expect(practitionerLabel("Amanda Coutts")).toBe("Amanda Coutts");
+  });
+
+  test("reads the runtime's \"any\" as a preference that was asked for", () => {
+    expect(practitionerLabel("any")).toBe("No preference");
+    expect(practitionerLabel("Any")).toBe("No preference");
+  });
+
+  test("says nothing when nobody was ever asked about", () => {
+    expect(practitionerLabel(null)).toBe("");
+    expect(practitionerLabel(undefined)).toBe("");
+    expect(practitionerLabel("")).toBe("");
+    expect(practitionerLabel("   ")).toBe("");
   });
 });

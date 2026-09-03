@@ -40,6 +40,34 @@ export function itemTypeLabel(type: string): string {
   return ITEM_TYPES[type] ?? type.replace(/_/g, " ");
 }
 
+/**
+ * `items.returning_client`: the caller was asked whether they had been in
+ * before. Null is not "new" — it is that the question never came up, and a card
+ * that says nothing is the honest reading of it.
+ */
+export function clientLabel(returning: boolean | null | undefined): string {
+  if (returning === true) {
+    return "Returning client";
+  }
+  if (returning === false) {
+    return "New client";
+  }
+  return "";
+}
+
+/**
+ * `items.practitioner`: a name from the tenant's team, or the literal `"any"`
+ * the runtime stores when the caller was asked and had no one in mind. Null
+ * means nobody was asked about, so the card shows no line at all.
+ */
+export function practitionerLabel(value: string | null | undefined): string {
+  const name = (value ?? "").trim();
+  if (name === "") {
+    return "";
+  }
+  return name.toLowerCase() === "any" ? "No preference" : name;
+}
+
 const CHANNELS: Record<string, string> = {
   voice: "Phone",
   sms: "Text",
