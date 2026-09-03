@@ -171,3 +171,7 @@ be visible to the orchestrator.
   environment.
 
 Blocked on: nothing.
+
+## Resolution (orchestrator, 2026-09-02)
+
+All three strict xfails closed in the commit after this review and their markers removed: `build_sms_text` and `build_list_sms` now fold curly quotes, dashes and accents into GSM-7 and enforce the limit in carrier segments (a name in another script costs the front of the message, never the link; new test with a CJK tenant name); `build_list_sms` collapses whitespace in caller names so one item is one line; an opted-out staff number still has its ACK, DONE and LIST carried out but is sent nothing until it texts START (`_staff_send`, warning logged). The runbook now names the real messaging profile, `spatalk-sms`.

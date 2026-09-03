@@ -27,6 +27,7 @@ from spatalk.text.staff import parse_staff_command, staff_numbers
 from spatalk.text.service import (
     TextConversationService,
     add_optout,
+    is_opted_out,
     make_text_llm,
     record_inbound,
     remove_optout,
@@ -164,7 +165,20 @@ async def _audit(ctx, actor: str, action: str, record_type: str, record_id: str)
         s.add(AuditLog(actor=actor, action=action, record_type=record_type, record_id=record_id))
 
 
-async def _staff_ledger_action(ctx, cfg, sender: str, command: str, item_id: int) -> dict:
+async def _staff_send(ctx, cfg, sender: str, muted: bool, text: str) -> None:
+    if muted:
+        logger.warning(
+            "staff number {} is opted out of {} texts; reply withheld until it texts START",
+            sender,
+            cfg.id,
+        )
+        return
+    await _send(ctx, cfg, sender, text)
+
+
+async def _staff_ledger_action(
+    ctx, cfg, sender: str, command: str, item_id: int, muted: bool = False
+) -> dict:
     """Acknowledge or resolve one item on behalf of the number that texted in."""
     item = await ctx.ledger.get(item_id)
     # An id from another tenant, or one already resolved, is not this number's to close. The
@@ -172,35 +186,38 @@ async def _staff_ledger_action(ctx, cfg, sender: str, command: str, item_id: int
     # member which other tenant holds that id would leak across the boundary.
     if item is None or item.tenant_id != cfg.id or item.state not in ("open", "acknowledged"):
         logger.warning("staff sms from {} named item {} it cannot act on", sender, item_id)
-        await _send(ctx, cfg, sender, STAFF_UNKNOWN_ITEM.format(id=item_id))
+        await _staff_send(ctx, cfg, sender, muted, STAFF_UNKNOWN_ITEM.format(id=item_id))
         return {"ok": True, "handled": "staff_unknown_item"}
 
     actor = f"sms:{sender}"
     act = ctx.ledger.acknowledge if command == "ack" else ctx.ledger.resolve
     updated = await act(item_id, actor)
     if updated is None:  # the row went away between the read and the write
-        await _send(ctx, cfg, sender, STAFF_UNKNOWN_ITEM.format(id=item_id))
+        await _staff_send(ctx, cfg, sender, muted, STAFF_UNKNOWN_ITEM.format(id=item_id))
         return {"ok": True, "handled": "staff_unknown_item"}
     await _audit(ctx, actor, command, "item", str(item_id))
     reply = STAFF_ACK_REPLY if command == "ack" else STAFF_RESOLVE_REPLY
-    await _send(ctx, cfg, sender, reply.format(id=item_id))
+    await _staff_send(ctx, cfg, sender, muted, reply.format(id=item_id))
     return {"ok": True, "handled": f"staff_{command}"}
 
 
 async def _staff_reply(ctx, cfg, sender: str, text: str) -> dict:
     """Everything an authorised number can do by text, and nothing else."""
     now = ctx.clock.now()
+    # A staff number that texted STOP is still staff: its commands are carried out, but no
+    # text goes back until it texts START (plan S: opt-outs are respected even for staff).
+    muted = await is_opted_out(ctx.sf, cfg.id, sender)
     command, item_id, remainder = parse_staff_command(text)
     if command == "list":
         open_items = await ctx.ledger.list_open(cfg.id)
-        await _send(ctx, cfg, sender, build_list_sms(open_items, cfg, now))
+        await _staff_send(ctx, cfg, sender, muted, build_list_sms(open_items, cfg, now))
         return {"ok": True, "handled": "staff_list"}
     if command == "relay" and remainder:
         if await takeover.relay_staff_sms(ctx, cfg, sender, text):
             return {"ok": True, "handled": "staff_relay"}
     elif command in ("ack", "resolve"):
-        return await _staff_ledger_action(ctx, cfg, sender, command, item_id)
-    await _send(ctx, cfg, sender, render_script("help_text", cfg, now, urgent=False))
+        return await _staff_ledger_action(ctx, cfg, sender, command, item_id, muted)
+    await _staff_send(ctx, cfg, sender, muted, render_script("help_text", cfg, now, urgent=False))
     return {"ok": True, "handled": "staff_help"}
 # --- end sms staff delivery (plan S) ---------------------------------------------------------
 

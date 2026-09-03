@@ -27,7 +27,7 @@ Not needed for the demo: OVH, Cloudflare, AWS SES, Stripe, Meta, Slack, a domain
 1. Telnyx: complete verification, add a card, fund $20. Auth → API Keys → create → `TELNYX_API_KEY`. Numbers → Buy → Canada → Local → 905 → buy one. Voice → TeXML Applications → Create `spatalk-demo` with any placeholder Voice URL for now (you set the real one each demo). Assign the number to it.
 2. Soniox: API key → `SONIOX_API_KEY`; pick a TTS voice from their voices page → `SONIOX_VOICE`.
 3. Inworld (optional): workspace, runtime API key (copy the Base64 "Basic" credential) → `INWORLD_API_KEY`; pick a voice id → `INWORLD_VOICE`. Only if you want to compare voices.
-4. Telnyx messaging, so items can reach your phone: Messaging → Messaging Profiles → Create `spatalk-demo-sms` and assign the number you bought to it (leave the webhook URL blank for now; you set it on demo day, when the tunnel hostname exists). Auth → Public Key → copy the Ed25519 public key: that is what proves an inbound text really came from Telnyx.
+4. Telnyx messaging, so items can reach your phone: Messaging → Messaging Profiles → Create `spatalk-sms` and assign the number you bought to it (leave the webhook URL blank for now; you set it on demo day, when the tunnel hostname exists). Auth → Public Key → copy the Ed25519 public key: that is what proves an inbound text really came from Telnyx.
 5. Put the number the texts are sent *from* into the tenant bundle: edit `runtime/tenants/skincentrix/tenant.yaml`, set `sms_from_number` to the number you bought, and re-run `spatalk tenant import` (below). The number the texts go *to* is never written into the bundle: the bundle names the environment variable `SKINCENTRIX_STAFF_SMS`, and only your `.env` holds the digits.
 6. Append to `runtime/.env` (never commit it):
 
@@ -76,7 +76,7 @@ curl -s https://quiet-fox-1234.trycloudflare.com/healthz      # expect {"ok":tru
 Telnyx portal, two URLs to set from the same hostname:
 
 - Voice → TeXML Applications → `spatalk-demo` → Voice URL `https://quiet-fox-1234.trycloudflare.com/telnyx/texml`, method POST → Save.
-- Messaging → Messaging Profiles → `spatalk-demo-sms` → Inbound Settings → Webhook URL `https://quiet-fox-1234.trycloudflare.com/telnyx/sms`, method POST → Save. Without this the items still arrive on your phone; your `ACK` and `DONE` replies just go nowhere.
+- Messaging → Messaging Profiles → `spatalk-sms` → Inbound Settings → Webhook URL `https://quiet-fox-1234.trycloudflare.com/telnyx/sms`, method POST → Save. Without this the items still arrive on your phone; your `ACK` and `DONE` replies just go nowhere.
 
 Check the round trip before anyone is watching: text `LIST` from your mobile to the demo number and you should get "Skincentrix front desk: 0 open item(s)." back within a few seconds.
 

@@ -14,6 +14,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from spatalk import jobs
 from spatalk.brain.hours import humanize_due
+import unicodedata
+
 from spatalk.conversations import record_usage
 from spatalk.ledger.links import sign_action
 from spatalk.models import Item, WhatsAppWindow
@@ -754,6 +756,7 @@ SMS_MULTI_GSM7 = 153
 SMS_SINGLE_UCS2 = 70
 SMS_MULTI_UCS2 = 67
 SMS_STAFF_LIMIT = 3 * SMS_MULTI_GSM7          # 459
+SMS_STAFF_SEGMENTS = 3
 
 SMS_HEALTH_LINE = "Caller mentioned a health condition; read the transcript first."
 SMS_DIGEST_TEXT = "{name} front desk: {n} open item(s). Reply LIST for details."
@@ -783,6 +786,43 @@ def sms_segments(text: str) -> int:
         length = len(text.encode("utf-16-le")) // 2
         single, multi = SMS_SINGLE_UCS2, SMS_MULTI_UCS2
     return 1 if length <= single else -(-length // multi)
+
+
+# Characters a phone keyboard or a CRM export produces that GSM 03.38 lacks, with the nearest
+# character it has. One character outside the alphabet turns the whole body into UCS-2, where
+# three segments hold 201 characters instead of 459.
+_GSM7_FOLD = {
+    "\u2018": "'", "\u2019": "'", "\u201a": "'", "\u2032": "'",
+    "\u201c": '"', "\u201d": '"', "\u201e": '"', "\u2033": '"',
+    "\u2013": "-", "\u2014": "-", "\u2212": "-", "\u00a0": " ", "\u2026": "...",
+}
+
+
+def gsm7_fold(text: str) -> str:
+    """The same text in the GSM-7 alphabet wherever a lossless swap exists.
+
+    Curly quotes, dashes and non-breaking spaces become their plain forms; accented letters
+    the alphabet lacks lose their accent; anything else (a name in another script) is kept
+    as it is, and the segment rule then decides what gives way.
+    """
+    out = []
+    for c in text:
+        if c in GSM7_BASIC or c in GSM7_EXTENDED:
+            out.append(c)
+            continue
+        if c in _GSM7_FOLD:
+            out.append(_GSM7_FOLD[c])
+            continue
+        base = "".join(
+            ch for ch in unicodedata.normalize("NFKD", c) if not unicodedata.combining(ch)
+        )
+        out.append(base if base and all(ch in GSM7_BASIC for ch in base) else c)
+    return "".join(out)
+
+
+def _fits_staff_sms(text: str) -> bool:
+    """The rule is three segments as the carrier counts them, not a character total."""
+    return sms_segments(text) <= SMS_STAFF_SEGMENTS
 
 
 def _sms_who(item: Item) -> str:
@@ -833,12 +873,15 @@ def build_sms_text(
 
     text = ""
     for with_health, with_who in ((flagged, True), (False, True), (False, False)):
-        text = assemble(with_health, with_who)
-        if len(text) <= SMS_STAFF_LIMIT:
+        text = gsm7_fold(assemble(with_health, with_who))
+        if _fits_staff_sms(text):
             return text
-    # Nothing left to drop: cut the front, keep the link whole.
-    room = SMS_STAFF_LIMIT - len(tail) - 1
-    return f"{text[:room].rstrip()} {tail}" if room > 0 else tail[:SMS_STAFF_LIMIT]
+    # Nothing left to drop: cut the front, keep the link whole. Measured in segments, so a
+    # name in another script costs the front of the message, never the link.
+    body = text[: len(text) - len(tail)].rstrip()
+    while body and not _fits_staff_sms(f"{body} {tail}"):
+        body = body[:-1].rstrip()
+    return f"{body} {tail}" if body else tail
 
 
 def build_list_sms(items: list[Item], cfg: TenantConfig, now: datetime | None = None) -> str:
@@ -847,11 +890,11 @@ def build_list_sms(items: list[Item], cfg: TenantConfig, now: datetime | None = 
     lines = [SMS_LIST_HEADER.format(name=cfg.name, n=len(items))]
     for item in items[:SMS_LIST_MAX_ITEMS]:
         due = humanize_due(item.due_at, now, cfg.timezone, item.urgency == "urgent")
-        lines.append(
-            f"#{item.id} {TYPE_LABELS.get(item.type, item.type)}, "
-            f"{item.contact_name or 'name not given'}, due {due}"
-        )
-    while len(lines) > 1 and len("\n".join(lines)) > SMS_STAFF_LIMIT:
+        # A caller dictated the name; collapsing its whitespace keeps one item to one line.
+        name = " ".join((item.contact_name or "name not given").split())
+        lines.append(f"#{item.id} {TYPE_LABELS.get(item.type, item.type)}, {name}, due {due}")
+    lines = [gsm7_fold(line) for line in lines]
+    while len(lines) > 1 and not _fits_staff_sms("\n".join(lines)):
         lines.pop()
     return "\n".join(lines)
 

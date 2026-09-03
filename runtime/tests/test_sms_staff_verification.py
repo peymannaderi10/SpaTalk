@@ -8,9 +8,8 @@ promises the plan makes about a text that lands on the owner's own mobile:
 * an opt-out and a missing messaging number are honoured out loud, never silently;
 * the transcript link survives every cut.
 
-Three of them are marked ``xfail(strict=True)``: they are executable descriptions of gaps
-found during verification, and they will turn into failures the moment the gap is closed,
-which is the signal to delete the marker. Nothing here changes product code.
+Three of them began as ``xfail(strict=True)`` descriptions of gaps found during verification;
+the gaps were closed in the commit that followed the review and the markers removed.
 """
 
 import json
@@ -427,12 +426,6 @@ async def test_an_absurd_tenant_name_cuts_the_head_and_still_ends_in_the_whole_l
     assert text.endswith(TRANSCRIPT) and text.count("Transcript:") == 1
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="gap: the builder caps characters, not segments. One non-GSM-7 character makes the "
-    "whole body UCS-2, where 459 characters is seven segments, not the three the plan promises "
-    "and record_usage then meters.",
-)
 async def test_a_staff_text_is_three_segments_even_when_a_name_is_not_gsm7(fixed_clock, registry):
     from spatalk.ledger.delivery import build_sms_text, sms_segments
 
@@ -445,11 +438,20 @@ async def test_a_staff_text_is_three_segments_even_when_a_name_is_not_gsm7(fixed
     assert sms_segments(text) <= 3
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="gap: build_list_sms joins with newlines but does not collapse whitespace in "
-    "contact_name the way _sms_who does, so a caller-dictated name forges an extra item line.",
-)
+async def test_a_name_in_another_script_still_leaves_three_segments_and_the_link(
+    fixed_clock, registry
+):
+    """Nothing here folds into GSM-7, so the body stays UCS-2 and the front gives way."""
+    from spatalk.ledger.delivery import build_sms_text, sms_segments
+
+    cfg = (await registry.get("skincentrix")).model_copy(update={"name": "\u7f8e\u5bb9" * 150})
+    item = _fake_item(fixed_clock, contact_name="\u738b\u79c0\u82f1")
+    text = build_sms_text(item, cfg, _links(), fixed_clock.now())
+
+    assert sms_segments(text) <= 3
+    assert text.endswith(TRANSCRIPT) and text.count("Transcript:") == 1
+
+
 async def test_a_caller_name_cannot_forge_an_item_line_in_the_list_reply(fixed_clock, registry):
     from spatalk.ledger.delivery import build_list_sms
 
@@ -460,11 +462,6 @@ async def test_a_caller_name_cannot_forge_an_item_line_in_the_list_reply(fixed_c
     assert len(text.splitlines()) == 2          # the header and one real item
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="gap: the plan says an opted-out staff number is sent nothing, and the delivery job "
-    "obeys, but the reply path answers ACK, DONE, LIST and the help text without checking.",
-)
 async def test_an_opted_out_staff_number_is_answered_with_nothing(
     staff_client, sf, registry, fixed_clock
 ):
