@@ -181,3 +181,34 @@ def test_ci_runs_the_edge_worker_tests():
     assert str(node[0]["with"]["node-version"]) == "22"
     working = [s.get("working-directory") for s in edge["steps"] if "run" in s]
     assert all(w == "edge/sms-worker" for w in working if w is not None)
+
+
+# --- the permanent block list rides along (plan F, F3) --------------------------
+
+
+async def test_only_permanent_blocks_are_collected_for_the_worker(ctx, registry, fixed_clock):
+    from datetime import timedelta
+
+    from spatalk.cli import collect_blocked_numbers
+    from spatalk.text.flood import block, mute
+
+    cfg = await registry.get("skincentrix")
+    await block(ctx, cfg, "+19055550188", "cli:test")
+    await mute(
+        ctx, cfg, "+19055550189", fixed_clock.now() + timedelta(hours=1), "flood", "system:flood"
+    )
+    assert await collect_blocked_numbers(ctx) == ["+19055550188"]
+
+
+async def test_sync_pushes_the_block_list_even_when_empty_so_the_worker_prunes(ctx, registry):
+    from spatalk.cli import sync_blocked_numbers
+
+    http, seen = _recording_client()
+    async with http:
+        pushed = await sync_blocked_numbers(ctx, WORKER_URL, EDGE_KEY, http=http)
+    assert pushed == [] and len(seen) == 1
+    request = seen[0]
+    assert request.method == "PUT"
+    assert str(request.url) == f"{WORKER_URL}/admin/blocked-numbers"
+    assert request.headers["X-Edge-Key"] == EDGE_KEY
+    assert json.loads(request.content.decode()) == {"numbers": []}

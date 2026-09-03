@@ -8,7 +8,12 @@
  * comes from KV, written there by `spatalk edge sync-texts` from the tenant's
  * `scripts.offline_reply`.
  *
- * Routes: POST /telnyx/sms, POST /chat/fallback, PUT /admin/tenant-texts.
+ * Routes: POST /telnyx/sms, POST /chat/fallback, PUT /admin/tenant-texts,
+ * PUT /admin/blocked-numbers.
+ *
+ * Flood guard (plan F, F3): the offline reply goes out at most once per sender per hour,
+ * and never to a number the runtime has blocked for good (`blocked:<E.164>` keys, pushed
+ * by `spatalk edge sync-texts`). Every event is still queued for replay either way.
  * Cron: every 5 minutes, replay whatever is still pending.
  */
 import { verifyTelnyxSignature } from "./telnyx-signature";
@@ -22,9 +27,9 @@ export interface Env {
   TELNYX_PUBLIC_KEY: string;
   /** Telnyx API key, used only for the offline auto-reply. */
   TELNYX_API_KEY: string;
-  /** `<to E.164>` -> `{tenant_id, from, text}` */
+  /** `<to E.164>` -> `{tenant_id, from, text}`; `blocked:<sender E.164>` -> ISO timestamp */
   TENANT_TEXTS: KVNamespace;
-  /** `pending:<message_id>`, `pending:chat:<uuid>`, `replied:<message_id>` */
+  /** `pending:<message_id>`, `pending:chat:<uuid>`, `replied:<message_id>`, `replied:sender:<E.164>` */
   PENDING: KVNamespace;
 }
 
@@ -38,16 +43,22 @@ export interface TenantText {
 const SMS_PATH = "/telnyx/sms";
 const CHAT_FALLBACK_PATH = "/chat/fallback";
 const ADMIN_TENANT_TEXTS_PATH = "/admin/tenant-texts";
+const ADMIN_BLOCKED_NUMBERS_PATH = "/admin/blocked-numbers";
 const TELNYX_MESSAGES_URL = "https://api.telnyx.com/v2/messages";
 
 const FORWARD_TIMEOUT_MS = 8_000;
 const SIGNATURE_TOLERANCE_S = 300;
 const PENDING_TTL_S = 24 * 60 * 60;
 const REPLIED_TTL_S = 7 * 24 * 60 * 60;
+/** One offline reply per sender per hour, however many texts they send (plan F). */
+const SENDER_REPLY_TTL_S = 60 * 60;
 
 const PENDING_PREFIX = "pending:";
 const PENDING_CHAT_PREFIX = "pending:chat:";
 const REPLIED_PREFIX = "replied:";
+const SENDER_REPLIED_PREFIX = "replied:sender:";
+const BLOCKED_PREFIX = "blocked:";
+const E164 = /^\+[1-9]\d{7,14}$/;
 
 export default {
   async fetch(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
@@ -60,6 +71,9 @@ export default {
     }
     if (request.method === "PUT" && url.pathname === ADMIN_TENANT_TEXTS_PATH) {
       return handleAdminTenantTexts(request, env);
+    }
+    if (request.method === "PUT" && url.pathname === ADMIN_BLOCKED_NUMBERS_PATH) {
+      return handleAdminBlockedNumbers(request, env);
     }
     return json({ error: "not found" }, 404);
   },
@@ -147,6 +161,46 @@ async function handleAdminTenantTexts(request: Request, env: Env): Promise<Respo
   return json({ ok: true, count: texts.length });
 }
 
+/**
+ * Replace the permanent block list: `blocked:<E.164>` keys for the numbers given, and no
+ * others. Pushed by `spatalk edge sync-texts`; mutes are not pushed because they expire on
+ * their own and only matter while the runtime is up to enforce them.
+ */
+async function handleAdminBlockedNumbers(request: Request, env: Env): Promise<Response> {
+  const presented = request.headers.get("X-Edge-Key") ?? "";
+  if (env.EDGE_SHARED_KEY === "" || !constantTimeEquals(presented, env.EDGE_SHARED_KEY)) {
+    return json({ error: "unauthorized" }, 401);
+  }
+
+  const body = asRecord(await parseJson(await request.text()));
+  const numbers = asArray(body?.numbers);
+  if (numbers === null) return json({ error: "expected {numbers: [E.164, ...]}" }, 400);
+  const wanted = new Set<string>();
+  for (const value of numbers) {
+    if (typeof value !== "string" || !E164.test(value)) {
+      return json({ error: `not an E.164 number: ${String(value)}` }, 400);
+    }
+    wanted.add(value);
+  }
+
+  let cursor: string | undefined;
+  const present = new Set<string>();
+  do {
+    const listed = await env.TENANT_TEXTS.list({ prefix: BLOCKED_PREFIX, cursor });
+    for (const key of listed.keys) present.add(key.name.slice(BLOCKED_PREFIX.length));
+    cursor = listed.list_complete ? undefined : listed.cursor;
+  } while (cursor !== undefined);
+
+  const stamp = new Date().toISOString();
+  for (const number of wanted) {
+    if (!present.has(number)) await env.TENANT_TEXTS.put(`${BLOCKED_PREFIX}${number}`, stamp);
+  }
+  for (const number of present) {
+    if (!wanted.has(number)) await env.TENANT_TEXTS.delete(`${BLOCKED_PREFIX}${number}`);
+  }
+  return json({ ok: true, count: wanted.size });
+}
+
 // --- offline path -----------------------------------------------------------
 
 /**
@@ -179,13 +233,24 @@ async function maybeAutoReply(
   const tenantText = asTenantText(await env.TENANT_TEXTS.get(to, "json"));
   if (tenantText === null) return;
 
+  // A number the runtime blocked for good is never answered here either (plan F).
+  if ((await env.TENANT_TEXTS.get(`${BLOCKED_PREFIX}${sender}`)) !== null) return;
+
   const alreadyReplied = await env.PENDING.get(`${REPLIED_PREFIX}${messageId}`);
   if (alreadyReplied !== null) return;
 
-  // Claim the message id before sending: one attempt per message id, ever.
-  await env.PENDING.put(`${REPLIED_PREFIX}${messageId}`, new Date().toISOString(), {
+  // One reply per sender per hour: a flood during an outage costs one text, not one per
+  // text (plan F). The event itself is still queued for replay by the caller.
+  const senderKey = `${SENDER_REPLIED_PREFIX}${sender}`;
+  if ((await env.PENDING.get(senderKey)) !== null) return;
+
+  // Claim the message id and the sender before sending: one attempt per message id, ever,
+  // and one per sender per hour.
+  const stamp = new Date().toISOString();
+  await env.PENDING.put(`${REPLIED_PREFIX}${messageId}`, stamp, {
     expirationTtl: REPLIED_TTL_S,
   });
+  await env.PENDING.put(senderKey, stamp, { expirationTtl: SENDER_REPLY_TTL_S });
 
   try {
     const response = await fetch(TELNYX_MESSAGES_URL, {

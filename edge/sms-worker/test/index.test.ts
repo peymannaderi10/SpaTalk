@@ -367,3 +367,109 @@ describe("unknown routes", () => {
     expect(response.status).toBe(404);
   });
 });
+
+describe("offline replies during a flood (plan F)", () => {
+  async function offline(key: Awaited<ReturnType<typeof makeTelnyxKey>>, messageId: string, from: string) {
+    const ctx = createExecutionContext();
+    const response = await worker.fetch(
+      await signedSmsRequest({ key, messageId, from }),
+      envWith({ TELNYX_PUBLIC_KEY: key.publicKeyB64 }),
+      ctx,
+    );
+    await waitOnExecutionContext(ctx);
+    expect(response.status).toBe(200);
+  }
+
+  it("replies once per sender per hour, not once per text, and queues every text", async () => {
+    const key = await makeTelnyxKey();
+    const calls = stubFetch({
+      [RUNTIME_SMS]: () => textResponse(503, "runtime down"),
+      [TELNYX_MESSAGES]: () => jsonResponse(200, { data: { id: "out-1" } }),
+    });
+
+    await offline(key, "msg-flood-1", "+19055550101");
+    await offline(key, "msg-flood-2", "+19055550101");
+    await offline(key, "msg-flood-3", "+19055550101");
+
+    expect(callsTo(calls, TELNYX_MESSAGES)).toHaveLength(1);
+    expect(await pendingKeys()).toEqual([
+      "pending:msg-flood-1",
+      "pending:msg-flood-2",
+      "pending:msg-flood-3",
+    ]);
+    expect(await env.PENDING.get("replied:sender:+19055550101")).not.toBeNull();
+  });
+
+  it("gives a second sender its own reply", async () => {
+    const key = await makeTelnyxKey();
+    const calls = stubFetch({
+      [RUNTIME_SMS]: () => textResponse(503, "runtime down"),
+      [TELNYX_MESSAGES]: () => jsonResponse(200, { data: { id: "out-1" } }),
+    });
+
+    await offline(key, "msg-a", "+19055550101");
+    await offline(key, "msg-b", "+19055550102");
+
+    const replies = callsTo(calls, TELNYX_MESSAGES).map((call) => JSON.parse(call.body).to);
+    expect(replies.sort()).toEqual(["+19055550101", "+19055550102"]);
+  });
+
+  it("never replies to a blocked sender, but still queues the event for replay", async () => {
+    await env.TENANT_TEXTS.put("blocked:+19055550101", "2026-09-03T00:00:00Z");
+    const key = await makeTelnyxKey();
+    const calls = stubFetch({
+      [RUNTIME_SMS]: () => textResponse(503, "runtime down"),
+      [TELNYX_MESSAGES]: () => jsonResponse(200, { data: { id: "out-1" } }),
+    });
+
+    await offline(key, "msg-blocked-1", "+19055550101");
+
+    expect(callsTo(calls, TELNYX_MESSAGES)).toHaveLength(0);
+    expect(await pendingKeys()).toEqual(["pending:msg-blocked-1"]);
+  });
+});
+
+describe("PUT /admin/blocked-numbers", () => {
+  function put(body: unknown, key = "edge-key-for-tests"): Request {
+    return new Request("https://edge.test/admin/blocked-numbers", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "X-Edge-Key": key },
+      body: JSON.stringify(body),
+    });
+  }
+
+  it("rejects a request without the right edge key", async () => {
+    const ctx = createExecutionContext();
+    const response = await worker.fetch(put({ numbers: [] }, "wrong"), envWith(), ctx);
+    await waitOnExecutionContext(ctx);
+    expect(response.status).toBe(401);
+  });
+
+  it("writes the list given and prunes numbers no longer on it", async () => {
+    await env.TENANT_TEXTS.put("blocked:+19055550999", "stale");
+    const ctx = createExecutionContext();
+    const response = await worker.fetch(
+      put({ numbers: ["+19055550101", "+19055550102"] }),
+      envWith(),
+      ctx,
+    );
+    await waitOnExecutionContext(ctx);
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true, count: 2 });
+    expect(await env.TENANT_TEXTS.get("blocked:+19055550101")).not.toBeNull();
+    expect(await env.TENANT_TEXTS.get("blocked:+19055550102")).not.toBeNull();
+    expect(await env.TENANT_TEXTS.get("blocked:+19055550999")).toBeNull();
+    // The tenant text itself is untouched.
+    expect(await env.TENANT_TEXTS.get("+18885550100", "json")).toEqual(TENANT_TEXT);
+  });
+
+  it("rejects a body without an array of E.164 numbers", async () => {
+    for (const body of [{ numbers: "nope" }, { numbers: ["905-555-0101"] }, {}]) {
+      const ctx = createExecutionContext();
+      const response = await worker.fetch(put(body), envWith(), ctx);
+      await waitOnExecutionContext(ctx);
+      expect(response.status).toBe(400);
+    }
+  });
+});

@@ -177,6 +177,7 @@ def serve(host: str = "0.0.0.0", port: int = 8000):
 # `scripts.offline_reply` and nothing generated.
 
 TENANT_TEXTS_PATH = "/admin/tenant-texts"
+BLOCKED_NUMBERS_PATH = "/admin/blocked-numbers"
 
 
 async def collect_tenant_texts(ctx) -> dict[str, dict[str, str]]:
@@ -220,18 +221,68 @@ async def sync_tenant_texts(
     return texts
 
 
+async def collect_blocked_numbers(ctx) -> list[str]:
+    """Every permanently blocked number across tenants (plan F, F3).
+
+    Flood mutes are left out on purpose: they expire on their own, and they only matter
+    while the runtime is up to enforce them. The worker needs the blocks that must hold
+    even during an outage.
+    """
+    from spatalk.text.flood import list_blocks
+
+    numbers: set[str] = set()
+    for tenant_id in await ctx.registry.list_tenants():
+        for row in await list_blocks(ctx, tenant_id):
+            if row.until is None:
+                numbers.add(row.phone)
+    return sorted(numbers)
+
+
+async def sync_blocked_numbers(
+    ctx, worker_url: str, key: str, http: httpx.AsyncClient | None = None
+) -> list[str]:
+    """Replace the worker's block list with ours. Pushed even when empty, so it prunes."""
+    if not key:
+        raise ValueError(
+            "no EDGE_SHARED_KEY: the worker's admin endpoint refuses an unauthenticated push"
+        )
+    numbers = await collect_blocked_numbers(ctx)
+    client = http or httpx.AsyncClient(timeout=10)
+    try:
+        response = await client.put(
+            worker_url.rstrip("/") + BLOCKED_NUMBERS_PATH,
+            json={"numbers": numbers},
+            headers={"X-Edge-Key": key},
+        )
+        response.raise_for_status()
+    finally:
+        if http is None:
+            await client.aclose()
+    return numbers
+
+
 @edge.command("sync-texts")
 def edge_sync_texts(worker_url: str, key: str = "", dry_run: bool = False):
-    """Send every tenant's offline auto-reply to the SMS worker's KV."""
+    """Send every tenant's offline auto-reply, and the permanent SMS block list, to the worker."""
     settings = get_settings()
     ctx = build_context(settings)
-    if dry_run:
-        texts = asyncio.run(collect_tenant_texts(ctx))
-    else:
-        texts = asyncio.run(sync_tenant_texts(ctx, worker_url, key or settings.edge_shared_key))
+    edge_key = key or settings.edge_shared_key
+
+    async def go() -> tuple[dict[str, dict[str, str]], list[str]]:
+        if dry_run:
+            return await collect_tenant_texts(ctx), await collect_blocked_numbers(ctx)
+        texts = await sync_tenant_texts(ctx, worker_url, edge_key)
+        blocked = await sync_blocked_numbers(ctx, worker_url, edge_key)
+        return texts, blocked
+
+    texts, blocked = asyncio.run(go())
+    verb = "collected" if dry_run else "synced"
     for number, entry in texts.items():
         typer.echo(f"{number} -> {entry['tenant_id']}: {entry['text']}")
-    typer.echo(f"{len(texts)} number(s) {'collected' if dry_run else 'synced'}")
+    typer.echo(f"{len(texts)} number(s) {verb}")
+    for number in blocked:
+        typer.echo(f"blocked {number}")
+    typer.echo(f"{len(blocked)} blocked number(s) {verb}")
 
 
 # --- carrier failover (operations plan, Task E1) ------------------------------
