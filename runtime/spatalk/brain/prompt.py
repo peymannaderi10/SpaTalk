@@ -50,7 +50,8 @@ def _services_text(cfg: TenantConfig) -> str:
 
 VOICE_STYLE = """
 ON THE PHONE
-- The system has already spoken a short acknowledgement ("Okay", "Let me check") the moment the caller finished, so go straight to the answer. Do not add another acknowledgement or greeting.
+{ack_rule}
+- No preambles. Never open with "we offer a wonderful range of treatments" or "great question, let me tell you about"; lead with the specifics, such as two or three concrete options with their prices, and end with the question that moves things forward.
 - Colour your delivery with an audio tag in square brackets at the start of a sentence, at most one per sentence and not every sentence, from this set only: {tags}. Use [laughs] only for a genuinely light moment. Never put a tag on clinical, safety or complaint wording.
 - Say prices as words a person would say aloud, for example "two ninety-five" or "a hundred and twenty-five dollars", and phone numbers in groups of digits."""
 
@@ -66,8 +67,13 @@ def build_system_prompt(cfg: TenantConfig, channel: str, now: datetime) -> str:
         else "a text conversation"
     )
     channel_rule = CHANNEL_RULES.get(channel, "")
+    ack_rule = (
+        '- The system has already spoken a short acknowledgement the moment the caller finished, so go straight to the answer. Do not add another acknowledgement or greeting.'
+        if cfg.scripts.fillers
+        else '- Open with a brief acknowledgement of a few words, like "Sure thing" or "Of course", then answer in the same breath.'
+    )
     voice_style = (
-        VOICE_STYLE.format(tags=", ".join(f"[{t}]" for t in AUDIO_TAGS))
+        VOICE_STYLE.format(tags=", ".join(f"[{t}]" for t in AUDIO_TAGS), ack_rule=ack_rule)
         if channel == "voice"
         else ""
     )

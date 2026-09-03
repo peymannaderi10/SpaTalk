@@ -41,6 +41,9 @@ async def test_filler_speaks_one_fixed_sentence_per_turn_before_the_model_sees_t
     from spatalk.voice.processors import FillerProcessor
 
     session = _session(fixed_clock)
+    session.cfg = session.cfg.model_copy(
+        update={"scripts": session.cfg.scripts.model_copy(update={"fillers": ["Okay, let me check.", "Alright, one moment."]})}
+    )
     ctx = LLMContext(messages=[{"role": "system", "content": "x"}])
     down, _ = await run_test(
         FillerProcessor(session),
@@ -68,17 +71,34 @@ async def test_filler_is_silent_once_the_call_is_ending(fixed_clock):
     )
 
 
-def test_fillers_are_short_fixed_wording_in_the_bundle():
+async def test_skincentrix_has_no_fillers_and_the_processor_stays_silent(fixed_clock):
+    """Founder decision 2026-09-03: no "Okay" or "One moment"; the model's first words do it."""
+    from spatalk.tenants.schema import Scripts
+    from spatalk.voice.processors import FillerProcessor
+
     cfg = _cfg()
-    assert len(cfg.scripts.fillers) >= 2
-    for text in cfg.scripts.fillers:
-        assert len(text.split()) <= 5, text
-        assert not any(w in text.lower() for w in ("booked", "confirmed", "sent", "done"))
+    assert cfg.scripts.fillers == []
+    assert Scripts.model_fields["fillers"].default_factory() == []
+    session = _session(fixed_clock)
+    ctx = LLMContext(messages=[{"role": "system", "content": "x"}])
+    await run_test(
+        FillerProcessor(session),
+        frames_to_send=[LLMContextFrame(context=ctx)],
+        expected_down_frames=[LLMContextFrame],
+        start_timeout=10.0,
+    )
 
 
-def test_the_prompt_tells_the_model_the_acknowledgement_is_already_spoken():
+def test_the_prompt_matches_whether_fillers_are_on():
     from spatalk.brain.prompt import build_system_prompt
 
-    p = build_system_prompt(_cfg(), "voice", NOW).lower()
-    assert "already spoken a short acknowledgement" in p
-    assert "sure thing" not in p, "the model would double the system's acknowledgement"
+    cfg = _cfg()
+    without = build_system_prompt(cfg, "voice", NOW).lower()
+    assert "open with a brief acknowledgement" in without
+    assert "already spoken" not in without
+    assert "no preambles" in without and "lead with the specifics" in without
+
+    with_fillers = cfg.model_copy(update={"scripts": cfg.scripts.model_copy(update={"fillers": ["Okay, let me check."]})})
+    on = build_system_prompt(with_fillers, "voice", NOW).lower()
+    assert "already spoken a short acknowledgement" in on
+    assert "sure thing" not in on, "the model would double the system's acknowledgement"

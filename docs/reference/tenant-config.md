@@ -102,7 +102,7 @@ dm_greeting: "Hi, this is {name}'s assistant."                                  
 loop_guard: "This line is answered by the clinic's assistant and cannot transfer to itself. Please call back from another number."
 failover: "We can't take your call right now. Please text us at {sms_number} or book online at {booking_url}."                # carrier-hosted bin, pasted from `spatalk texml failover-bin`
 transferring: "One moment, I'll connect you to the team."
-fillers: ["Okay, let me check.", "Alright, one moment.", "Let me have a look."]   # phone only: spoken by the system the instant a turn is handed to the model, so the caller never waits in silence; never in a transcript
+fillers: []   # optional phone-only lines the system speaks the instant a turn is handed to the model, e.g. ["Okay, let me check."]; empty means the model's own first words do the acknowledging
 sms_paused: "Thanks for texting {name}. The assistant is paused right now. A member of the team will read your message, or you can call {phone}."   # once per sender per day when sms_guard.tenant_daily_replies is reached [F1]
 ```
 
