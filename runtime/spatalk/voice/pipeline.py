@@ -43,7 +43,7 @@ from pipecat.workers.runner import WorkerRunner
 from spatalk.brain.audio_tags import strip_audio_tags
 from spatalk.brain.capabilities import load_capabilities
 # Operations plan, Task E6: the vendor a model string names.
-from spatalk.brain.driver import OPENAI, model_name, provider_for
+from spatalk.brain.driver import OPENAI, gemini_thinking_kwargs, model_name, provider_for
 from spatalk.brain.prompt import build_system_prompt
 from spatalk.brain.renderer import render_script
 from spatalk.brain.requests import ConversationRef
@@ -161,7 +161,9 @@ def make_llm(settings):
         settings=GoogleLLMService.Settings(
             model=settings.llm_model,
             temperature=LLM_TEMPERATURE,
-            thinking=GoogleLLMService.ThinkingConfig(thinking_budget=0),
+            thinking=GoogleLLMService.ThinkingConfig(
+                **gemini_thinking_kwargs(settings.llm_model, 0)
+            ),
         ),
     )
 

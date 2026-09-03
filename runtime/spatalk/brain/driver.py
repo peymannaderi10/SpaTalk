@@ -102,6 +102,23 @@ def model_name(model: str) -> str:
     return name
 
 
+def gemini_thinking_kwargs(model: str, budget: int) -> dict:
+    """The thinking field a Gemini model accepts, from the budget the caller means.
+
+    Gemini 2.5 takes ``thinking_budget`` (0 = answer at once, -1 = unbounded). The 3.x
+    generation and the ``-latest`` aliases reject that field with ``400 INVALID_ARGUMENT``
+    and take ``thinking_level`` instead (founder call 2026-09-03: every turn went 400 and
+    the caller heard silence). ``minimal`` is the closest to "answer at once" they allow.
+    """
+    if "2.5" in model or "2.0" in model:
+        return {"thinking_budget": budget}
+    if budget == 0:
+        return {"thinking_level": "minimal"}
+    if budget < 0:
+        return {"thinking_level": "high"}
+    return {"thinking_level": "medium"}
+
+
 class GeminiClient:
     """One swappable LLM vendor. The SDK is imported lazily so tests never need the package."""
 
@@ -143,7 +160,9 @@ class GeminiClient:
             temperature=self._temperature,
             # A caller with no tools at all is the audit judge, which must classify, not act.
             tools=[types.Tool(function_declarations=decls)] if decls else None,
-            thinking_config=types.ThinkingConfig(thinking_budget=self._thinking_budget),
+            thinking_config=types.ThinkingConfig(
+                **gemini_thinking_kwargs(self._model, self._thinking_budget)
+            ),
             automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
         )
         resp = await self._client.aio.models.generate_content(
