@@ -34,6 +34,8 @@ class VoiceSession:
         }
     )
     started_at: datetime | None = None
+    # The assistant's recent words, normalised, for the echo scrubber (spatalk.voice.echo).
+    recent_bot_text: str = ""
     # --- operations (operations plan, Task E5) ---
     # Every TTFB reading of the call, in ms, filed under the stage that produced it. The
     # turn number in `latencies_ms` says the caller waited; this says which vendor made
@@ -54,3 +56,10 @@ class VoiceSession:
     # `auto_hang_up` is switched off, because the EndFrame or CancelFrame that ends our
     # side of the pipeline would otherwise hang up the leg the caller is now talking on.
     hangup_params: Any = None
+
+    def remember_spoken(self, text: str) -> None:
+        """Record something the assistant said, so its echo can be recognised."""
+        from spatalk.brain.audio_tags import strip_audio_tags
+        from spatalk.voice.echo import remember
+
+        self.recent_bot_text = remember(self.recent_bot_text, strip_audio_tags(text))

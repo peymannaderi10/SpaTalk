@@ -14,6 +14,7 @@ from loguru import logger
 from pipecat.frames.frames import (
     EndFrame,
     Frame,
+    InterimTranscriptionFrame,
     InterruptionFrame,
     LLMContextFrame,
     LLMFullResponseEndFrame,
@@ -29,6 +30,7 @@ from spatalk.brain.outcomes import Refused
 from spatalk.brain.renderer import render, render_script
 from spatalk.brain.requests import CaptureRequest, EscalateRequest
 from spatalk.brain.rules import health_context_mentioned, rules_gate
+from spatalk.voice.echo import scrub_echo
 from spatalk.voice.session import VoiceSession
 
 SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
@@ -43,6 +45,18 @@ class RulesGateProcessor(FrameProcessor):
 
     async def process_frame(self, frame: Frame, direction: FrameDirection):
         await super().process_frame(frame, direction)
+        if (
+            isinstance(frame, (TranscriptionFrame, InterimTranscriptionFrame))
+            and direction == FrameDirection.DOWNSTREAM
+        ):
+            # The assistant's own voice, heard back through the phone, is not the caller.
+            scrubbed = scrub_echo(frame.text, self._s.recent_bot_text)
+            if not scrubbed.strip():
+                logger.debug("echo dropped: {!r}", frame.text)
+                return
+            if scrubbed != frame.text:
+                logger.info("echo trimmed: {!r} -> {!r}", frame.text, scrubbed)
+                frame.text = scrubbed
         if isinstance(frame, TranscriptionFrame) and direction == FrameDirection.DOWNSTREAM:
             if health_context_mentioned(frame.text, self._s.cfg) and not self._s.ref.health_context:
                 self._s.ref = self._s.ref.model_copy(update={"health_context": True})
@@ -128,8 +142,10 @@ class OutputGuardProcessor(FrameProcessor):
                     Refused(reason="unavailable"), self._s.cfg, now, channel=self._s.ref.channel
                 )
             logger.warning("guard blocked ({}): {!r}", g.matched, sentence)
+            self._s.remember_spoken(spoken)
             await self.push_frame(LLMTextFrame(text=spoken))
             return
+        self._s.remember_spoken(sentence)
         await self.push_frame(LLMTextFrame(text=sentence))
 
     async def process_frame(self, frame: Frame, direction: FrameDirection):
@@ -151,4 +167,7 @@ class OutputGuardProcessor(FrameProcessor):
             self._buffer, self._dropping = "", False
             await self.push_frame(frame, direction)
         else:
+            if isinstance(frame, TTSSpeakFrame) and direction == FrameDirection.DOWNSTREAM:
+                # Fixed scripts (the disclosure, outcomes) pass through here on their way to TTS.
+                self._s.remember_spoken(frame.text)
             await self.push_frame(frame, direction)
