@@ -1,5 +1,9 @@
+import { IconPlus, IconTrash } from "@tabler/icons-react";
+
 import { Button } from "../components/ui/button";
+import { Card, CardContent } from "../components/ui/card";
 import { Input } from "../components/ui/input";
+import { Label } from "../components/ui/label";
 import { rootFields, type TabProps } from "./schemaFields";
 import { SchemaInput } from "./SchemaInput";
 
@@ -7,6 +11,9 @@ import { SchemaInput } from "./SchemaInput";
  * When the clinic is open, in the clinic's own timezone. Every due time the
  * ledger computes comes from these spans (CLAUDE.md non-negotiable 8), so an
  * empty day is a closed day, not a missing one.
+ *
+ * The form is the kit's: the registry's controls under their labels, laid out
+ * on the kit's `space-y-8` rhythm, with each weekday its own card.
  */
 
 const WEEKDAYS: [string, string][] = [
@@ -43,91 +50,97 @@ export function HoursTab({ config, schema, onChange, disabled }: TabProps) {
         )}
       </div>
 
-      <div className="space-y-4">
+      <div className="space-y-3">
         {WEEKDAYS.map(([day, label]) => {
           const spans = hours[day] ?? [];
           return (
-            <div
-              key={day}
-              className="border-border flex flex-wrap items-center gap-3 rounded-lg border p-3"
-            >
-              <span className="w-28 text-sm font-medium">{label}</span>
-              {spans.length === 0 && (
-                <span className="text-muted-foreground text-sm">Closed</span>
-              )}
-              {spans.map((span, index) => (
-                <span key={index} className="flex items-center gap-2 text-sm">
-                  <Input
-                    type="time"
-                    className="w-32"
-                    aria-label={`${label} opens`}
-                    data-testid={`hours-${day}-${index}-start`}
-                    disabled={disabled}
-                    value={span[0] ?? ""}
-                    onChange={(event) =>
-                      setSpans(
-                        day,
-                        spans.map((s, i) =>
-                          i === index ? [event.target.value, s[1]] : s,
-                        ),
-                      )
-                    }
-                  />
-                  <span className="text-muted-foreground">to</span>
-                  <Input
-                    type="time"
-                    className="w-32"
-                    aria-label={`${label} closes`}
-                    data-testid={`hours-${day}-${index}-end`}
-                    disabled={disabled}
-                    value={span[1] ?? ""}
-                    onChange={(event) =>
-                      setSpans(
-                        day,
-                        spans.map((s, i) =>
-                          i === index ? [s[0], event.target.value] : s,
-                        ),
-                      )
-                    }
-                  />
-                  {!disabled && (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() =>
+            <Card key={day} className="py-3">
+              <CardContent className="flex flex-wrap items-center gap-3 px-4">
+                <span className="w-24 text-sm font-medium">{label}</span>
+                {spans.length === 0 && (
+                  <span className="text-muted-foreground text-sm">Closed</span>
+                )}
+                {spans.map((span, index) => (
+                  <span key={index} className="flex items-center gap-2 text-sm">
+                    <Input
+                      type="time"
+                      className="w-32"
+                      aria-label={`${label} opens`}
+                      data-testid={`hours-${day}-${index}-start`}
+                      disabled={disabled}
+                      value={span[0] ?? ""}
+                      onChange={(event) =>
                         setSpans(
                           day,
-                          spans.filter((_, i) => i !== index),
+                          spans.map((s, i) =>
+                            i === index ? [event.target.value, s[1]] : s,
+                          ),
                         )
                       }
-                    >
-                      Remove
-                    </Button>
-                  )}
-                </span>
-              ))}
-              {!disabled && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  data-testid={`hours-${day}-add`}
-                  onClick={() => setSpans(day, [...spans, ["09:00", "17:00"]])}
-                >
-                  Add hours
-                </Button>
-              )}
-            </div>
+                    />
+                    <span className="text-muted-foreground">to</span>
+                    <Input
+                      type="time"
+                      className="w-32"
+                      aria-label={`${label} closes`}
+                      data-testid={`hours-${day}-${index}-end`}
+                      disabled={disabled}
+                      value={span[1] ?? ""}
+                      onChange={(event) =>
+                        setSpans(
+                          day,
+                          spans.map((s, i) =>
+                            i === index ? [s[0], event.target.value] : s,
+                          ),
+                        )
+                      }
+                    />
+                    {!disabled && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        aria-label={`Remove ${label} hours`}
+                        onClick={() =>
+                          setSpans(
+                            day,
+                            spans.filter((_, i) => i !== index),
+                          )
+                        }
+                      >
+                        <IconTrash className="size-4" />
+                      </Button>
+                    )}
+                  </span>
+                ))}
+                {!disabled && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="ms-auto"
+                    data-testid={`hours-${day}-add`}
+                    onClick={() => setSpans(day, [...spans, ["09:00", "17:00"]])}
+                  >
+                    <IconPlus className="size-4" />
+                    Add hours
+                  </Button>
+                )}
+              </CardContent>
+            </Card>
           );
         })}
       </div>
 
-      <label className="flex flex-col gap-1 text-sm">
-        <span className="text-muted-foreground text-xs uppercase">
+      <div className="flex flex-col gap-1.5">
+        <Label
+          htmlFor="config-holidays"
+          className="text-muted-foreground text-xs uppercase"
+        >
           Holidays (YYYY-MM-DD, comma separated)
-        </span>
+        </Label>
         <Input
+          id="config-holidays"
           data-testid="config-holidays"
           disabled={disabled}
           value={(config.holidays ?? []).join(", ")}
@@ -141,7 +154,7 @@ export function HoursTab({ config, schema, onChange, disabled }: TabProps) {
             })
           }
         />
-      </label>
+      </div>
     </div>
   );
 }

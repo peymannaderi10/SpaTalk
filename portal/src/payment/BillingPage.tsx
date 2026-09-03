@@ -1,11 +1,31 @@
+import {
+  IconCheck,
+  IconCreditCard,
+  IconExternalLink,
+} from "@tabler/icons-react";
 import { useState } from "react";
 import { useSearchParams } from "react-router";
 import {
   generateCheckoutSession,
   openCustomerPortal,
 } from "wasp/client/operations";
-import { OrgShell, type Org } from "../client/OrgShell";
+import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+} from "../client/components/ui/alert";
+import { Badge } from "../client/components/ui/badge";
 import { Button } from "../client/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "../client/components/ui/card";
+import { Separator } from "../client/components/ui/separator";
+import { OrgShell, type Org } from "../client/OrgShell";
 import { subscriptionProblem } from "./entitlement";
 import {
   PaymentPlanId,
@@ -21,6 +41,10 @@ import {
  * Nothing on this page decides anything — Stripe does, and its webhook writes
  * the result. What is shown is therefore what Stripe last said, never what the
  * portal hopes happened after a click.
+ *
+ * The kit has no billing page, so this is composed in its idiom: the section
+ * card of `src/features/settings` with the plan in it, its header, its
+ * description and its footer of actions.
  */
 
 const STATUS_WORDING: Record<string, string> = {
@@ -35,7 +59,11 @@ const STATUS_WORDING: Record<string, string> = {
 
 export function BillingPage() {
   return (
-    <OrgShell title="Billing" requiresSubscription={false}>
+    <OrgShell
+      title="Billing"
+      description="What this clinic pays for, and how to change it."
+      requiresSubscription={false}
+    >
       {(org) => <Billing org={org} />}
     </OrgShell>
   );
@@ -93,77 +121,97 @@ function Billing({ org }: { org: Org }) {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="max-w-2xl space-y-4">
       {checkout === "canceled" && (
-        <p
-          data-testid="checkout-canceled"
-          className="border-border rounded-md border p-4 text-sm"
-        >
-          The checkout was cancelled. Nothing has been charged.
-        </p>
+        <Alert data-testid="checkout-canceled">
+          <AlertTitle>The checkout was cancelled</AlertTitle>
+          <AlertDescription>Nothing has been charged.</AlertDescription>
+        </Alert>
       )}
       {checkout === "success" && (
-        <p
-          data-testid="checkout-success"
-          className="border-border rounded-md border p-4 text-sm"
-        >
-          Thank you. Stripe confirms the subscription in a moment; this page
-          shows it as soon as it does.
-        </p>
+        <Alert data-testid="checkout-success">
+          <AlertTitle>Thank you</AlertTitle>
+          <AlertDescription>
+            Stripe confirms the subscription in a moment; this page shows it as
+            soon as it does.
+          </AlertDescription>
+        </Alert>
       )}
 
-      <section className="border-border rounded-lg border p-6">
-        <h2 className="text-foreground text-lg font-semibold">
-          {prettyPaymentPlanName(PaymentPlanId.FrontDesk)}
-        </h2>
-        <p className="text-muted-foreground mt-1 text-sm">
-          {PLAN_PRICE_TEXT} per month, per clinic.
-        </p>
-        <p className="text-muted-foreground mt-4 text-xs uppercase">Status</p>
-        <p
-          data-testid="subscription-state"
-          className="text-foreground mt-1 text-base font-medium"
-        >
-          {state}
-        </p>
-        {lapse && (
-          <p className="text-muted-foreground mt-2 text-sm">{lapse.detail}</p>
-        )}
+      <Card>
+        <CardHeader>
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <CardTitle className="text-lg">
+                {prettyPaymentPlanName(PaymentPlanId.FrontDesk)}
+              </CardTitle>
+              <CardDescription>
+                {PLAN_PRICE_TEXT} per month, per clinic.
+              </CardDescription>
+            </div>
+            <Badge variant={lapse ? "outline" : "secondary"}>
+              <IconCreditCard className="size-3" />
+              {status ?? "not subscribed"}
+            </Badge>
+          </div>
+        </CardHeader>
 
-        <ul className="text-muted-foreground mt-6 space-y-2 text-sm">
-          {PLAN_FEATURES.map((feature) => (
-            <li key={feature}>{feature}</li>
-          ))}
-        </ul>
-
-        {problem && (
-          <p
-            data-testid="billing-problem"
-            className="border-border text-foreground mt-6 rounded-md border p-4 text-sm"
-          >
-            {problem}
-          </p>
-        )}
-
-        {isOwner ? (
-          <div className="mt-6 flex flex-wrap gap-3">
-            {lapse?.action !== "manage" && (
-              <Button onClick={subscribe} disabled={busy}>
-                Subscribe
-              </Button>
-            )}
-            {org.hasStripeCustomer && (
-              <Button variant="outline" onClick={manage} disabled={busy}>
-                Manage subscription
-              </Button>
+        <CardContent className="space-y-4">
+          <div>
+            <p className="text-muted-foreground text-xs uppercase">Status</p>
+            <p
+              data-testid="subscription-state"
+              className="text-foreground mt-1 text-base font-medium"
+            >
+              {state}
+            </p>
+            {lapse && (
+              <p className="text-muted-foreground mt-2 text-sm">
+                {lapse.detail}
+              </p>
             )}
           </div>
-        ) : (
-          <p className="text-muted-foreground mt-6 text-sm">
-            Only an owner of {org.name} can change the subscription.
-          </p>
-        )}
-      </section>
+
+          <Separator />
+
+          <ul className="space-y-2 text-sm">
+            {PLAN_FEATURES.map((feature) => (
+              <li key={feature} className="flex items-start gap-2">
+                <IconCheck className="text-muted-foreground mt-0.5 size-4 shrink-0" />
+                <span className="text-muted-foreground">{feature}</span>
+              </li>
+            ))}
+          </ul>
+
+          {problem && (
+            <Alert variant="destructive" data-testid="billing-problem">
+              <AlertDescription>{problem}</AlertDescription>
+            </Alert>
+          )}
+        </CardContent>
+
+        <CardFooter className="flex flex-wrap gap-3">
+          {isOwner ? (
+            <>
+              {lapse?.action !== "manage" && (
+                <Button onClick={subscribe} disabled={busy}>
+                  Subscribe
+                </Button>
+              )}
+              {org.hasStripeCustomer && (
+                <Button variant="outline" onClick={manage} disabled={busy}>
+                  Manage subscription
+                  <IconExternalLink className="size-4" />
+                </Button>
+              )}
+            </>
+          ) : (
+            <p className="text-muted-foreground text-sm">
+              Only an owner of {org.name} can change the subscription.
+            </p>
+          )}
+        </CardFooter>
+      </Card>
     </div>
   );
 }

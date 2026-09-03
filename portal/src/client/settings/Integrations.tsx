@@ -1,3 +1,8 @@
+import {
+  IconBrandFacebook,
+  IconBrandInstagram,
+  type TablerIcon,
+} from "@tabler/icons-react";
 import { useState } from "react";
 import {
   disconnectIntegration,
@@ -6,8 +11,10 @@ import {
   startIntegrationConnect,
   useQuery,
 } from "wasp/client/operations";
-import { formatDateTime } from "../formatting";
+import { Alert, AlertDescription } from "../components/ui/alert";
 import { Button } from "../components/ui/button";
+import { Card, CardContent } from "../components/ui/card";
+import { formatDateTime } from "../formatting";
 
 /**
  * Instagram and Facebook Page connections (instagram plan, Task D4).
@@ -22,23 +29,26 @@ import { Button } from "../components/ui/button";
 type Integrations = Awaited<ReturnType<typeof getTenantIntegrations>>;
 type Integration = Integrations["integrations"][number];
 
-type Card = {
+type Connection = {
   provider: "instagram" | "messenger";
   name: string;
   /** What the tenant is connecting, in the words the owner would use. */
   what: string;
+  icon: TablerIcon;
 };
 
-const CARDS: Card[] = [
+const CARDS: Connection[] = [
   {
     provider: "instagram",
     name: "Instagram",
     what: "Direct messages and comments on the clinic's Instagram account.",
+    icon: IconBrandInstagram,
   },
   {
     provider: "messenger",
     name: "Facebook Page",
     what: "Messenger conversations and comments on the clinic's Facebook Page.",
+    icon: IconBrandFacebook,
   },
 ];
 
@@ -88,7 +98,7 @@ export function IntegrationsTab({
     data.integrations.map((row) => [row.provider, row]),
   );
 
-  async function connect(provider: Card["provider"]) {
+  async function connect(provider: Connection["provider"]) {
     setBusy(provider);
     setProblem(null);
     try {
@@ -105,7 +115,7 @@ export function IntegrationsTab({
     }
   }
 
-  async function disconnect(provider: Card["provider"]) {
+  async function disconnect(provider: Connection["provider"]) {
     setBusy(provider);
     setProblem(null);
     try {
@@ -151,57 +161,55 @@ export function IntegrationsTab({
       </p>
 
       {problem && (
-        <p
-          data-testid="integration-problem"
-          className="border-border rounded-md border p-3 text-sm"
-        >
-          {problem}
-        </p>
+        <Alert variant="destructive" data-testid="integration-problem">
+          <AlertDescription>{problem}</AlertDescription>
+        </Alert>
       )}
 
       {choice && (
-        <div
-          data-testid="messenger-page-choice"
-          className="border-border rounded-lg border p-4 text-sm"
-        >
-          <p className="text-foreground font-medium">
-            Which Page should the assistant answer?
-          </p>
-          <div className="mt-3 space-y-2">
-            {choice.pages.map((page) => (
-              <div
-                key={page.id}
-                className="flex items-center justify-between gap-4"
-              >
-                <span data-testid={`messenger-page-${page.id}`}>
-                  {page.name}
-                </span>
-                <Button
-                  type="button"
-                  size="sm"
-                  disabled={readOnly || busy !== null}
-                  data-testid={`messenger-page-choose-${page.id}`}
-                  onClick={() => choosePage(page.id)}
+        <Card data-testid="messenger-page-choice">
+          <CardContent className="text-sm">
+            <p className="font-medium">
+              Which Page should the assistant answer?
+            </p>
+            <div className="mt-3 space-y-2">
+              {choice.pages.map((page) => (
+                <div
+                  key={page.id}
+                  className="flex items-center justify-between gap-4"
                 >
-                  Use this Page
-                </Button>
-              </div>
-            ))}
-          </div>
-        </div>
+                  <span data-testid={`messenger-page-${page.id}`}>
+                    {page.name}
+                  </span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={readOnly || busy !== null}
+                    data-testid={`messenger-page-choose-${page.id}`}
+                    onClick={() => choosePage(page.id)}
+                  >
+                    Use this Page
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
       )}
 
-      {CARDS.map((card) => (
-        <IntegrationCard
-          key={card.provider}
-          card={card}
-          status={byProvider.get(card.provider)}
-          readOnly={readOnly}
-          busy={busy === card.provider}
-          onConnect={() => connect(card.provider)}
-          onDisconnect={() => disconnect(card.provider)}
-        />
-      ))}
+      <div className="grid gap-4 md:grid-cols-2">
+        {CARDS.map((card) => (
+          <IntegrationCard
+            key={card.provider}
+            card={card}
+            status={byProvider.get(card.provider)}
+            readOnly={readOnly}
+            busy={busy === card.provider}
+            onConnect={() => connect(card.provider)}
+            onDisconnect={() => disconnect(card.provider)}
+          />
+        ))}
+      </div>
     </div>
   );
 }
@@ -214,7 +222,7 @@ function IntegrationCard({
   onConnect,
   onDisconnect,
 }: {
-  card: Card;
+  card: Connection;
   status: Integration | undefined;
   readOnly: boolean;
   busy: boolean;
@@ -225,14 +233,45 @@ function IntegrationCard({
   const configured = status?.configured !== false;
 
   return (
-    <section
+    <Card
       data-testid={`integration-${card.provider}`}
-      className="border-border rounded-lg border p-4"
+      className="transition-shadow hover:shadow-md"
     >
-      <div className="flex flex-wrap items-start justify-between gap-4">
+      <CardContent>
+        <div className="mb-6 flex items-center justify-between">
+          <span className="bg-muted flex size-10 items-center justify-center rounded-lg">
+            <card.icon className="size-5" />
+          </span>
+          {!readOnly && (
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant={connected ? "outline" : "default"}
+                disabled={busy || !configured}
+                data-testid={`integration-${card.provider}-connect`}
+                onClick={onConnect}
+              >
+                {connected ? "Reconnect" : "Connect"}
+              </Button>
+              {connected && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={busy}
+                  data-testid={`integration-${card.provider}-disconnect`}
+                  onClick={onDisconnect}
+                >
+                  Disconnect
+                </Button>
+              )}
+            </div>
+          )}
+        </div>
         <div>
-          <h3 className="text-foreground text-sm font-medium">{card.name}</h3>
-          <p className="text-muted-foreground mt-1 text-sm">{card.what}</p>
+          <h3 className="mb-1 font-semibold">{card.name}</h3>
+          <p className="text-muted-foreground text-sm">{card.what}</p>
           <p
             data-testid={`integration-${card.provider}-status`}
             className="text-foreground mt-3 text-sm"
@@ -268,34 +307,7 @@ function IntegrationCard({
             </p>
           )}
         </div>
-
-        {!readOnly && (
-          <div className="flex gap-2">
-            <Button
-              type="button"
-              size="sm"
-              variant={connected ? "outline" : "default"}
-              disabled={busy || !configured}
-              data-testid={`integration-${card.provider}-connect`}
-              onClick={onConnect}
-            >
-              {connected ? "Reconnect" : "Connect"}
-            </Button>
-            {connected && (
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                disabled={busy}
-                data-testid={`integration-${card.provider}-disconnect`}
-                onClick={onDisconnect}
-              >
-                Disconnect
-              </Button>
-            )}
-          </div>
-        )}
-      </div>
-    </section>
+      </CardContent>
+    </Card>
   );
 }

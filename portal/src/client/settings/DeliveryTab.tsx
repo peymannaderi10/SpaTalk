@@ -1,5 +1,10 @@
+import { IconPlus, IconTrash } from "@tabler/icons-react";
+
 import { Button } from "../components/ui/button";
+import { Card, CardContent } from "../components/ui/card";
 import { Input } from "../components/ui/input";
+import { Label } from "../components/ui/label";
+import { Separator } from "../components/ui/separator";
 import {
   definition,
   fieldsOf,
@@ -13,6 +18,8 @@ import { SchemaInput } from "./SchemaInput";
  * Where a tracked request goes, who owns it, and how long the team has before
  * it is a breach. A destination names an *environment variable*, never a URL:
  * secrets stay out of the configuration (CLAUDE.md non-negotiable 5).
+ *
+ * Three sections on the kit's form rhythm, each destination one of its cards.
  */
 export function DeliveryTab({ config, schema, onChange, disabled }: TabProps) {
   const destinationFields = fieldsOf(schema, "Destination");
@@ -31,15 +38,11 @@ export function DeliveryTab({ config, schema, onChange, disabled }: TabProps) {
 
   return (
     <div className="space-y-8">
-      <section>
-        <h3 className="text-foreground text-sm font-medium">Destinations</h3>
-        <div className="mt-3 space-y-3">
-          {destinations.map((destination, index) => (
-            <div
-              key={index}
-              data-testid={`destination-${index}`}
-              className="border-border rounded-lg border p-4"
-            >
+      <section className="space-y-3">
+        <h3 className="text-sm font-medium">Destinations</h3>
+        {destinations.map((destination, index) => (
+          <Card key={index} data-testid={`destination-${index}`}>
+            <CardContent className="space-y-3">
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 {destinationFields.map((field) => (
                   <SchemaInput
@@ -65,38 +68,41 @@ export function DeliveryTab({ config, schema, onChange, disabled }: TabProps) {
                   type="button"
                   variant="outline"
                   size="sm"
-                  className="mt-3"
                   onClick={() =>
                     setDelivery({
                       destinations: destinations.filter((_, i) => i !== index),
                     })
                   }
                 >
+                  <IconTrash className="size-4" />
                   Remove this destination
                 </Button>
               )}
-            </div>
-          ))}
-          {!disabled && (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              data-testid="add-destination"
-              onClick={() =>
-                setDelivery({
-                  destinations: [
-                    ...destinations,
-                    { kind: "email", address: "", urgent_only: false },
-                  ],
-                })
-              }
-            >
-              Add a destination
-            </Button>
-          )}
-        </div>
+            </CardContent>
+          </Card>
+        ))}
+        {!disabled && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            data-testid="add-destination"
+            onClick={() =>
+              setDelivery({
+                destinations: [
+                  ...destinations,
+                  { kind: "email", address: "", urgent_only: false },
+                ],
+              })
+            }
+          >
+            <IconPlus className="size-4" />
+            Add a destination
+          </Button>
+        )}
       </section>
+
+      <Separator />
 
       <section className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         {deliveryFields.map((field) => (
@@ -109,11 +115,15 @@ export function DeliveryTab({ config, schema, onChange, disabled }: TabProps) {
             onChange={(value) => setDelivery({ [field.name]: value })}
           />
         ))}
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="text-muted-foreground text-xs uppercase">
+        <div className="flex flex-col gap-1.5">
+          <Label
+            htmlFor="delivery-staff_phone_numbers"
+            className="text-muted-foreground text-xs uppercase"
+          >
             Staff phone numbers (E.164, comma separated)
-          </span>
+          </Label>
           <Input
+            id="delivery-staff_phone_numbers"
             data-testid="delivery-staff_phone_numbers"
             disabled={disabled}
             value={(delivery.staff_phone_numbers ?? []).join(", ")}
@@ -126,12 +136,14 @@ export function DeliveryTab({ config, schema, onChange, disabled }: TabProps) {
               })
             }
           />
-        </label>
+        </div>
       </section>
 
-      <section>
-        <h3 className="text-foreground text-sm font-medium">Escalation</h3>
-        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <Separator />
+
+      <section className="space-y-3">
+        <h3 className="text-sm font-medium">Escalation</h3>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           {escalationFields.map((field) => (
             <SchemaInput
               key={field.name}

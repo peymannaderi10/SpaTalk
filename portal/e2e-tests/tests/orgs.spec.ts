@@ -115,8 +115,12 @@ test.describe("organisations", () => {
       adminPage.getByRole("heading", { name: `People in ${ORG_NAME}` }),
     ).toBeVisible(FIRST_RENDER);
 
+    // Inviting is the kit's dialog now, and the role a Radix select inside it,
+    // so the native `select` this used to drive is gone.
+    await adminPage.getByTestId("invite-member").click();
     await adminPage.fill('input[name="email"]', staff.email);
-    await adminPage.selectOption('select[aria-label="Role"]', "STAFF");
+    await adminPage.getByTestId("invite-role").click();
+    await adminPage.getByRole("option", { name: "STAFF" }).click();
     await adminPage.click('button:has-text("Send invitation")');
 
     const link = adminPage.getByTestId("invite-url");

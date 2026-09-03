@@ -1,4 +1,15 @@
+import { useId } from "react";
+
+import { Checkbox } from "../components/ui/checkbox";
 import { Input } from "../components/ui/input";
+import { Label } from "../components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../components/ui/select";
 import { Textarea } from "../components/ui/textarea";
 import { type SchemaField } from "./schemaFields";
 
@@ -6,7 +17,20 @@ import { type SchemaField } from "./schemaFields";
  * One control, decided by the runtime's schema rather than by a hand-written
  * list here: a boolean is a checkbox, a `Literal` is a select, an int is a
  * number, everything else is text.
+ *
+ * Every control is the kit's — the registry's `Label`, `Input`, `Textarea`,
+ * `Checkbox` and `Select` — so a form built from the schema looks like the
+ * kit's own forms (`src/features/settings/profile/profile-form.tsx` in
+ * `satnaing/shadcn-admin`) rather than like the browser's defaults.
  */
+
+/**
+ * Radix will not take an empty string as a value, and a nullable field has to
+ * be able to say "not set", so the empty choice carries this sentinel between
+ * the select and the draft. It never reaches the runtime.
+ */
+const UNSET = "__unset__";
+
 export function SchemaInput({
   field,
   value,
@@ -23,56 +47,61 @@ export function SchemaInput({
   /** Render a string on several lines: knowledge and the fixed scripts. */
   long?: boolean;
 }) {
+  const id = useId();
   const label = (
-    <span className="text-muted-foreground text-xs uppercase">
+    <Label htmlFor={id} className="text-muted-foreground text-xs uppercase">
       {field.title}
       {field.required && " *"}
-    </span>
+    </Label>
   );
 
   if (field.kind === "boolean") {
     return (
-      <label className="flex items-center gap-2 text-sm">
-        <input
-          type="checkbox"
+      <div className="flex items-center gap-2">
+        <Checkbox
+          id={id}
           data-testid={testId}
           disabled={disabled}
           checked={Boolean(value)}
-          onChange={(event) => onChange(event.target.checked)}
+          onCheckedChange={(checked) => onChange(checked === true)}
         />
         {label}
-      </label>
+      </div>
     );
   }
 
   if (field.kind === "enum") {
+    const current = String(value ?? "");
     return (
-      <label className="flex flex-col gap-1 text-sm">
+      <div className="flex flex-col gap-1.5">
         {label}
-        <select
-          data-testid={testId}
-          aria-label={field.title}
+        <Select
           disabled={disabled}
-          className="border-border bg-background text-foreground rounded-md border px-2 py-1 text-sm disabled:opacity-60"
-          value={String(value ?? "")}
-          onChange={(event) => onChange(event.target.value)}
+          value={current === "" ? UNSET : current}
+          onValueChange={(next) => onChange(next === UNSET ? null : next)}
         >
-          {field.nullable && <option value="">not set</option>}
-          {(field.options ?? []).map((option) => (
-            <option key={option} value={option}>
-              {option}
-            </option>
-          ))}
-        </select>
-      </label>
+          <SelectTrigger id={id} data-testid={testId} aria-label={field.title}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {field.nullable && <SelectItem value={UNSET}>not set</SelectItem>}
+            {(field.options ?? []).map((option) => (
+              <SelectItem key={option} value={option}>
+                {option}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
     );
   }
 
   if (field.kind === "integer" || field.kind === "number") {
     return (
-      <label className="flex flex-col gap-1 text-sm">
+      <div className="flex flex-col gap-1.5">
         {label}
         <Input
+          id={id}
           type="number"
           data-testid={testId}
           aria-label={field.title}
@@ -87,15 +116,16 @@ export function SchemaInput({
             onChange(Number(raw));
           }}
         />
-      </label>
+      </div>
     );
   }
 
   if (long) {
     return (
-      <label className="flex flex-col gap-1 text-sm">
+      <div className="flex flex-col gap-1.5">
         {label}
         <Textarea
+          id={id}
           rows={3}
           data-testid={testId}
           aria-label={field.title}
@@ -103,14 +133,15 @@ export function SchemaInput({
           value={String(value ?? "")}
           onChange={(event) => onChange(event.target.value)}
         />
-      </label>
+      </div>
     );
   }
 
   return (
-    <label className="flex flex-col gap-1 text-sm">
+    <div className="flex flex-col gap-1.5">
       {label}
       <Input
+        id={id}
         data-testid={testId}
         aria-label={field.title}
         disabled={disabled}
@@ -123,6 +154,6 @@ export function SchemaInput({
           )
         }
       />
-    </label>
+    </div>
   );
 }

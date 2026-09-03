@@ -9,13 +9,15 @@ import { SchemaInput } from "./SchemaInput";
  * The runtime refuses wording that claims something was booked, confirmed or
  * scheduled, and refuses a clinical script that has lost its emergency
  * sentence: a save that breaks either comes back named.
+ *
+ * One field per script, on the kit's `space-y-8` form rhythm.
  */
 export function ScriptsTab({ config, schema, onChange, disabled }: TabProps) {
   const fields = fieldsOf(schema, "Scripts");
   const scripts: Record<string, unknown> = config.scripts ?? {};
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-8">
       <p className="text-muted-foreground text-sm">
         Placeholders: {"{name}"} the business, {"{confirm_by}"} the promised
         time, {"{service}"}, {"{url}"}, {"{booking_url}"}, {"{phone}"},{" "}

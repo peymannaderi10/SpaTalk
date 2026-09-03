@@ -1,3 +1,7 @@
+import { type ColumnDef } from "@tanstack/react-table";
+
+import { DataTable } from "../components/data-table";
+import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { formatDateTime } from "../formatting";
 
@@ -10,6 +14,8 @@ export type ConfigVersion = {
 /**
  * Nothing is ever deleted: rolling back writes a *new* version equal to the old
  * one, so the history stays a history.
+ *
+ * The kit's data table, small: the history is short and nobody filters it.
  */
 export function VersionsPanel({
   versions,
@@ -24,48 +30,71 @@ export function VersionsPanel({
   busy: boolean;
   onRollBack: (version: number) => void;
 }) {
+  const columns: ColumnDef<ConfigVersion>[] = [
+    {
+      id: "version",
+      accessorFn: (row) => row.version,
+      header: "Version",
+      cell: ({ row }) => (
+        <span className="flex items-center gap-2">
+          <span className="font-medium">Version {row.original.version}</span>
+          {row.original.version === current && (
+            <Badge variant="secondary" className="font-normal">
+              current
+            </Badge>
+          )}
+        </span>
+      ),
+    },
+    {
+      id: "saved",
+      accessorFn: (row) => row.created_at,
+      header: "Saved",
+      cell: ({ row }) => formatDateTime(row.original.created_at),
+    },
+    {
+      id: "by",
+      accessorFn: (row) => row.created_by,
+      header: "By",
+      cell: ({ row }) => (
+        <span className="text-muted-foreground">{row.original.created_by}</span>
+      ),
+    },
+    {
+      id: "actions",
+      cell: ({ row }) => (
+        <div className="text-right">
+          {canRollBack && row.original.version !== current && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={busy}
+              data-testid={`rollback-${row.original.version}`}
+              onClick={() => onRollBack(row.original.version)}
+            >
+              Roll back
+            </Button>
+          )}
+        </div>
+      ),
+    },
+  ];
+
   return (
     <div data-testid="config-versions" className="space-y-3 text-sm">
       <p className="text-muted-foreground">
         Every save is a version. Rolling back adds a new version equal to the
         one you choose; nothing is removed.
       </p>
-      <table className="w-full text-left">
-        <thead className="text-muted-foreground">
-          <tr>
-            <th className="py-2 font-normal">Version</th>
-            <th className="py-2 font-normal">Saved</th>
-            <th className="py-2 font-normal">By</th>
-            <th className="py-2 font-normal"></th>
-          </tr>
-        </thead>
-        <tbody>
-          {versions.map((version) => (
-            <tr key={version.version} className="border-border border-t">
-              <td className="py-2">
-                Version {version.version}
-                {version.version === current && " (current)"}
-              </td>
-              <td className="py-2">{formatDateTime(version.created_at)}</td>
-              <td className="py-2">{version.created_by}</td>
-              <td className="py-2 text-right">
-                {canRollBack && version.version !== current && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={busy}
-                    data-testid={`rollback-${version.version}`}
-                    onClick={() => onRollBack(version.version)}
-                  >
-                    Roll back
-                  </Button>
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <DataTable
+        columns={columns}
+        data={versions}
+        toolbar={false}
+        pagination={false}
+        testId="config-version"
+        empty="No version has been saved yet."
+      />
     </div>
   );
 }
