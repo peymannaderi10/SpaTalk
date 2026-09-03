@@ -4,9 +4,8 @@ Where everything stands after a day of live test calls on the founder's laptop. 
 
 ## In flight right now
 
-- **An Opus agent is closing the lead-context verifier findings** (8 items from `docs/reports/tasks/lead-context-V1.md`: preferred-date free text, eval-bot pipeline parity, SMS drop order, ISO date rendering, no caller words in logs, concern description, conditional offers rule, schema length bounds and a clinical-word check on `concerns`). It will commit `fix(ledger): close the lead-context verification findings` plus a report `docs/reports/tasks/lead-context-fixes.md`.
-- **When it lands, the orchestrator must:** run the full runtime suite on a scratch database, `spatalk tenant import tenants/skincentrix` (the bundle now carries `team`), restart the runtime (see How to), confirm the portal's request card shows the summary line, and tell the founder the qualification step is live.
-- **Not yet live in the running runtime:** commits `69dd0bf` (lead context L1) onward. The running process was started at `3b4bf70` (echo scrubber). The dev database is already migrated to `0011` (nullable columns; safe).
+- **Nothing.** The lead-context verifier findings were closed by an Opus agent (`3ff71a5`, report `docs/reports/tasks/lead-context-fixes.md`; suite 1054 passed, 0 xfail). The bundle was re-imported (config version 12, `team` present) and the runtime restarted at that code on 2026-09-03 ~15:20, so the qualification step, lead fields and one-line summaries are live. Requests filed before the restart carry no lead fields and render generic summaries; new ones carry the facts.
+- Next candidates, in the founder's order: the delivery-failed webhook (a failed text becomes a request), the cost model refresh for Gemini 3.5 Flash, a promptfoo run on the new model, and the lead follow-up decisions (automatic post-call text, lead record, funnel numbers).
 
 ## What is live on the laptop
 
