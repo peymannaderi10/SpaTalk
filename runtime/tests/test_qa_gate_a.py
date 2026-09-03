@@ -279,14 +279,14 @@ def test_payment_over_the_phone_is_gated_as_payment_not_a_lexicon_gap():
 # ---------------------------------------------------------------------------
 
 
-async def test_human_request_after_hours_captures_a_callback_with_a_stated_time():
+async def test_human_request_after_hours_captures_a_callback_and_says_when_to_expect_it():
     from spatalk.brain.hours import BusinessCalendar
     from spatalk.clock import FixedClock
     from spatalk.tenants.bundle import load_bundle
 
     cfg = load_bundle(BUNDLE)
     assert not BusinessCalendar(cfg).is_open(AFTER_HOURS)
-    assert "{confirm_by}" in cfg.scripts.human_request
+    assert "as soon as" in cfg.scripts.human_request or "{confirm_by}" in cfg.scripts.human_request
 
     clock = FixedClock(AFTER_HOURS)
     brain, ref, ledger, _, llm = _world(clock, [])
@@ -295,7 +295,7 @@ async def test_human_request_after_hours_captures_a_callback_with_a_stated_time(
     assert r.band == 3 and r.gate_reason == "human_request"
     assert ledger.items[0].type == "escalation_human_request"
     assert ledger.items[0].urgency == "urgent"
-    assert "within 15 minutes" in r.reply
+    assert "as soon as" in r.reply  # founder decision 2026-09-03: no clock time is spoken
     assert "closed" not in r.reply.lower()
 
 
@@ -553,13 +553,19 @@ def test_the_skincentrix_bundle_supplies_every_reference_script():
     assert _reference_script_keys() == set(bundle)
 
 
-def test_every_script_that_mentions_the_team_states_a_time():
+def test_every_script_that_mentions_the_team_says_when_to_expect_contact():
+    """The caller is never left hanging: either a clock time ({confirm_by}) or \"as soon as\".
+    Founder decision 2026-09-03: Skincentrix speaks no clock time; the due time stays on the
+    item and in the team's alert."""
     from spatalk.tenants.bundle import load_bundle
 
     cfg = load_bundle(BUNDLE)
-    named = ("clinical", "human_request", "complaint", "payment", "captured", "cannot_complete")
+    named = ("clinical", "clinical_text", "human_request", "complaint", "payment", "captured",
+             "link_captured", "cannot_complete")
     for name in named:
-        assert "{confirm_by}" in getattr(cfg.scripts, name), f"scripts.{name} promises no time"
+        script = getattr(cfg.scripts, name)
+        assert "{confirm_by}" in script or "as soon as" in script, f"scripts.{name} says nothing about when"
+        assert "{confirm_by}" not in script, f"scripts.{name} still speaks a clock time"
 
 
 # ---------------------------------------------------------------------------

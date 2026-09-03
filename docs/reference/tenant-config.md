@@ -74,17 +74,17 @@ Placeholders: `{name}` business name, `{confirm_by}` rendered due wording, `{ser
 ```yaml
 # Required: the disclosure and the band-3 scripts. These are the ones that end the business if wrong.
 disclosure: "Hi, thanks for calling {name}. I'm {name}'s AI assistant. I can answer questions about services, pricing and hours, and take a message for the team. How can I help?"
-clinical: "That's a question for our clinical team, and I don't want to guess. I'm sending them an urgent request right now, and someone will call you back at this number {confirm_by}. If this is an emergency, please hang up and call 911."
-clinical_text: "That's a question for our clinical team, and I don't want to guess. I've sent them an urgent request, and someone will contact you {confirm_by}. If this is an emergency, please call 911 now."   # text channels; default exists
-human_request: "Of course. I'm sending a request to the team now, and someone will call you back at this number {confirm_by}."
-complaint: "I'm sorry to hear that. This needs a person, not an assistant. I'm flagging it to the team as urgent, and someone will call you back at this number {confirm_by}."
-payment: "I can't take or discuss payment details on this line. The team can help with that when they call you back {confirm_by}."
+clinical: "That's a question for our clinical team, and I don't want to guess. I'm sending them an urgent request right now, and someone will call you back at this number as soon as possible. If this is an emergency, please hang up and call 911."
+clinical_text: "That's a question for our clinical team, and I don't want to guess. I've sent them an urgent request, and someone will contact you as soon as possible. If this is an emergency, please call 911 now."   # text channels; default exists
+human_request: "Of course. I'm sending a request to the team now, and someone will call you back at this number as soon as they're free."
+complaint: "I'm sorry to hear that. This needs a person, not an assistant. I'm flagging it to the team as urgent, and someone will call you back at this number as soon as possible."
+payment: "I can't take or discuss payment details on this line. The team can help with that when they call you back, as soon as they're free."
 
 # Required: outcome wording.
-captured: "I've sent that to the team as a request. Someone will confirm with you {confirm_by}. Is there anything else I can help with?"
+captured: "I've sent that to the team as a request. Someone will confirm with you as soon as they're free. Is there anything else I can help with?"
 link_sent: "I've just texted you the booking link for {service}. Is there anything else I can help with?"
-link_captured: "I'll have the team send you the booking link for {service}. Someone will be in touch {confirm_by}. Is there anything else I can help with?"
-cannot_complete: "I can't complete that from here, but I've passed it to the team and someone will confirm with you {confirm_by}. Is there anything else I can help with?"
+link_captured: "I'll have the team send you the booking link for {service}. Someone will be in touch as soon as they're free. Is there anything else I can help with?"
+cannot_complete: "I can't complete that from here, but I've passed it to the team and someone will confirm with you as soon as they're free. Is there anything else I can help with?"
 goodbye: "Thanks for calling {name}. Have a great day."
 
 # Defaults exist for everything below. They never promise an action.
@@ -110,7 +110,7 @@ fillers: []   # optional phone-only lines the system speaks the instant a turn i
 sms_paused: "Thanks for texting {name}. The assistant is paused right now. A member of the team will read your message, or you can call {phone}."   # once per sender per day when sms_guard.tenant_daily_replies is reached [F1]
 ```
 
-Rules for editing: every script that mentions the team must keep `{confirm_by}` so the caller hears a time; no script may contain "booked", "confirmed" or "scheduled"; `clinical` must keep the emergency sentence; `disclosure` must say it is an AI in the first two sentences.
+Rules for editing: every script that mentions the team must say when to expect contact, either `{confirm_by}` for a clock time or "as soon as they're free" / "as soon as possible" (founder decision 2026-09-03: Skincentrix speaks no clock time to the caller, because "by 7:29 p.m." sounds like a deadline the clinic may miss; the due time is still set on the item, shown in the portal and sent in the team's alert); no script may contain "booked", "confirmed" or "scheduled"; `clinical` must keep the emergency sentence; `disclosure` must say it is an AI in the first two sentences.
 
 ## Schema location
 

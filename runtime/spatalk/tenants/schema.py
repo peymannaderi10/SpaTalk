@@ -146,7 +146,7 @@ class Scripts(BaseModel, frozen=True):
     # which makes no sense in a chat window (QA gate C). Same promise, same emergency sentence.
     clinical_text: str = (
         "That's a question for our clinical team, and I don't want to guess. I've sent them "
-        "an urgent request, and someone will contact you {confirm_by}. If this is an "
+        "an urgent request, and someone will contact you as soon as possible. If this is an "
         "emergency, please call 911 now."
     )
 

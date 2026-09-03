@@ -10,11 +10,15 @@ def _cfg():
     return load_bundle(BUNDLE)
 
 
-def test_render_captured_uses_template_and_due_wording():
+def test_render_captured_uses_template_and_says_when_to_expect_contact():
+    """Founder decision 2026-09-03: no clock time is spoken to the caller (\"by 7:29 p.m.\" sounded
+    like a deadline the clinic might miss); the caller hears \"as soon as they're free\". The
+    promised time is still on the item and in the team's own alert."""
     from spatalk.brain.outcomes import Captured
     from spatalk.brain.renderer import render
     out = Captured(item_id=7, urgency="normal", confirm_by=NOW + timedelta(hours=3), item_type="callback")
-    assert render(out, _cfg(), NOW) == "I've sent that to the team as a request. Someone will confirm with you by 5:00 p.m. today. Is there anything else I can help with?"
+    assert render(out, _cfg(), NOW) == "I've sent that to the team as a request. Someone will confirm with you as soon as they're free. Is there anything else I can help with?"
+    assert "p.m." not in render(out, _cfg(), NOW) and "a.m." not in render(out, _cfg(), NOW)
 
 
 def test_render_link_sent_names_service():
@@ -42,7 +46,7 @@ def test_render_completed_only_from_completed_outcome():
 def test_render_script_clinical_urgent():
     from spatalk.brain.renderer import render_script
     text = render_script("clinical", _cfg(), NOW, urgent=True)
-    assert "within 15 minutes" in text and "911" in text
+    assert "as soon as possible" in text and "911" in text
 
 
 def test_refusals_never_claim_anything_was_filed():

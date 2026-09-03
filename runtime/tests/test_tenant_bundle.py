@@ -13,7 +13,7 @@ def test_skincentrix_bundle_loads():
     assert cfg.timezone == "America/Toronto"
     assert cfg.integration_tier == "C"
     assert cfg.service("laser_hair_removal").booking_url.startswith("https://skincentrix.janeapp.com")
-    assert "{confirm_by}" in cfg.scripts.captured
+    assert "as soon as" in cfg.scripts.captured and "{confirm_by}" not in cfg.scripts.captured
     assert cfg.hours["tue"] == [("10:00", "18:00")]
     assert cfg.recording_enabled is False
     assert cfg.retention_days == 30
