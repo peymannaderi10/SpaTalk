@@ -14,7 +14,7 @@ Where everything stands after a day of live test calls on the founder's laptop. 
 | Runtime | `spatalk serve` on port 8000, started from the session shell; log `scratchpad/serve.log` (rotated copies `serve-call*.log`) |
 | Tunnel | `https://radio-gorgeous-try-universities.trycloudflare.com` via `C:\Program Files (x86)\cloudflared\cloudflared.exe`; log `scratchpad/cloudflared.log`. Hostname changes if it restarts |
 | Telnyx | TeXML app `spatalk-demo` (id 3040385824425248764) voice URL and messaging profile `spatalk-sms` (id 4001a064-4921-4479-b618-fe4c44844bf1) webhook both point at the tunnel; number +1 289 917 0079 (voice and SMS) |
-| Skincentrix config | version 11 in the dev database (`spatalk` on `runtime-db-1`, host port 5434); bundle re-import pending for `team` |
+| Skincentrix config | version 12 in the dev database (`spatalk` on `runtime-db-1`, host port 5434), `team` present |
 | Portal | Wasp dev server in WSL, http://localhost:3000 (client) and :3001 (server); started by `scratchpad/start-portal.ps1`, stopped by `scratchpad/stop-portal.sh`; log `scratchpad/wasp-start.log`; its own database `portal` on the same Postgres; `RUNTIME_INTERNAL_URL` is the tunnel; Dummy email provider prints links to the log |
 | Portal login | peymon18@gmail.com, agency admin (password was given in chat; reset via "Forgot password", link prints to the wasp log) |
 | Mailpit | http://localhost:8025; all runtime email goes here (`SMTP_HOST=localhost`, `SMTP_PORT=1025`) |
