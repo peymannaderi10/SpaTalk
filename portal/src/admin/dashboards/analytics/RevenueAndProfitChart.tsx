@@ -217,11 +217,11 @@ export function RevenueAndProfitChart({ weeklyStats }: DailyStatsProps) {
             </div>
           </div>
           <div className="min-w-47.5 flex">
-            <span className="border-secondary mr-2 mt-1 flex h-4 w-full max-w-4 items-center justify-center rounded-full border">
-              <span className="bg-secondary block h-2.5 w-full max-w-2.5 rounded-full"></span>
+            <span className="border-chart-2 mr-2 mt-1 flex h-4 w-full max-w-4 items-center justify-center rounded-full border">
+              <span className="bg-chart-2 block h-2.5 w-full max-w-2.5 rounded-full"></span>
             </span>
             <div className="w-full">
-              <p className="text-secondary font-semibold">Total Revenue</p>
+              <p className="text-chart-2 font-semibold">Total Revenue</p>
               <p className="text-muted-foreground text-sm font-medium">
                 Last 7 Days
               </p>

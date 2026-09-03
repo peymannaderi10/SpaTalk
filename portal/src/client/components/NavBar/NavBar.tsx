@@ -14,7 +14,7 @@ import { OrgSwitcher } from "../../../organizations/OrgSwitcher";
 import { throttleWithTrailingInvocation } from "../../../shared/utils";
 import { UserDropdown } from "../../../user/UserDropdown";
 import { UserMenuItems } from "../../../user/UserMenuItems";
-import logo from "../../static/logo.svg";
+import { BRAND } from "../../brand";
 import { cn } from "../../utils";
 import { DarkModeSwitcher } from "../DarkModeSwitcher";
 
@@ -84,7 +84,7 @@ export function NavBar({
                     },
                   )}
                 >
-                  SpaTalk
+                  {BRAND.name}
                 </span>
               </WaspRouterLink>
 
@@ -178,7 +178,7 @@ function NavBarMobileMenu({
           <SheetHeader>
             <SheetTitle className="flex items-center">
               <WaspRouterLink to={routes.RootRoute.to}>
-                <span className="sr-only">SpaTalk</span>
+                <span className="sr-only">{BRAND.name}</span>
                 <NavLogo isScrolled={false} />
               </WaspRouterLink>
             </SheetTitle>
@@ -249,8 +249,8 @@ function NavLogo({ isScrolled }: { isScrolled: boolean }) {
         "size-8": !isScrolled,
         "size-7": isScrolled,
       })}
-      src={logo}
-      alt="SpaTalk App"
+      src={BRAND.logo.mark}
+      alt={`${BRAND.name} App`}
     />
   );
 }

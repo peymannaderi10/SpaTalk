@@ -2,7 +2,7 @@ import { Activity, Building2, LayoutDashboard, Sheet, X } from "lucide-react";
 import React, { useEffect, useRef, useState } from "react";
 import { NavLink, useLocation } from "react-router";
 import { Link, routes } from "wasp/client/router";
-import Logo from "../../client/static/logo.svg";
+import { BRAND } from "../../client/brand";
 import { cn } from "../../client/utils";
 
 interface SidebarProps {
@@ -71,7 +71,7 @@ export function Sidebar({ sidebarOpen, setSidebarOpen }: SidebarProps) {
       {/* <!-- SIDEBAR HEADER --> */}
       <div className="py-5.5 lg:py-6.5 flex items-center justify-between gap-2 px-6">
         <Link to={routes.RootRoute.to}>
-          <img src={Logo} alt="Logo" width={50} />
+          <img src={BRAND.logo.mark} alt={BRAND.name} width={50} />
         </Link>
 
         <button

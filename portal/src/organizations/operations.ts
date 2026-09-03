@@ -12,6 +12,7 @@ import {
   type RemoveMember,
 } from "wasp/server/operations";
 import * as z from "zod";
+import { BRAND } from "../client/brand";
 import { organizationIsEntitled } from "../payment/entitlement";
 import { ensureArgsSchemaOrThrowHttpError } from "../server/validation";
 import {
@@ -375,13 +376,13 @@ async function sendInvitationEmail({
 }): Promise<void> {
   await emailSender.send({
     to,
-    subject: `You have been invited to ${org.name} on SpaTalk`,
+    subject: `You have been invited to ${org.name} on ${BRAND.name}`,
     text:
-      `You have been invited to the ${org.name} front desk on SpaTalk.\n\n` +
+      `You have been invited to the ${org.name} front desk on ${BRAND.name}.\n\n` +
       `Open this link to accept, signing up first if you do not have an account yet:\n${inviteUrl}\n\n` +
       `The invitation can be used once and expires in seven days.`,
     html: `
-        <p>You have been invited to the ${org.name} front desk on SpaTalk.</p>
+        <p>You have been invited to the ${org.name} front desk on ${BRAND.name}.</p>
         <p><a href="${inviteUrl}">Accept the invitation</a></p>
         <p>The invitation can be used once and expires in seven days.</p>
     `,
