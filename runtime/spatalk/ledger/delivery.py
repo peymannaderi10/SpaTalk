@@ -16,7 +16,7 @@ from spatalk import jobs
 from spatalk.brain.hours import humanize_due
 import unicodedata
 
-from spatalk.conversations import record_usage
+from spatalk.conversations import get_notes, record_usage
 from spatalk.ledger.links import sign_action
 from spatalk.ledger.summary import TYPE_LABELS, preferred_text, summarize_item
 from spatalk.models import Item, WhatsAppWindow
@@ -79,18 +79,30 @@ def _body_lines(item: Item, cfg: TenantConfig, now: datetime) -> list[str]:
     return [summary, head, *rest]
 
 
+def notes_block(notes: str | None, cfg: TenantConfig) -> str:
+    """The drafted notes under the tenant's label, or "" when there are none (plan N, N1).
+
+    Never a heading with nothing under it: staff reading a labelled empty block would take
+    the silence for a finding. The label is the tenant's wording, so the portal card, the
+    email and the Slack post all name the notes the same way.
+    """
+    body = (notes or "").strip()
+    return f"\n\n{cfg.scripts.notes_label}\n{body}" if body else ""
+
+
 def build_slack_blocks(
     item: Item,
     cfg: TenantConfig,
     links: ActionLinks,
     now: datetime | None = None,
     handback: bool = False,
+    notes: str | None = None,
 ) -> list[dict]:
     now = now or datetime.now(timezone.utc)
     head = ("\U0001f534 URGENT: " if item.urgency == "urgent" else "") + TYPE_LABELS.get(
         item.type, item.type
     )
-    body = "\n".join(_summary(item, cfg, now)[1:])
+    body = "\n".join(_summary(item, cfg, now)[1:]) + notes_block(notes, cfg)
     buttons: list[dict] = []
     if handback and links.handback_token:
         # Only on a thread root: the thread is where a person takes the conversation over,
@@ -135,7 +147,11 @@ def build_slack_blocks(
 
 
 def build_email(
-    item: Item, cfg: TenantConfig, links: ActionLinks, now: datetime | None = None
+    item: Item,
+    cfg: TenantConfig,
+    links: ActionLinks,
+    now: datetime | None = None,
+    notes: str | None = None,
 ) -> tuple[str, str]:
     now = now or datetime.now(timezone.utc)
     lines = _body_lines(item, cfg, now)
@@ -143,6 +159,7 @@ def build_email(
     subject = f"{prefix}{cfg.name} front desk #{item.id}: {TYPE_LABELS.get(item.type, item.type)}"
     body = (
         "\n".join(lines)
+        + notes_block(notes, cfg)
         + f"\n\nAcknowledge: {links.ack_url}\nResolve: {links.resolve_url}"
         + f"\nTranscript: {links.transcript_url}\n"
     )
@@ -595,15 +612,20 @@ async def _deliver_slack(payload: dict, ctx: jobs.JobContext) -> None:
     # With a bot token and a channel id, the conversation gets one thread: the first item is
     # its root, everything after it is a reply (Task B5). Without them, nothing changes.
     channel_id = payload.get("channel_id")
+    # The notes are usually still being drafted when the immediate alert goes out; the
+    # block appears when they exist and is absent when they do not (call-notes plan, N1).
+    notes = await get_notes(ctx.sf, item.conversation_id)
     if channel_id and getattr(ctx.delivery, "post_thread_root", None) is not None:
-        await _deliver_slack_in_thread(ctx, item, cfg, links, now, channel_id, text)
+        await _deliver_slack_in_thread(ctx, item, cfg, links, now, channel_id, text, notes)
         return
 
     url = os.environ.get(payload["env"], "")
     if not url:
         logger.warning("slack webhook env {} not set; skipping", payload["env"])
         return
-    await ctx.delivery.send_slack(url, build_slack_blocks(item, cfg, links, now), text)
+    await ctx.delivery.send_slack(
+        url, build_slack_blocks(item, cfg, links, now, notes=notes), text
+    )
 
 
 async def _deliver_slack_in_thread(
@@ -614,17 +636,18 @@ async def _deliver_slack_in_thread(
     now: datetime,
     channel_id: str,
     text: str,
+    notes: str | None = None,
 ) -> None:
     thread = await takeover.thread_for(ctx.sf, item.conversation_id)
     if thread is None:
         rooted = item.conversation_id is not None
-        blocks = build_slack_blocks(item, cfg, links, now, handback=rooted)
+        blocks = build_slack_blocks(item, cfg, links, now, handback=rooted, notes=notes)
         ts = await ctx.delivery.post_thread_root(channel_id, blocks, text)
         if item.conversation_id is not None:
             await takeover.store_thread(ctx.sf, item.conversation_id, channel_id, ts)
         return
     await ctx.delivery.post_in_thread(
-        thread[0], thread[1], text, build_slack_blocks(item, cfg, links, now)
+        thread[0], thread[1], text, build_slack_blocks(item, cfg, links, now, notes=notes)
     )
 
 
@@ -636,7 +659,13 @@ async def _deliver_email(payload: dict, ctx: jobs.JobContext) -> None:
         return
     item = await ctx.ledger.get(payload["item_id"])
     cfg = await ctx.registry.get(payload["tenant_id"])
-    subject, body = build_email(item, cfg, build_links(ctx.settings, item), ctx.clock.now())
+    subject, body = build_email(
+        item,
+        cfg,
+        build_links(ctx.settings, item),
+        ctx.clock.now(),
+        notes=await get_notes(ctx.sf, item.conversation_id),
+    )
     if payload.get("escalation"):
         subject = ESCALATED_PREFIX + subject
     await ctx.delivery.send_email(to, subject, body)

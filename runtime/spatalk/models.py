@@ -89,6 +89,17 @@ class Conversation(Base):
     # E3 needs the column now because retention nulls it alongside latency_ms when the
     # transcript goes (docs/reference/data-model.md, conversations.stage_ms).
     stage_ms: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # --- call notes (call-notes plan, Task N1) ---
+    # A few sentences drafted from this conversation's own transcript, for the person who
+    # picks up the request card. It is a derived view of the transcript, so it lives next to
+    # it and dies with it: retention nulls all three when the messages go. It is never
+    # copied onto an item (CLAUDE.md non-negotiable 2), never spoken, never sent to the
+    # customer, and never fed back to a model on a later turn. `notes_at` marks that the
+    # drafting happened, which is what makes the job idempotent; `notes` stays null when the
+    # draft was empty or nothing in it was grounded in what the caller said.
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    notes_model: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    notes_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class Message(Base):

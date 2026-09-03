@@ -15,6 +15,7 @@ from spatalk.http import actions, internal, slack, slack_events
 from spatalk.http.ratelimit import install_rate_limits
 from spatalk.ledger.delivery import make_delivery, schedule_item_delivery
 from spatalk.ledger.items import PgLedger
+from spatalk.ledger import notes as ledger_notes  # noqa: F401  (registers `call_notes`)
 from spatalk.ledger.scheduler import run_scheduler_forever
 from spatalk.ops import alerts  # monitoring and error reporting (operations plan, Task E7)
 from spatalk.settings import Settings, get_settings

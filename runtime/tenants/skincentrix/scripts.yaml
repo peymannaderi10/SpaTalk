@@ -29,3 +29,6 @@ failover: "We can't take your call right now. Please text us at {sms_number} or 
 transferring: "One moment, I'll connect you to the team."
 sms_paused: "Thanks for texting {name}. The assistant is paused right now. A member of the team will read your message, or you can call {phone}."
 fillers: []
+# Staff-only wording for the call notes (call-notes plan, N1). Never spoken, never sent to a customer.
+notes_label: "AI notes, drafted from the transcript"
+notes_health_line: "Caller mentioned a health matter; read the transcript before calling."

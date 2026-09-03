@@ -46,12 +46,13 @@ authorised sender writes reaches the model, and no reply text ever becomes item 
 (`action` `ack` or `resolve`, `record_type` `item`). An id from another tenant, and an id
 already resolved, are both answered `No open item` and change nothing.
 
-## The item shape the portal reads (`ItemOut`, L1)
+## The item shape the portal reads (`ItemOut`, L1, N1)
 
 Every `/internal/*` response that carries an item — `GET /internal/tenants/{id}/items`,
 `GET /internal/conversations/{id}`, `POST /internal/items/{id}/acknowledge` and `/resolve` —
-returns every `runtime.items` column plus three fields the runtime derives, so the portal,
-the owner's SMS and the email all say the same sentence and none of them compose wording.
+returns every `runtime.items` column plus four fields the runtime derives or joins, so the
+portal, the owner's SMS and the email all say the same sentence and none of them compose
+wording.
 
 | field | type | meaning |
 |---|---|---|
@@ -61,9 +62,29 @@ the owner's SMS and the email all say the same sentence and none of them compose
 | `summary` | string | `summarize_item(item, cfg)`: the whole request as one sentence, e.g. `"New booking: Mirapeel facial for pigmentation. New client, no practitioner preference. Callback Thursday 24 September, afternoons."` |
 | `service_name` | string null | the catalog name of `service_id`; null when the item has no service or the catalog dropped it |
 | `preferred_text` | string | `preferred_window` in words: `"any day"`, `"Thursday 24 September"`, `"Thursday 24 September, afternoons"`, `"Thursday"`, `"Thursday afternoon"`, `"mornings"`. A real date keeps its day and month; a weekday the caller named is only a weekday. Never `"any any"` |
+| `notes` | string null | the call notes drafted from the item's *conversation*, joined on read so the request card needs one call. Null until the `call_notes` job has run, and null again once retention takes the transcript. Read-only: there is no column behind it on `items` and the portal never writes it [N1] |
 
 The three derived fields are computed on read, never stored, so they cannot drift from the
-columns. `docs/contracts/runtime-internal.openapi.json` is regenerated whenever they change.
+columns; `notes` is joined from `conversations.notes`, for the same reason — the item has no
+free-text column and never will. `docs/contracts/runtime-internal.openapi.json` is
+regenerated whenever they change.
+
+## The conversation shape the portal reads (`ConversationFull`, N1)
+
+`GET /internal/conversations/{id}` returns `{conversation, messages, items}`. The
+`conversation` object is `ConversationRow` (`id`, `channel`, `started_at`, `ended_at`,
+`duration_s`, `band`, `health_context`, `controller`, `item_count`, `caller_masked`) plus
+`tenant_id`, `caller`, `external_ref` and two more:
+
+| field | type | meaning |
+|---|---|---|
+| `notes` | string null | the call notes for this conversation, shown under `scripts.notes_label` above the messages [N1] |
+| `notes_at` | date-time null | when the drafting ran; set even when `notes` is null, because that is the mark that says the drafting happened and will not happen again [N1] |
+
+The list endpoint `GET /internal/tenants/{id}/conversations` returns `ConversationRow` and
+carries neither field: a page of rows is a list, and the notes are read on the page that
+shows the transcript beside them. Reading a conversation still writes a `read_transcript`
+audit row; reading a page of items still does not.
 
 ## Provider payload shapes for fixtures
 

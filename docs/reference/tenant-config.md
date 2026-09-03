@@ -24,7 +24,8 @@ tenants/<id>/
 | jurisdiction | string | default `CA-ON` | shown in compliance views |
 | integration_tier | `A` `B` `C` | default `C` | |
 | fulfilment | string | default `tier_c` | capability implementation to load |
-| retention_days | int | default 30 | transcripts |
+| retention_days | int | default 30 | transcripts, and the call notes drafted from them [N1] |
+| call_notes | bool | default true | whether the post-conversation job drafts `conversations.notes` from the transcript. False means no model call and no notes; the assistant still asks whether there is anything the team should know, because the answer stays in the transcript either way [N1] |
 | recording_enabled | bool | default false | not implemented in these plans; must stay false |
 | hours | map weekday → list of [start, end] `HH:MM` | yes | empty list means closed |
 | holidays | list of dates | default [] | |
@@ -108,6 +109,10 @@ failover: "We can't take your call right now. Please text us at {sms_number} or 
 transferring: "One moment, I'll connect you to the team."
 fillers: []   # optional phone-only lines the system speaks the instant a turn is handed to the model, e.g. ["Okay, let me check."]; empty means the model's own first words do the acknowledging
 sms_paused: "Thanks for texting {name}. The assistant is paused right now. A member of the team will read your message, or you can call {phone}."   # once per sender per day when sms_guard.tenant_daily_replies is reached [F1]
+
+# Staff-only wording for the call notes [N1]. Never spoken, never sent to a customer.
+notes_label: "AI notes, drafted from the transcript"                                        # heads the notes block on the portal card, the staff email and the Slack post
+notes_health_line: "Caller mentioned a health matter; read the transcript before calling."  # replaces any drafted sentence the health-context or clinical lexicon matches
 ```
 
 Rules for editing: every script that mentions the team must say when to expect contact, either `{confirm_by}` for a clock time or "as soon as they're free" / "as soon as possible" (founder decision 2026-09-03: Skincentrix speaks no clock time to the caller, because "by 7:29 p.m." sounds like a deadline the clinic may miss; the due time is still set on the item, shown in the portal and sent in the team's alert); no script may contain "booked", "confirmed" or "scheduled"; `clinical` must keep the emergency sentence; `disclosure` must say it is an AI in the first two sentences.

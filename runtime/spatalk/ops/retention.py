@@ -8,7 +8,8 @@ than an assurance.
 The four thresholds, from `docs/reference/data-model.md`:
 
 * transcripts (`messages`) — the tenant's own `retention_days`, default 30, measured from
-  the end of the conversation;
+  the end of the conversation, and with them the model-drafted `conversations.notes`, which
+  are a view of the transcript and cannot outlive it (call-notes plan, Task N1);
 * conversations — kept 400 days as a stub with no caller and no latency, then deleted;
 * items and usage events — 400 days;
 * audit log — two years, and tenant-independent because the table carries no tenant.
@@ -45,7 +46,10 @@ RUN_KIND = "ops.retention"
 STUB_DAYS = 400
 AUDIT_LOG_DAYS = 730
 
-KINDS: tuple[str, ...] = ("messages", "conversations", "items", "usage_events")
+# `notes` counts conversations whose model-drafted notes were cleared, not rows deleted:
+# the notes are three columns on a conversation that is kept as a stub, so the sweep nulls
+# them where it deletes the transcript they were drafted from (call-notes plan, Task N1).
+KINDS: tuple[str, ...] = ("messages", "conversations", "items", "usage_events", "notes")
 
 
 @dataclass
@@ -118,6 +122,16 @@ async def _sweep_tenant(sf: async_sessionmaker, tenant_id: str, now: datetime, d
             .where(Conversation.id.in_(expired))
             .values(caller=None, latency_ms=None, stage_ms=None)
         )
+        # The drafted notes are a view of the transcript, so they go with it. Counted
+        # separately, and only where there was something to clear, so a second sweep the
+        # same night accounts for nothing (call-notes plan, Task N1).
+        counts["notes"] += (
+            await s.execute(
+                update(Conversation)
+                .where(Conversation.id.in_(expired), Conversation.notes_at.is_not(None))
+                .values(notes=None, notes_model=None, notes_at=None)
+            )
+        ).rowcount
 
         counts["items"] += (
             await s.execute(
@@ -162,7 +176,9 @@ async def _sweep_tenant(sf: async_sessionmaker, tenant_id: str, now: datetime, d
                     tenant_id=tenant_id,
                     kind=kind,
                     count=counts[kind],
-                    cutoff=transcript_cutoff if kind == "messages" else long_cutoff,
+                    cutoff=(
+                        transcript_cutoff if kind in ("messages", "notes") else long_cutoff
+                    ),
                     run_at=now,
                 )
             )

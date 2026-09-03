@@ -159,6 +159,9 @@ EXPECTED_JOB_KINDS = {
     "ops.nightly_audit",
     "ops.latency_report",
     "ops.cost_report",
+    # Call notes (call-notes plan, Task N1): queued by the end of a call and by the text
+    # channels' close, one attempt, then dead.
+    "call_notes",
 }
 
 

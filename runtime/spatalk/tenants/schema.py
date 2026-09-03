@@ -150,6 +150,17 @@ class Scripts(BaseModel, frozen=True):
         "emergency, please call 911 now."
     )
 
+    # --- call notes (call-notes plan, Task N1) ---
+    # Neither line is ever spoken or sent to a customer; both are read by staff only. The
+    # label heads the notes block on the portal card, the staff email and the Slack post, so
+    # nobody mistakes a drafted paragraph for something the caller dictated. The health line
+    # replaces any sentence of the draft that touches a condition, a medication or a
+    # symptom: the notes may say what a caller wants, never what they have.
+    notes_health_line: str = (
+        "Caller mentioned a health matter; read the transcript before calling."
+    )
+    notes_label: str = "AI notes, drafted from the transcript"
+
     # The one text a sender may get while the tenant's assistant is paused on SMS (plan F).
     # It names no reply time: nothing is generated until the local day rolls over.
     sms_paused: str = (
@@ -269,6 +280,11 @@ class TenantConfig(BaseModel, frozen=True):
     fulfilment: str = "tier_c"
     retention_days: int = 30
     recording_enabled: bool = False
+    # --- call notes (call-notes plan, Task N1) ---
+    # Whether the post-conversation job drafts notes from the transcript. Off means no model
+    # call and no `conversations.notes`; the assistant still asks whether there is anything
+    # the team should know, because the answer is in the transcript either way.
+    call_notes: bool = True
     hours: dict[str, list[tuple[str, str]]]
     holidays: list[date] = Field(default_factory=list)
     voice_numbers: list[str] = Field(default_factory=list)

@@ -2053,6 +2053,29 @@
               }
             ],
             "title": "External Ref"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "notes_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes At"
           }
         },
         "type": "object",
@@ -2069,7 +2092,9 @@
           "caller_masked",
           "tenant_id",
           "caller",
-          "external_ref"
+          "external_ref",
+          "notes",
+          "notes_at"
         ],
         "title": "ConversationFull"
       },
@@ -2528,6 +2553,17 @@
           "preferred_text": {
             "type": "string",
             "title": "Preferred Text"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
           }
         },
         "type": "object",
@@ -2558,7 +2594,8 @@
           "created_at",
           "summary",
           "service_name",
-          "preferred_text"
+          "preferred_text",
+          "notes"
         ],
         "title": "ItemOut",
         "description": "Every column of `runtime.items`. There is no free-text column and never will be."

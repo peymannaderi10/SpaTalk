@@ -234,12 +234,15 @@ async def test_retention_deletes_across_the_thresholds_and_counts_match(sf, regi
         "conversations": 1,
         "items": 1,
         "usage_events": 1,
+        # Drafted notes go with the transcript they were drafted from (call-notes plan, N1).
+        "notes": 0,
     }
     assert summary.per_tenant["otherclinic"] == {
         "messages": 2,
         "conversations": 0,
         "items": 0,
         "usage_events": 0,
+        "notes": 0,
     }
     # Only the two-day-old transcripts of the fresh conversation survive.
     assert await _count(sf, Message) == 2
@@ -459,3 +462,73 @@ async def test_the_queued_job_runs_the_retention(sf, registry, fixed_clock):
 
     assert await _count(sf, Message) == 2
     assert len(await _receipts(sf)) == 5
+
+
+# --- call notes (call-notes plan, Task N1) ---------------------------------------------
+# The notes are a derived view of the transcript, so they live and die with it: the same
+# sweep that hard-deletes the messages nulls the three columns and leaves a receipt behind.
+
+
+async def _with_notes(sf, cid, notes="Caller wants help with dark spots before a wedding."):
+    from sqlalchemy import update
+
+    from spatalk.models import Conversation
+
+    async with sf() as s, s.begin():
+        await s.execute(
+            update(Conversation)
+            .where(Conversation.id == cid)
+            .values(notes=notes, notes_model="gemini-2.5-flash", notes_at=NOW)
+        )
+
+
+async def test_the_notes_are_nulled_with_the_transcript_and_counted(sf, registry, fixed_clock):
+    from spatalk.models import Conversation
+    from spatalk.ops.retention import run_retention
+
+    expired = await _conversation(
+        sf,
+        "skincentrix",
+        started_at=NOW - timedelta(days=40),
+        ended_at=NOW - timedelta(days=40),
+        messages=2,
+    )
+    fresh = await _conversation(
+        sf,
+        "skincentrix",
+        started_at=NOW - timedelta(days=2),
+        ended_at=NOW - timedelta(days=2),
+        messages=2,
+    )
+    await _with_notes(sf, expired)
+    await _with_notes(sf, fresh)
+
+    summary = await run_retention(_ctx(sf, registry, fixed_clock), NOW)
+
+    async with sf() as s:
+        gone = await s.get(Conversation, expired)
+        kept = await s.get(Conversation, fresh)
+    assert gone.notes is None and gone.notes_model is None and gone.notes_at is None
+    assert kept.notes is not None, "a live transcript keeps its notes"
+    assert summary.per_tenant["skincentrix"]["notes"] == 1
+    assert ("skincentrix", "notes", 1) in {(t, k, c) for t, k, c, _, _ in await _receipts(sf)}
+
+
+async def test_nulling_the_notes_twice_writes_one_receipt(sf, registry, fixed_clock):
+    """Idempotence: the second sweep finds nothing to null, so it accounts for nothing."""
+    from spatalk.ops.retention import run_retention
+
+    cid = await _conversation(
+        sf,
+        "skincentrix",
+        started_at=NOW - timedelta(days=40),
+        ended_at=NOW - timedelta(days=40),
+        messages=1,
+    )
+    await _with_notes(sf, cid)
+    ctx = _ctx(sf, registry, fixed_clock)
+    await run_retention(ctx, NOW)
+    again = await run_retention(ctx, NOW)
+
+    assert again.per_tenant["skincentrix"]["notes"] == 0
+    assert [k for _, k, _, _, _ in await _receipts(sf)].count("notes") == 1

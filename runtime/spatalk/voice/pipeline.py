@@ -347,6 +347,9 @@ async def _finalize(ctx, session: VoiceSession, context: LLMContext) -> None:
         # Operations plan, Task E5: the call's own per-stage p95, stored by the call rather
         # than recomputed later, because retention takes the transcript long before this.
         stage_ms=session_stage_ms(session) or None,
+        # Call-notes plan, Task N1: the transcript is written above, so the drafting job can
+        # be queued the moment the call is recorded.
+        call_notes=session.cfg.call_notes,
     )
     # Missed-call text-back (text-channels plan, Task B3). Last, so a caller who hung up
     # early is offered a text only after the call itself is fully recorded.

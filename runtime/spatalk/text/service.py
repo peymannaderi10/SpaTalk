@@ -31,7 +31,7 @@ from spatalk.brain.driver import Brain, LLMClient, TurnResult
 from spatalk.brain.hours import BusinessCalendar
 from spatalk.brain.renderer import render_script
 from spatalk.brain.requests import ConversationRef
-from spatalk.conversations import append_message, record_usage
+from spatalk.conversations import append_message, queue_call_notes, record_usage
 from spatalk.models import Conversation, InboundMessage, Item, Job, Message, SmsOptout
 from spatalk.text import takeover
 from spatalk.text.segments import split_sms
@@ -239,7 +239,7 @@ class TextConversationService:
         for part in replies:
             await append_message(ctx.sf, conv.id, "assistant", part, at=ctx.clock.now())
             await takeover.mirror_to_thread(ctx, conv.id, part, "assistant")
-        await self._finish_turn(conv, turn)
+        await self._finish_turn(cfg, conv, turn)
         if replies:
             await self._meter(
                 cfg.id, conv.id, channel, USAGE_UNITS[channel][1], len(replies)
@@ -273,7 +273,7 @@ class TextConversationService:
         for part in replies:
             await self._ctx.sms.send(cfg.sms_from_number, conv.caller, part)
 
-    async def _finish_turn(self, conv: Conversation, turn: TurnResult) -> None:
+    async def _finish_turn(self, cfg, conv: Conversation, turn: TurnResult) -> None:
         now = self._ctx.clock.now()
         values: dict = {"last_message_at": now}
         if turn.health_context:
@@ -289,6 +289,11 @@ class TextConversationService:
             await s.execute(
                 update(Conversation).where(Conversation.id == conv.id).values(**values)
             )
+        # Call-notes plan, Task N1: the close is where a text conversation gets its notes,
+        # for the same reason the end of a call is. The handler is idempotent per
+        # conversation, so a second close cannot draft twice.
+        if turn.ended and cfg.call_notes:
+            await queue_call_notes(self._ctx.sf, conv.id)
 
     async def _touch(self, conversation_id: uuid.UUID) -> None:
         async with self._ctx.sf() as s, s.begin():

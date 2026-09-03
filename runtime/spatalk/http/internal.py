@@ -193,6 +193,20 @@ class ConversationFull(ConversationRow):
     tenant_id: str
     caller: str | None
     external_ref: str | None
+    # --- call notes (call-notes plan, Task N1) ---
+    # The notes drafted from this conversation's transcript, under the tenant's own label in
+    # the portal. Null until the drafting job has run, and null again for good when
+    # retention takes the transcript. The list view stays without them on purpose: a page of
+    # conversations is a list of rows, and the notes are read on the page that shows the
+    # transcript beside them.
+    notes: str | None
+    notes_at: datetime | None
+
+
+# The name the call-notes plan gives the conversation output model. The model itself has
+# been `ConversationFull` since the portal plan, and renaming it would rename a schema the
+# portal's generated client already imports.
+ConversationOut = ConversationFull
 
 
 class MessageOut(BaseModel):
@@ -235,13 +249,18 @@ class ItemOut(BaseModel):
     summary: str
     service_name: str | None
     preferred_text: str
+    # --- call notes (call-notes plan, Task N1) ---
+    # Read from the item's *conversation*, never stored here: `items` has no free-text
+    # column and never will (CLAUDE.md non-negotiable 2). It travels with the item so the
+    # request card needs one call rather than a second fetch per row.
+    notes: str | None
 
 
-# The three fields above that are composed rather than read from a column.
-DERIVED_ITEM_FIELDS = ("summary", "service_name", "preferred_text")
+# The four fields above that are composed or joined rather than read from a column.
+DERIVED_ITEM_FIELDS = ("summary", "service_name", "preferred_text", "notes")
 
 
-def item_out(item: Item, cfg: TenantConfig) -> ItemOut:
+def item_out(item: Item, cfg: TenantConfig, notes: str | None = None) -> ItemOut:
     """One item as the portal sees it: its columns plus the derived, deterministic wording."""
     known = cfg.service(item.service_id) if item.service_id else None
     return ItemOut(
@@ -253,7 +272,24 @@ def item_out(item: Item, cfg: TenantConfig) -> ItemOut:
         summary=summarize_item(item, cfg),
         service_name=known.name if known else None,
         preferred_text=preferred_text(item.preferred_window),
+        notes=notes,
     )
+
+
+async def notes_by_conversation(sf: async_sessionmaker, items: list[Item]) -> dict:
+    """The drafted notes for a page of items, in one query keyed by conversation id."""
+    ids = {i.conversation_id for i in items if i.conversation_id is not None}
+    if not ids:
+        return {}
+    async with sf() as s:
+        rows = (
+            await s.execute(
+                select(Conversation.id, Conversation.notes).where(
+                    Conversation.id.in_(ids), Conversation.notes.is_not(None)
+                )
+            )
+        ).all()
+    return dict(rows)
 
 
 class ConversationDetail(BaseModel):
@@ -736,9 +772,11 @@ async def read_conversation(
             tenant_id=conv.tenant_id,
             caller=conv.caller,
             external_ref=conv.external_ref,
+            notes=conv.notes,
+            notes_at=conv.notes_at,
         ),
         messages=[MessageOut.model_validate(m) for m in messages],
-        items=[item_out(i, cfg) for i in items],
+        items=[item_out(i, cfg, conv.notes) for i in items],
     )
 
 
@@ -767,7 +805,8 @@ async def tenant_items(
             )
         ).all()
     cfg = await _tenant_config(ctx, tenant_id)
-    return [item_out(i, cfg) for i in rows]
+    notes = await notes_by_conversation(ctx.sf, list(rows))
+    return [item_out(i, cfg, notes.get(i.conversation_id)) for i in rows]
 
 
 async def _transition(request: Request, item_id: int, body: ActorIn, x_actor: str | None, verb):
@@ -778,7 +817,10 @@ async def _transition(request: Request, item_id: int, body: ActorIn, x_actor: st
     if item is None:
         raise HTTPException(status_code=404, detail=f"unknown item {item_id}")
     await write_audit(ctx.sf, portal_actor(x_actor, body.actor), verb, "item", str(item_id))
-    return item_out(item, await _tenant_config(ctx, item.tenant_id))
+    notes = await notes_by_conversation(ctx.sf, [item])
+    return item_out(
+        item, await _tenant_config(ctx, item.tenant_id), notes.get(item.conversation_id)
+    )
 
 
 @router.post("/items/{item_id}/acknowledge", response_model=ItemOut)

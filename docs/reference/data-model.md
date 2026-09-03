@@ -69,7 +69,7 @@ Index: unique `(tenant_id, version)`.
 
 Index: unique `(tenant_id, provider)`; `(provider, external_id)` for webhook resolution.
 
-### conversations [Task 7; columns added by B2, B5, E5]
+### conversations [Task 7; columns added by B2, B5, E5, N1]
 | id | uuid PK | |
 | tenant_id | text FK | |
 | channel | text | `voice`, `sms`, `chat`, `instagram`, `messenger` |
@@ -87,6 +87,19 @@ Index: unique `(tenant_id, provider)`; `(provider, external_id)` for webhook res
 | closed_at | timestamptz null | text channels [B2] |
 | followup_sent_at | timestamptz null | the single follow-up [B2] |
 | slack_channel, slack_ts | text null | thread root for takeover [B5] |
+| notes | text null | a few sentences drafted from this conversation's own transcript by the `call_notes` job, for the staff member who returns the call [N1] |
+| notes_model | varchar(80) null | the model that drafted them, as `LLM_MODEL` names it [N1] |
+| notes_at | timestamptz null | when the drafting ran. Stamped even when the draft was empty, which is what makes the job idempotent; `notes` stays null rather than carrying a placeholder [N1] |
+
+The notes are the one place in this schema where a model's own words are stored. They are a
+derived view of the transcript and are bound by the transcript's retention, and carry the
+tenant's `notes_label` on every rendering so nobody mistakes a drafted paragraph for
+something the caller dictated. Opening the conversation still writes a `read_transcript`
+audit row; reading a page of items, which carries the notes so the card needs one call, does
+not, exactly as before [N1]. They are never copied onto an item, never spoken, never sent
+to the customer, and never fed back to a model on a later turn. Any drafted sentence the
+health-context or clinical lexicon matches is replaced by `scripts.notes_health_line` before
+the notes are stored, so the notes can say what a caller wants and never what they have.
 
 Indexes: `(tenant_id, started_at desc)`; `(tenant_id, channel, external_ref, last_message_at desc)` for find-or-create; `(slack_ts)`.
 
@@ -122,7 +135,7 @@ Index: `(conversation_id, id)`.
 
 There is no free-text column on this table and there must never be one. The three lead-context columns are closed vocabularies drawn from the tenant config, checked by the ledger on write.
 
-The request summary staff read (`"New booking: Mirapeel facial for pigmentation. New client, no practitioner preference. Callback Thursday afternoon."`) is **derived, never stored**: `spatalk.ledger.summary.summarize_item(item, cfg)` composes it from these columns and fixed labels, so it cannot drift from the fields. The SMS, email, Slack and portal renderings all call it.
+The request summary staff read (`"New booking: Mirapeel facial for pigmentation. New client, no practitioner preference. Callback Thursday afternoon."`) is **derived, never stored**: `spatalk.ledger.summary.summarize_item(item, cfg)` composes it from these columns and fixed labels, so it cannot drift from the fields. The SMS, email, Slack and portal renderings all call it. The call notes are the other half of what staff read and are not part of it: they are drafted by a model, live on `conversations.notes`, and are shown beside the summary under their own label, never merged into it [N1].
 
 Indexes: `(tenant_id, state, due_at)`; partial `(due_at) where state = 'open' and escalated_at is null` for the breach scan.
 
@@ -245,7 +258,7 @@ per (tenant, kind) per run, and only when the count is non-zero.
 |---|---|---|
 | id | bigserial PK | |
 | tenant_id | text | not a foreign key: a receipt outlives the tenant it accounts for |
-| kind | text | `messages`, `conversations`, `items`, `usage_events` |
+| kind | text | `messages`, `conversations`, `items`, `usage_events`, `notes` (conversations whose drafted notes were cleared, not rows deleted) [N1] |
 | count | int | rows deleted |
 | cutoff | timestamptz | everything older than this went |
 | run_at | timestamptz | the run's clock, not the database's |
@@ -299,14 +312,14 @@ No portal model mirrors a runtime table.
 - `conversations.band`: 1 handled end to end, 2 captured for a human, 3 straight to a human.
 - `conversations.controller`: `ai`, `human`, `closed`.
 - `usage_events.unit`: `telephony_seconds`, `stt_seconds`, `tts_chars`, `llm_input_tokens`, `llm_cached_tokens`, `llm_output_tokens`, `sms_in`, `sms_out`, `chat_in`, `chat_out`, `ig_in`, `ig_out`, `fb_in`, `fb_out`.
-- `jobs.kind`: `deliver.slack`, `deliver.email`, `digest.email`, `text.followup`, `sms.textback`, `social.ig_event`, `social.fb_event`, `social.refresh_tokens`, `ops.retention`, `ops.nightly_audit`, `ops.cost_report`, `ops.alert`.
+- `jobs.kind`: `deliver.slack`, `deliver.email`, `digest.email`, `text.followup`, `sms.textback`, `social.ig_event`, `social.fb_event`, `social.refresh_tokens`, `ops.retention`, `ops.nightly_audit`, `ops.cost_report`, `ops.alert`, `call_notes`.
 - Outcome kinds (not stored, but appear in logs and scenario outputs): `captured`, `link_sent`, `refused`, `completed`, `transferred`.
 
 ## Retention (operations plan E3)
 
 | data | default | per tenant |
 |---|---|---|
-| messages (transcripts) | 30 days after `ended_at` | `retention_days` |
+| messages (transcripts), and `conversations.notes`, `notes_model`, `notes_at` with them | 30 days after `ended_at` | `retention_days` |
 | conversations | stub kept 400 days (no caller, no latency), then deleted | fixed |
 | items | 400 days | fixed |
 | usage_events | 400 days | fixed |
