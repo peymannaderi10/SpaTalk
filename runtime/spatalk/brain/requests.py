@@ -47,6 +47,17 @@ class EscalateRequest(BaseModel, frozen=True):
     contact: ContactInfo = ContactInfo()
 
 
+class TransferRequest(BaseModel, frozen=True):
+    """Ask to be put through to a person (operations plan, Task E10).
+
+    There is nothing to say about the request itself: the destination is the tenant's
+    `transfer_number` and the caller is the conversation. The contact exists only so a
+    tier that cannot transfer has something to file the fallback callback against.
+    """
+
+    contact: ContactInfo = ContactInfo()
+
+
 class ConversationRef(BaseModel, frozen=True):
     model_config = ConfigDict(arbitrary_types_allowed=True)
     conversation_id: UUID

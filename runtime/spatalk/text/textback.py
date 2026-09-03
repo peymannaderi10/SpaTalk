@@ -102,6 +102,13 @@ async def schedule_missed_call_textback(
         return False
     if had_user_speech and duration_s >= SHORT_CALL_SECONDS:
         return False
+    # --- live transfer (operations plan, Task E10) ---
+    # A transferred caller is talking to a member of staff right now. The call looks short
+    # to this function because our leg ended early, but nothing was missed, and "You just
+    # called us, reply here and I can help" would be false as well as annoying.
+    if session.transferred:
+        logger.info("call {} was transferred to a person; no missed-call text-back", cfg.id)
+        return False
     if not cfg.sms_from_number:
         logger.info("tenant {} has no sms_from_number; no missed-call text-back", cfg.id)
         return False

@@ -13,6 +13,13 @@ TOOL_NAMES = (
     "end_conversation",
 )
 
+# --- live transfer (operations plan, Task E10) -------------------------------------------
+# Not in TOOL_NAMES: this one is not a property of the tenant, it is a property of the
+# moment. It exists in the model's tool list only on a call where the tenant has a staffed
+# back-line and the clinic is open right now, so the model can never offer a transfer that
+# would ring an empty room. `spatalk.voice.transfer.transfer_available` is the decision.
+TRANSFER_TOOL = "transfer_to_human"
+
 WINDOW = {
     "type": "object",
     "description": "When the caller would like to come in.",
@@ -39,9 +46,14 @@ def _contact() -> dict:
     }
 
 
-def build_tools(cfg: TenantConfig) -> list[FunctionSchema]:
+def build_tools(cfg: TenantConfig, transfer_enabled: bool = False) -> list[FunctionSchema]:
+    """The tools the model may call on this turn.
+
+    `transfer_enabled` is decided per call from the calendar state (E10), which is why the
+    tool list is built here rather than cached on the tenant.
+    """
     service_ids = [s.id for s in cfg.services]
-    return [
+    tools = [
         FunctionSchema(
             name="send_booking_link",
             description=(
@@ -109,10 +121,24 @@ def build_tools(cfg: TenantConfig) -> list[FunctionSchema]:
             required=[],
         ),
     ]
+    if transfer_enabled:
+        tools.append(
+            FunctionSchema(
+                name=TRANSFER_TOOL,
+                description=(
+                    "Put the caller through to a person at the clinic now. "
+                    "Use only when they ask to speak to someone and the matter needs a "
+                    "person. Say nothing about the result; the system speaks it."
+                ),
+                properties={},
+                required=[],
+            )
+        )
+    return tools
 
 
-def tools_schema(cfg: TenantConfig) -> ToolsSchema:
-    return ToolsSchema(standard_tools=build_tools(cfg))
+def tools_schema(cfg: TenantConfig, transfer_enabled: bool = False) -> ToolsSchema:
+    return ToolsSchema(standard_tools=build_tools(cfg, transfer_enabled=transfer_enabled))
 
 
 def to_genai_declarations(tools: list[FunctionSchema]) -> list[dict]:

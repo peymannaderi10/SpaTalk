@@ -41,3 +41,16 @@ class VoiceSession:
     stage_ttfb_ms: dict[str, list[int]] = field(
         default_factory=lambda: {"stt": [], "llm": [], "tts": []}
     )
+    # --- live transfer (operations plan, Task E10) ---
+    # The Telnyx leg id from the media stream's start message, the carrier client behind
+    # `TransferPort`, and whether the tool was in this call's tool list at all. `transferred`
+    # is set only after the carrier accepted, and is the reason `_finalize` must not treat
+    # the socket closing as an abandoned call.
+    call_control_id: str | None = None
+    transfer: Any = None
+    transfer_enabled: bool = False
+    transferred: bool = False
+    # The serializer's own InputParams object. After a successful transfer its
+    # `auto_hang_up` is switched off, because the EndFrame or CancelFrame that ends our
+    # side of the pipeline would otherwise hang up the leg the caller is now talking on.
+    hangup_params: Any = None

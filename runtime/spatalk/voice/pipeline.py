@@ -50,6 +50,9 @@ from spatalk.voice.observers import TurnLatencyObserver, UsageObserver
 from spatalk.voice.processors import OutputGuardProcessor, RulesGateProcessor
 from spatalk.voice.session import VoiceSession
 from spatalk.voice.tokens import verify_stream_token
+# Operations plan, Task E10: live transfer to a staffed back-line, Option A (the leg the
+# TeXML application created is transferred through the Call Control API by its id).
+from spatalk.voice.transfer import make_transfer, transfer_available
 
 
 def make_stt(settings):
@@ -131,12 +134,16 @@ async def run_call(websocket: WebSocket, token: str, ctx) -> None:
         await websocket.close()
         return
     cfg = await ctx.registry.get(claim.tenant_id)
+    # Held rather than defaulted so a successful transfer can switch `auto_hang_up` off on
+    # this exact object (operations plan, Task E10); the serializer keeps the instance.
+    serializer_params = TelnyxFrameSerializer.InputParams()
     serializer = TelnyxFrameSerializer(
         stream_id=call_data["stream_id"],
         call_control_id=call_data["call_id"],
         outbound_encoding=call_data.get("outbound_encoding") or "PCMU",
         inbound_encoding="PCMU",
         api_key=settings.telnyx_api_key,
+        params=serializer_params,
     )
     transport = FastAPIWebsocketTransport(
         websocket=websocket,
@@ -154,14 +161,28 @@ async def run_call(websocket: WebSocket, token: str, ctx) -> None:
         caller_phone=claim.caller,
     )
     caps = load_capabilities(cfg, ctx.ledger, ctx.sms, ctx.clock)
+    now = ctx.clock.now()
+    # --- live transfer (operations plan, Task E10) ---
+    # Decided once, here, for this call: the model is offered `transfer_to_human` only when
+    # the tenant has a staffed back-line and the clinic is open at this moment. The leg id
+    # is the one Telnyx put in the stream start message, which is also what the serializer
+    # uses to hang up, so both halves of the call agree on which call this is.
+    can_transfer = transfer_available(cfg, now)
     session = VoiceSession(
-        ref=ref, cfg=cfg, caps=caps, clock=ctx.clock, started_at=datetime.now(timezone.utc)
+        ref=ref,
+        cfg=cfg,
+        caps=caps,
+        clock=ctx.clock,
+        started_at=datetime.now(timezone.utc),
+        call_control_id=call_data["call_id"],
+        transfer=make_transfer(settings) if can_transfer else None,
+        transfer_enabled=can_transfer,
+        hangup_params=serializer_params,
     )
 
-    now = ctx.clock.now()
     context = LLMContext(
         messages=[{"role": "system", "content": build_system_prompt(cfg, "voice", now)}],
-        tools=tools_schema(cfg),
+        tools=tools_schema(cfg, transfer_enabled=can_transfer),
     )
     user_agg, assistant_agg = LLMContextAggregatorPair(
         context,

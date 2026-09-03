@@ -8,18 +8,28 @@ what happened.
 
 from __future__ import annotations
 
+from loguru import logger
 from pipecat.frames.frames import EndFrame, FunctionCallResultProperties, TTSSpeakFrame
 from pipecat.services.llm_service import FunctionCallParams
 
 from spatalk.brain.driver import dispatch_tool
-from spatalk.brain.outcomes import Captured, Completed
-from spatalk.brain.tools import TOOL_NAMES
+from spatalk.brain.outcomes import Captured, Completed, Refused, Transferred
+from spatalk.brain.renderer import render, render_script
+from spatalk.brain.requests import TransferRequest
+from spatalk.brain.tools import TOOL_NAMES, TRANSFER_TOOL
 from spatalk.voice.session import VoiceSession
+from spatalk.voice.transfer import attempt_transfer, mask_number, suppress_auto_hangup
 
 
 def register_tool_handlers(llm, session: VoiceSession) -> None:
     for name in TOOL_NAMES:
         llm.register_function(name, _make_handler(session))
+    # Live transfer (operations plan, Task E10). The tool list is built per call from the
+    # calendar state, so the handler is registered only on the calls where the model was
+    # given the tool: a model that cannot see it cannot call it, and a model that
+    # hallucinates the name finds nothing registered.
+    if session.transfer_enabled:
+        llm.register_function(TRANSFER_TOOL, _make_transfer_handler(session))
 
 
 def _make_handler(session: VoiceSession):
@@ -47,5 +57,57 @@ def _make_handler(session: VoiceSession):
             session.ended = True
             if session.worker is not None:
                 await session.worker.queue_frames([EndFrame()])
+
+    return handler
+
+
+def _make_transfer_handler(session: VoiceSession):
+    """`transfer_to_human`: hand the caller to the staffed back-line, or file a callback.
+
+    The order is the honest one. The caller hears `scripts.transferring` first, because it
+    promises an attempt and nothing more, and only then is the carrier asked. If the carrier
+    refuses or never answers within the budget, the Tier C `transfer` capability files an
+    urgent item *before* the human-request wording is spoken, so the sentence the caller
+    hears is backed by a row someone has to work.
+
+    On success no EndFrame is queued. `TelnyxFrameSerializer` hangs the call up when it sees
+    one (`auto_hang_up` is on by default), which would drop the very leg we just handed over.
+    """
+
+    async def handler(params: FunctionCallParams):
+        cfg, now = session.cfg, session.clock.now()
+        # Band 3 either way: the caller asked for a person, and that is what the nightly
+        # audit is looking for whether or not the carrier played along.
+        session.band = 3
+        await params.llm.push_frame(
+            TTSSpeakFrame(
+                text=render_script("transferring", cfg, now, urgent=False),
+                append_to_context=True,
+            )
+        )
+        ok = await attempt_transfer(
+            session.transfer, session.call_control_id, cfg.transfer_number
+        )
+        if ok:
+            session.transferred = True
+            session.ended = True
+            suppress_auto_hangup(session.hangup_params)
+            outcome = Transferred(number_masked=mask_number(cfg.transfer_number or ""))
+        else:
+            try:
+                outcome = await session.caps.transfer(session.ref, TransferRequest())
+            except Exception as e:  # noqa: BLE001  ledger down: nothing was filed either
+                logger.exception("transfer fallback could not file a callback: {}", e)
+                outcome = Refused(reason="unavailable")
+            await params.llm.push_frame(
+                TTSSpeakFrame(
+                    text=render(outcome, cfg, now, channel=session.ref.channel),
+                    append_to_context=True,
+                )
+            )
+        await params.result_callback(
+            {"spoken": True, "outcome": outcome.kind},
+            properties=FunctionCallResultProperties(run_llm=False),
+        )
 
     return handler

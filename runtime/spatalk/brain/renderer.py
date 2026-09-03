@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from spatalk.brain.hours import BusinessCalendar, humanize_due
-from spatalk.brain.outcomes import Captured, Completed, LinkSent, Outcome, Refused
+from spatalk.brain.outcomes import Captured, Completed, LinkSent, Outcome, Refused, Transferred
 from spatalk.tenants.schema import TenantConfig
 
 COMPLETED_TEMPLATE = "Done. Your {service} is {verb} for {when}. Your reference is {ref}."
@@ -78,6 +78,11 @@ def render(outcome: Outcome, cfg: TenantConfig, now: datetime, channel: str = "v
         if outcome.reason == "payment":
             return _fill(s.payment, cfg, now, urgent=True)
         return _fill(getattr(s, f"refuse_{outcome.reason}"), cfg, now, urgent=False)
+    if isinstance(outcome, Transferred):
+        # The same sentence the voice handler speaks before it dials, rendered from the same
+        # script so the two can never drift (operations plan, Task E10). It promises a
+        # connection attempt, not a completed action, which is what actually happened.
+        return _fill(s.transferring, cfg, now, urgent=False)
     if isinstance(outcome, Completed):
         return COMPLETED_TEMPLATE.format(
             service="appointment",

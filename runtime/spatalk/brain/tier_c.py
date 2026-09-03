@@ -10,6 +10,7 @@ from spatalk.brain.requests import (
     ContactInfo,
     ConversationRef,
     EscalateRequest,
+    TransferRequest,
 )
 from spatalk.clock import Clock
 
@@ -92,6 +93,17 @@ class TierCCapabilities:
                 ),
             )
         return Refused(reason="no_contact")
+
+    async def transfer(self, ref: ConversationRef, req: TransferRequest) -> Captured:
+        """No booking platform and no call leg here, so a transfer is a callback (E10).
+
+        This runs when the tenant has no `transfer_number`, and as the fallback when the
+        carrier refused or never answered. Either way an urgent item exists before the
+        caller hears anything, so the human-request wording the renderer produces is true.
+        """
+        return await self.escalate(
+            ref, EscalateRequest(reason="human_request", contact=req.contact)
+        )
 
     async def escalate(self, ref: ConversationRef, req: EscalateRequest) -> Captured:
         return await self._capture(

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from spatalk.brain.outcomes import Captured, LinkSent, Outcome, Refused
+from spatalk.brain.outcomes import Captured, LinkSent, Outcome, Refused, Transferred
 from spatalk.brain.ports import LedgerPort, SmsPort
 from spatalk.brain.requests import (
     AppointmentChangeRequest,
@@ -10,6 +10,7 @@ from spatalk.brain.requests import (
     CaptureRequest,
     ConversationRef,
     EscalateRequest,
+    TransferRequest,
 )
 from spatalk.clock import Clock
 from spatalk.tenants.schema import TenantConfig
@@ -29,6 +30,14 @@ class Capabilities(Protocol):
     ) -> LinkSent | Captured | Refused: ...
 
     async def escalate(self, ref: ConversationRef, req: EscalateRequest) -> Captured: ...
+
+    # --- live transfer (operations plan, Task E10) ---
+    # A tier with a call leg and a staffed back-line can hand the caller over and return
+    # `Transferred`. A tier without one returns `Captured`: an urgent callback the team
+    # actually has to work, never a claim that anybody was connected.
+    async def transfer(
+        self, ref: ConversationRef, req: TransferRequest
+    ) -> Transferred | Captured: ...
 
 
 def load_capabilities(
