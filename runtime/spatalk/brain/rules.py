@@ -45,6 +45,21 @@ HEALTH_CONTEXT_DEFAULT: list[str] = [
 ]
 ORDER: list[EscalateReason] = ["human_request", "clinical", "complaint", "payment"]
 
+# "Am I talking to a real person?" is a question about the assistant, not a request for a
+# person. The words overlap with the human-request lexicon ("real person", "a human"), so
+# the identity clause is blanked out before that lexicon runs; the model answers it honestly
+# under a prompt rule. A request in the same breath ("are you a bot? get me a person") still
+# gates, because only the identity clause is removed, up to the next sentence break.
+IDENTITY_QUESTION = re.compile(
+    r"\b(?:are|r)\s+you\s+(?:a\s+|an\s+)?(?:real|human|actual|live|robot|bot|machine|computer|"
+    r"recording|ai|a\.i\.|person)\b[^.?!]*"
+    r"|\bam\s+i\s+(?:speaking|talking|chatting)\s+(?:to|with)\s+(?:a\s+|an\s+)?"
+    r"(?:real\s+|human\s+|actual\s+|live\s+)?(?:person|human|robot|bot|machine|ai)\b[^.?!]*"
+    r"|\bis\s+this\s+(?:a\s+|an\s+)?(?:real\s+|live\s+|actual\s+)?"
+    r"(?:person|human|robot|bot|machine|recording|ai)\b[^.?!]*",
+    re.IGNORECASE,
+)
+
 
 @dataclass(frozen=True)
 class GateDecision:
@@ -60,7 +75,8 @@ def _pattern(terms: list[str]) -> re.Pattern:
 def rules_gate(text: str, cfg: TenantConfig) -> GateDecision | None:
     for reason in ORDER:
         terms = DEFAULT_LEXICONS[reason] + list(getattr(cfg.lexicons, reason))
-        m = _pattern(terms).search(text)
+        haystack = IDENTITY_QUESTION.sub(" ", text) if reason == "human_request" else text
+        m = _pattern(terms).search(haystack)
         if m:
             return GateDecision(reason=reason, matched=m.group(0).lower())
     return None
