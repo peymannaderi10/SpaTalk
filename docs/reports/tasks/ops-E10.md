@@ -2,7 +2,7 @@
 
 Status: done with deviations
 Commit: fc4283a
-Tests: `uv run pytest tests/test_voice_transfer.py -q` -> 20/20; full suite `uv run pytest -q` -> 934/935 (1 pre-existing failure, see Deviations)
+Tests: `uv run pytest tests/test_voice_transfer.py -q` -> 20/20; full suite `uv run pytest -q` -> 938/939 with 2 skipped (1 pre-existing failure, see Deviations)
 Interfaces produced: `Transferred(number_masked)`; `TransferRequest`; `Capabilities.transfer`; `TierCCapabilities.transfer`; `build_tools(cfg, transfer_enabled=False)`; `tools_schema(cfg, transfer_enabled=False)`; `TRANSFER_TOOL`; `spatalk.voice.transfer.{TransferPort, TelnyxTransfer, MemoryTransfer, make_transfer, attempt_transfer, transfer_available, mask_number, suppress_auto_hangup, TRANSFER_TIMEOUT_SECONDS}`; `VoiceSession.{call_control_id, transfer, transfer_enabled, transferred, hangup_params}`
 
 ## What was built
@@ -74,7 +74,7 @@ already uses to hang up).
      missed call. A transferred call is short because we handed it over, so the caller who is
      mid-conversation with a staff member would have been texted "You just called us. Reply
      here and I can help." One guard added: `if session.transferred: return False`.
-- **Full suite is 934/935.** The one failure,
+- **Full suite is 938/939.** The one failure,
   `tests/test_internal_api.py::test_the_packaged_rates_match_the_researched_table`, is
   pre-existing drift between `runtime/spatalk/rates.json` and `docs/research/rates.json` (E9's
   files, neither touched here). Evidence: `git stash push -u -- runtime/spatalk runtime/tests`
