@@ -1,7 +1,7 @@
 # operations Task E10: Live transfer spike and implementation
 
 Status: done with deviations
-Commit: <pending>
+Commit: fc4283a
 Tests: `uv run pytest tests/test_voice_transfer.py -q` -> 20/20; full suite `uv run pytest -q` -> 934/935 (1 pre-existing failure, see Deviations)
 Interfaces produced: `Transferred(number_masked)`; `TransferRequest`; `Capabilities.transfer`; `TierCCapabilities.transfer`; `build_tools(cfg, transfer_enabled=False)`; `tools_schema(cfg, transfer_enabled=False)`; `TRANSFER_TOOL`; `spatalk.voice.transfer.{TransferPort, TelnyxTransfer, MemoryTransfer, make_transfer, attempt_transfer, transfer_available, mask_number, suppress_auto_hangup, TRANSFER_TIMEOUT_SECONDS}`; `VoiceSession.{call_control_id, transfer, transfer_enabled, transferred, hangup_params}`
 
