@@ -71,7 +71,7 @@ export function TranscriptSheet({
       <SheetContent
         side="right"
         data-testid={testId}
-        className="w-full gap-0 p-0 sm:max-w-xl"
+        className="flex w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-xl"
       >
         <SheetHeader className="bg-card flex-none gap-3 border-b p-4 pe-12">
           <div>
@@ -121,7 +121,7 @@ export function TranscriptSheet({
           )}
         </SheetHeader>
 
-        <ScrollArea className="flex-1">
+        <ScrollArea className="min-h-0 flex-1">
           <div className="flex flex-col gap-4 p-4">
             {conversation.health_context && (
               <p className="border-border text-muted-foreground flex items-start gap-2 rounded-md border p-3 text-sm">
