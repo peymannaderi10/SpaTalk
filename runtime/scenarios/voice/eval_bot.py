@@ -60,7 +60,7 @@ from spatalk.settings import get_settings  # noqa: E402
 from spatalk.tenants.bundle import load_bundle  # noqa: E402
 from spatalk.voice.handlers import register_tool_handlers  # noqa: E402
 from spatalk.voice.observers import TurnLatencyObserver, UsageObserver  # noqa: E402
-from spatalk.voice.pipeline import make_llm, make_stt, make_tts  # noqa: E402
+from spatalk.voice.pipeline import llm_stage, make_llm, make_stt, make_tts  # noqa: E402
 from spatalk.voice.processors import (  # noqa: E402
     FillerProcessor,
     OutputGuardProcessor,
@@ -113,7 +113,12 @@ async def bot(runner_args) -> None:
             user_mute_strategies=[MuteUntilFirstBotCompleteUserMuteStrategy()],
         ),
     )
-    stt, tts, llm = make_stt(settings), make_tts(settings), make_llm(settings)
+    stt, tts = make_stt(settings), make_tts(settings)
+    # `make_llm` returns (primary, secondary or None) since the llm failover plan's
+    # Task F2; `llm_stage` is the router when a fallback is configured and the service
+    # itself when there is none, so the eval bot runs the production shape either way.
+    primary, secondary = make_llm(settings)
+    llm = llm_stage(primary, secondary, settings)
     # The production order, with the RTVI processor added so the harness can hear what the
     # bot does: transport in -> STT -> rules gate -> user aggregator -> filler -> LLM
     #           -> output guard -> TTS -> transport out -> assistant aggregator

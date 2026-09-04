@@ -33,3 +33,4 @@ fillers: []
 notes_label: "AI notes, drafted from the transcript"
 notes_health_line: "Caller mentioned a health matter; read the transcript before calling."
 model_unavailable: "Sorry, I'm having a little trouble on my end. Could you say that once more?"
+model_down: "I'm sorry, I'm not able to help on this line right now. Please call the clinic directly at {phone}."

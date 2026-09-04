@@ -6,7 +6,7 @@ All on the runtime unless marked portal or edge. Auth column says what proves th
 
 | Method and path | Plan | Auth | Purpose |
 |---|---|---|---|
-| GET /healthz | A14, E7 | none | ok, tenants, config versions, commit, queue and scheduler health |
+| GET /healthz | A14, E7, F2 | none | ok, tenants, config versions, commit, queue and scheduler health, and `llm: {primary, secondary, active, breaker_open_until}` — the vendor names `LLM_MODEL` and `LLM_MODEL_FALLBACK` resolve to, which one the next turn goes to, and, while a vendor is in its cooling-off period, the ISO time it will be tried again (`secondary` is null with no fallback configured) |
 | POST /telnyx/texml | A13, E1 | Telnyx-only URL; loop guard | answers a call with TeXML `<Connect><Stream>` |
 | WS /ws/{token} | A13 | signed stream token, 5 min | Telnyx bidirectional audio |
 | GET /a/{token} | A9 | signed action link, 7 days | confirm page (never acts) or transcript view |

@@ -68,6 +68,8 @@ def test_a_prefix_with_no_model_after_it_is_a_configuration_error():
 
 
 # --- voice: make_llm picks the class, with no network -----------------------------------
+# `make_llm` returns the pair (primary, secondary or None) since the llm failover plan,
+# Task F2; with no LLM_MODEL_FALLBACK set the second half is None and the call is today's.
 
 
 def test_make_llm_returns_the_google_service_for_a_bare_model():
@@ -75,8 +77,8 @@ def test_make_llm_returns_the_google_service_for_a_bare_model():
 
     from spatalk.voice.pipeline import make_llm
 
-    llm = make_llm(_settings(google_api_key="k", llm_model="gemini-2.5-flash"))
-    assert isinstance(llm, GoogleLLMService)
+    llm, secondary = make_llm(_settings(google_api_key="k", llm_model="gemini-2.5-flash"))
+    assert isinstance(llm, GoogleLLMService) and secondary is None
 
 
 def test_make_llm_returns_the_openai_service_for_the_openai_prefix():
@@ -84,8 +86,8 @@ def test_make_llm_returns_the_openai_service_for_the_openai_prefix():
 
     from spatalk.voice.pipeline import make_llm
 
-    llm = make_llm(_settings(openai_api_key="k", llm_model="openai:gpt-4.1-nano"))
-    assert isinstance(llm, OpenAILLMService)
+    llm, secondary = make_llm(_settings(openai_api_key="k", llm_model="openai:gpt-4.1-nano"))
+    assert isinstance(llm, OpenAILLMService) and secondary is None
     # `_settings` is where Pipecat 1.8 keeps a configured service's model until the first
     # request; `get_full_model_name()` is empty before one and Google has no such method.
     assert llm._settings.model == "gpt-4.1-nano", "the prefix must not reach the provider"
@@ -94,8 +96,8 @@ def test_make_llm_returns_the_openai_service_for_the_openai_prefix():
 def test_the_openai_voice_service_runs_at_the_same_temperature_as_google():
     from spatalk.voice.pipeline import LLM_TEMPERATURE, make_llm
 
-    openai_llm = make_llm(_settings(openai_api_key="k", llm_model="openai:gpt-4.1-nano"))
-    google_llm = make_llm(_settings(google_api_key="k", llm_model="gemini-2.5-flash"))
+    openai_llm, _ = make_llm(_settings(openai_api_key="k", llm_model="openai:gpt-4.1-nano"))
+    google_llm, _ = make_llm(_settings(google_api_key="k", llm_model="gemini-2.5-flash"))
     assert openai_llm._settings.temperature == google_llm._settings.temperature
     assert openai_llm._settings.temperature == LLM_TEMPERATURE == 0.3
 

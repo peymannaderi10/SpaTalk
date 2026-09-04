@@ -44,14 +44,19 @@ from pipecat.turns.user_turn_strategies import UserTurnStrategies
 from pipecat.workers.runner import WorkerRunner
 
 from spatalk.brain.audio_tags import strip_audio_tags
+from spatalk.brain.breaker import BREAKER
 from spatalk.brain.capabilities import load_capabilities
-# Operations plan, Task E6: the vendor a model string names.
+# Operations plan, Task E6, and the llm failover plan's addendum: the vendor a model string
+# names, where that vendor lives and which settings field holds its key.
 from spatalk.brain.driver import (
-    OPENAI,
+    GOOGLE,
+    VENDORS,
+    base_url_for,
     gemini_http_options,
     gemini_thinking_kwargs,
     model_name,
     provider_for,
+    vendor_key,
 )
 from spatalk.brain.prompt import build_system_prompt
 from spatalk.brain.renderer import render_script
@@ -62,9 +67,11 @@ from spatalk.conversations import append_message, end_conversation, record_usage
 from spatalk.ops.latency import session_stage_ms
 from spatalk.text.textback import schedule_missed_call_textback
 from spatalk.voice.handlers import register_tool_handlers
+# Llm failover plan, Task F2: two vendors behind one place in the pipeline.
+from spatalk.voice.llm_router import LLMRouter
 from spatalk.voice.observers import TurnLatencyObserver, UsageObserver
 from spatalk.voice.processors import FillerProcessor, OutputGuardProcessor, RulesGateProcessor
-from spatalk.voice.resilience import apology_for_error
+from spatalk.voice.resilience import error_frames
 from spatalk.voice.session import VoiceSession
 from spatalk.voice.tokens import verify_stream_token
 # Operations plan, Task E10: live transfer to a staffed back-line, Option A (the leg the
@@ -149,26 +156,30 @@ def make_tts(settings):
 LLM_TEMPERATURE = 0.3
 
 
-def make_llm(settings):
-    """The conversational LLM for a call. `LLM_MODEL` names the vendor as well as the model.
+def make_llm_service(settings, model: str):
+    """One vendor's Pipecat LLM service for one `vendor:model` string.
 
-    A bare name is Google; `openai:<model>` is OpenAI (spec §10 weakness 3: the swap has to
-    be an environment change, because the vendor decides when the model retires).
+    A bare name is Google; every prefix in `spatalk.brain.driver.VENDORS` is an
+    OpenAI-compatible host and differs only by base URL and key (spec §10 weakness 3: the
+    swap has to be an environment change, because the vendor decides when a model retires).
     """
-    if provider_for(settings.llm_model) == OPENAI:
+    vendor = provider_for(model)
+    if vendor != GOOGLE:
         from pipecat.services.openai.llm import OpenAILLMService
 
-        key = getattr(settings, "openai_api_key", "")
+        key = vendor_key(settings, vendor)
         if not key:
             # The alternative is a service that constructs cleanly and 401s on the first
             # turn of a real call, which is the worst moment to find out.
             raise ValueError(
-                f"LLM_MODEL={settings.llm_model!r} selects OpenAI but OPENAI_API_KEY is not set"
+                f"LLM_MODEL={model!r} selects {vendor} but "
+                f"{VENDORS[vendor].key_env} is not set"
             )
         return OpenAILLMService(
             api_key=key,
+            base_url=base_url_for(settings, vendor),
             settings=OpenAILLMService.Settings(
-                model=model_name(settings.llm_model),
+                model=model_name(model),
                 temperature=LLM_TEMPERATURE,
             ),
         )
@@ -176,12 +187,45 @@ def make_llm(settings):
         api_key=settings.google_api_key,
         http_options=gemini_http_options(),
         settings=GoogleLLMService.Settings(
-            model=settings.llm_model,
+            model=model,
             temperature=LLM_TEMPERATURE,
-            thinking=GoogleLLMService.ThinkingConfig(
-                **gemini_thinking_kwargs(settings.llm_model, 0)
-            ),
+            thinking=GoogleLLMService.ThinkingConfig(**gemini_thinking_kwargs(model, 0)),
         ),
+    )
+
+
+def make_llm(settings):
+    """The call's model services: `(primary, secondary or None)`.
+
+    The secondary is what `LLM_MODEL_FALLBACK` names (llm failover plan, Task F2), and it is
+    None whenever there is no fallback configured — the default, and today's call exactly. A
+    fallback whose vendor has no key is also None with a warning rather than an exception: an
+    optional feature nobody finished configuring must not take the phone line down.
+    """
+    primary = make_llm_service(settings, settings.llm_model)
+    fallback = (settings.llm_model_fallback or "").strip()
+    if not fallback:
+        return primary, None
+    try:
+        return primary, make_llm_service(settings, fallback)
+    except ValueError as e:
+        logger.warning("LLM_MODEL_FALLBACK is set but unusable, so calls stay on one vendor: {}", e)
+        return primary, None
+
+
+def llm_stage(primary, secondary, settings):
+    """The processor that occupies the LLM's place in the pipeline.
+
+    With no secondary this is the service itself, so a runtime with no fallback configured
+    runs the pipeline it ran yesterday, frame for frame.
+    """
+    if secondary is None:
+        return primary
+    return LLMRouter(
+        primary,
+        secondary,
+        BREAKER,
+        (provider_for(settings.llm_model), provider_for(settings.llm_model_fallback)),
     )
 
 
@@ -246,7 +290,11 @@ async def run_call(websocket: WebSocket, token: str, ctx) -> None:
         tools=tools_schema(cfg, transfer_enabled=can_transfer),
     )
     user_agg, assistant_agg = LLMContextAggregatorPair(context, user_params=user_turn_params())
-    stt, tts, llm = make_stt(settings), make_tts(settings), make_llm(settings)
+    stt, tts = make_stt(settings), make_tts(settings)
+    # Two vendors when LLM_MODEL_FALLBACK names one, otherwise exactly the single service
+    # this pipeline has always held (llm failover plan, Task F2).
+    primary, secondary = make_llm(settings)
+    llm = llm_stage(primary, secondary, settings)
     pipeline = Pipeline(
         [
             transport.input(),
@@ -295,11 +343,13 @@ async def run_call(websocket: WebSocket, token: str, ctx) -> None:
 
     @worker.event_handler("on_pipeline_error")
     async def on_error(_worker, frame):
-        # A provider failure after the SDK's retries: say so once, and ask the caller to
-        # repeat, rather than leave the line silent until the idle timeout.
-        spoken = apology_for_error(session, cfg, now, str(getattr(frame, "error", frame)))
-        if spoken is not None:
-            await worker.queue_frames([spoken])
+        # A provider failure the router could not answer for: both vendors failed the turn,
+        # or there is only one vendor configured. Say so once and ask the caller to repeat,
+        # rather than leave the line silent until the idle timeout; on the second such turn
+        # in a row the caller is given the clinic's own number and the call ends.
+        frames = error_frames(session, cfg, now, str(getattr(frame, "error", frame)))
+        if frames:
+            await worker.queue_frames(frames)
 
     @worker.event_handler("on_idle_timeout")
     async def on_idle(_worker):

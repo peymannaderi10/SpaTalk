@@ -631,3 +631,541 @@ def test_the_accounts_runbook_says_where_each_vendors_key_comes_from():
         assert needle in text.lower(), f"the runbook never says where the {needle} key comes from"
     # The data-handling note the addendum asks for, in the runbook rather than in code.
     assert "North America" in text
+
+
+# =========================================================================================
+# Task F2: the voice router
+# =========================================================================================
+#
+# On the phone there is no `await` to wrap: the model is a Pipecat service inside a running
+# pipeline. `LLMRouter` holds both services as its own children, sends each turn's
+# `LLMContextFrame` to the active one, and when that one answers with an `ErrorFrame` it
+# sends the *same* context to the other service at once, so the caller waits about one extra
+# model call and then hears an answer instead of an apology. Only when both have failed does
+# the error reach the pipeline and the caller hear anything about it.
+
+from pipecat.frames.frames import (  # noqa: E402
+    ErrorFrame,
+    Frame,
+    LLMContextFrame,
+    LLMFullResponseEndFrame,
+    LLMFullResponseStartFrame,
+    LLMTextFrame,
+    TTSSpeakFrame,
+)
+from pipecat.processors.frame_processor import FrameDirection, FrameProcessor  # noqa: E402
+from pipecat.tests.utils import run_test  # noqa: E402
+
+BUNDLE = RUNTIME / "tenants" / "skincentrix"
+# `run_test` waits this long for the pipeline to report started. Its default of 1.0 s is
+# exceeded by a cold first run on this machine (QA gate A), so every call passes 10.0, as
+# every other pipeline test in this repository does.
+START_TIMEOUT = 10.0
+
+
+class _FakeLLMService(FrameProcessor):
+    """A Pipecat service that either answers with fixed text or fails, on demand.
+
+    Deliberately a plain `FrameProcessor` and not an `LLMService`: the router must hold
+    whatever `make_llm` returns without knowing anything about the vendor behind it, and no
+    test here may reach a provider.
+    """
+
+    def __init__(self, name: str, reply: str | None = None, error: str | None = None):
+        super().__init__(name=name)
+        self.contexts: list[LLMContextFrame] = []
+        self.functions: dict[str, object] = {}
+        self._reply, self._error = reply, error
+
+    def register_function(self, function_name, handler, **kwargs):
+        self.functions[function_name] = handler
+
+    async def process_frame(self, frame: Frame, direction: FrameDirection):
+        await super().process_frame(frame, direction)
+        if isinstance(frame, LLMContextFrame) and direction == FrameDirection.DOWNSTREAM:
+            self.contexts.append(frame)
+            await self.push_frame(LLMFullResponseStartFrame())
+            if self._error is not None:
+                await self.push_error(self._error)
+            else:
+                await self.push_frame(LLMTextFrame(self._reply or ""))
+            await self.push_frame(LLMFullResponseEndFrame())
+            return
+        await self.push_frame(frame, direction)
+
+
+def _context_frame():
+    from pipecat.processors.aggregators.llm_context import LLMContext
+
+    return LLMContextFrame(
+        LLMContext(messages=[{"role": "user", "content": "how much is the express treatment?"}])
+    )
+
+
+def _router(primary, secondary, breaker=None, vendors=("google", "openai")):
+    from spatalk.brain.breaker import VendorBreaker
+    from spatalk.voice.llm_router import LLMRouter
+
+    return LLMRouter(
+        primary, secondary, breaker or VendorBreaker(monotonic=_FakeMonotonic()), vendors
+    )
+
+
+async def test_a_turn_the_primary_answers_never_reaches_the_secondary():
+    primary = _FakeLLMService("primary", reply="The express treatment is $99.")
+    secondary = _FakeLLMService("secondary", reply="never spoken")
+
+    down, _ = await run_test(
+        _router(primary, secondary),
+        frames_to_send=[_context_frame()],
+        expected_down_frames=[LLMFullResponseStartFrame, LLMTextFrame, LLMFullResponseEndFrame],
+        expected_up_frames=[],
+        start_timeout=START_TIMEOUT,
+    )
+    assert [f.text for f in down if isinstance(f, LLMTextFrame)] == [
+        "The express treatment is $99."
+    ]
+    assert len(primary.contexts) == 1 and secondary.contexts == []
+
+
+async def test_the_secondary_answers_the_same_turn_and_nothing_downstream_hears_the_error():
+    """The whole point: the caller waits one extra model call and then hears an answer."""
+    from spatalk.brain.breaker import VendorBreaker
+
+    breaker = VendorBreaker(
+        failures=3, window_secs=60, cooldown_secs=300, monotonic=_FakeMonotonic()
+    )
+    primary = _FakeLLMService("primary", error="503 UNAVAILABLE: the model is overloaded")
+    secondary = _FakeLLMService("secondary", reply="The express treatment is $99.")
+
+    frame = _context_frame()
+    down, up = await run_test(
+        _router(primary, secondary, breaker),
+        frames_to_send=[frame],
+        expected_up_frames=[],
+        start_timeout=START_TIMEOUT,
+    )
+    # The same context, exactly once, and only to the vendor that had not already failed it.
+    assert [c.context for c in secondary.contexts] == [frame.context]
+    assert len(primary.contexts) == 1
+    assert [f.text for f in down if isinstance(f, LLMTextFrame)] == [
+        "The express treatment is $99."
+    ]
+    assert not [f for f in up if isinstance(f, ErrorFrame)], "the caller must not hear about this"
+    assert breaker.failure_count("google") == 1 and breaker.failure_count("openai") == 0
+
+
+async def test_both_vendors_failing_surfaces_exactly_one_error_for_the_pipeline_to_answer():
+    from spatalk.brain.breaker import VendorBreaker
+
+    breaker = VendorBreaker(
+        failures=3, window_secs=60, cooldown_secs=300, monotonic=_FakeMonotonic()
+    )
+    primary = _FakeLLMService("primary", error="google 503")
+    secondary = _FakeLLMService("secondary", error="openai 500")
+
+    down, up = await run_test(
+        _router(primary, secondary, breaker),
+        frames_to_send=[_context_frame()],
+        expected_up_frames=[ErrorFrame],
+        start_timeout=START_TIMEOUT,
+    )
+    assert "openai 500" in up[0].error
+    assert breaker.failure_count("google") == 1 and breaker.failure_count("openai") == 1
+    assert not [f for f in down if isinstance(f, LLMTextFrame)]
+
+
+async def test_the_turn_after_a_failover_starts_at_the_secondary_while_the_breaker_is_open():
+    """The cooling-off period on the phone: a dead vendor is not tried again every turn."""
+    from spatalk.brain.breaker import VendorBreaker
+
+    breaker = VendorBreaker(
+        failures=1, window_secs=60, cooldown_secs=300, monotonic=_FakeMonotonic()
+    )
+    breaker.record_failure("google")
+    primary = _FakeLLMService("primary", reply="the primary is back")
+    secondary = _FakeLLMService("secondary", reply="the secondary answered")
+
+    down, _ = await run_test(
+        _router(primary, secondary, breaker),
+        frames_to_send=[_context_frame()],
+        expected_down_frames=[LLMFullResponseStartFrame, LLMTextFrame, LLMFullResponseEndFrame],
+        start_timeout=START_TIMEOUT,
+    )
+    assert [f.text for f in down if isinstance(f, LLMTextFrame)] == ["the secondary answered"]
+    assert primary.contexts == []
+
+
+async def test_an_answered_turn_clears_the_vendors_failure_count():
+    from spatalk.brain.breaker import VendorBreaker
+
+    breaker = VendorBreaker(
+        failures=3, window_secs=60, cooldown_secs=300, monotonic=_FakeMonotonic()
+    )
+    breaker.record_failure("google")
+    await run_test(
+        _router(
+            _FakeLLMService("primary", reply="The express treatment is $99."),
+            _FakeLLMService("secondary", reply="never spoken"),
+            breaker,
+        ),
+        frames_to_send=[_context_frame()],
+        start_timeout=START_TIMEOUT,
+    )
+    assert breaker.failure_count("google") == 0
+
+
+async def test_a_frame_that_is_not_a_context_still_reaches_the_next_processor():
+    """Everything the pipeline sends through the LLM's place has to behave as it did."""
+    down, _ = await run_test(
+        _router(_FakeLLMService("primary", reply="hi"), _FakeLLMService("secondary", reply="hi")),
+        frames_to_send=[TTSSpeakFrame(text="Thanks, the team has it.")],
+        expected_down_frames=[TTSSpeakFrame],
+        start_timeout=START_TIMEOUT,
+    )
+    assert down[0].text == "Thanks, the team has it."
+
+
+def test_tool_handlers_are_registered_on_both_services(fixed_clock):
+    """A turn the secondary answers must be able to file an item; a model whose tool is not
+    registered finds nothing there and the caller is promised something that never happens."""
+    from spatalk.brain.tools import TOOL_NAMES
+    from spatalk.voice.handlers import register_tool_handlers
+
+    session, _ = _voice_session(fixed_clock)
+    primary, secondary = _FakeLLMService("primary"), _FakeLLMService("secondary")
+    register_tool_handlers(_router(primary, secondary), session)
+    assert set(primary.functions) == set(TOOL_NAMES)
+    assert set(secondary.functions) == set(TOOL_NAMES)
+
+
+# --- make_llm and the pipeline stage ----------------------------------------------------
+
+
+def test_make_llm_returns_a_pair_and_the_second_is_none_without_a_fallback():
+    from pipecat.services.google.llm import GoogleLLMService
+
+    from spatalk.voice.pipeline import make_llm
+
+    primary, secondary = make_llm(_settings(google_api_key="k", llm_model="gemini-2.5-flash"))
+    assert isinstance(primary, GoogleLLMService) and secondary is None
+
+
+def test_make_llm_builds_the_second_vendors_service_when_the_fallback_is_set():
+    from pipecat.services.google.llm import GoogleLLMService
+    from pipecat.services.openai.llm import OpenAILLMService
+
+    from spatalk.voice.pipeline import LLM_TEMPERATURE, make_llm
+
+    primary, secondary = make_llm(
+        _settings(
+            google_api_key="k",
+            openai_api_key="o",
+            llm_model="gemini-2.5-flash",
+            llm_model_fallback="openai:gpt-4.1-mini",
+        )
+    )
+    assert isinstance(primary, GoogleLLMService)
+    assert isinstance(secondary, OpenAILLMService)
+    assert secondary._settings.model == "gpt-4.1-mini", "the prefix must not reach the provider"
+    # One temperature for both vendors, so a failover changes the model and nothing else.
+    assert secondary._settings.temperature == LLM_TEMPERATURE
+
+
+def test_a_fallback_with_no_key_leaves_the_call_on_one_vendor_rather_than_failing_it():
+    """A misconfigured optional feature must not take the phone line down."""
+    from spatalk.voice.pipeline import make_llm
+
+    primary, secondary = make_llm(
+        _settings(
+            google_api_key="k",
+            llm_model="gemini-2.5-flash",
+            llm_model_fallback="openai:gpt-4.1-mini",
+        )
+    )
+    assert primary is not None and secondary is None
+
+
+def test_make_llm_builds_a_compat_service_pointed_at_the_configured_host():
+    from pipecat.services.openai.llm import OpenAILLMService
+
+    from spatalk.voice.pipeline import make_llm
+
+    primary, _ = make_llm(
+        _settings(
+            compat_api_key="k",
+            llm_compat_base_url="http://localhost:11434/v1",
+            llm_model="compat:qwen3-8b",
+        )
+    )
+    assert isinstance(primary, OpenAILLMService)
+    assert str(primary._client.base_url).rstrip("/") == "http://localhost:11434/v1"
+    assert primary._settings.model == "qwen3-8b"
+
+
+def test_selecting_a_vendor_without_its_key_still_fails_at_start_up_not_mid_call():
+    from spatalk.voice.pipeline import make_llm
+
+    with pytest.raises(ValueError) as e:
+        make_llm(_settings(google_api_key="k", llm_model="groq:llama-3.3-70b-versatile"))
+    assert "GROQ_API_KEY" in str(e.value)
+
+
+def test_the_pipeline_has_no_router_at_all_when_no_fallback_is_configured():
+    """With `LLM_MODEL_FALLBACK` empty the call is exactly the call it was yesterday."""
+    from spatalk.voice.pipeline import llm_stage
+
+    primary = _FakeLLMService("primary")
+    assert llm_stage(primary, None, _settings(llm_model="gemini-2.5-flash")) is primary
+
+
+def test_the_pipeline_puts_the_router_where_the_llm_was_when_a_fallback_exists():
+    from spatalk.voice.llm_router import LLMRouter
+    from spatalk.voice.pipeline import llm_stage
+
+    stage = llm_stage(
+        _FakeLLMService("primary"),
+        _FakeLLMService("secondary"),
+        _settings(llm_model="gemini-2.5-flash", llm_model_fallback="groq:llama-3.3-70b-versatile"),
+    )
+    assert isinstance(stage, LLMRouter)
+    assert stage.vendors == ("google", "groq")
+
+
+def test_run_call_builds_the_stage_and_registers_the_tools_on_it():
+    """Source-level, because the alternative is a live websocket and a paid provider."""
+    import inspect
+
+    from spatalk.voice import pipeline as pipeline_module
+
+    source = inspect.getsource(pipeline_module.run_call)
+    assert "primary, secondary = make_llm(settings)" in source
+    assert "llm_stage(primary, secondary, settings)" in source
+    assert "register_tool_handlers(llm, session)" in source
+
+
+# --- what the caller hears when both vendors are down -----------------------------------
+
+
+def _voice_session(fixed_clock):
+    import uuid
+
+    from spatalk.brain.ports import MemoryLedger, MemorySms
+    from spatalk.brain.requests import ConversationRef
+    from spatalk.brain.tier_c import TierCCapabilities
+    from spatalk.tenants.bundle import load_bundle
+    from spatalk.voice.session import VoiceSession
+
+    cfg = load_bundle(BUNDLE)
+    session = VoiceSession(
+        ref=ConversationRef(
+            conversation_id=uuid.uuid4(), tenant=cfg, channel="voice", caller_phone="+19055550101"
+        ),
+        cfg=cfg,
+        caps=TierCCapabilities(MemoryLedger(fixed_clock), MemorySms(), fixed_clock),
+        clock=fixed_clock,
+    )
+    return session, cfg
+
+
+def test_two_failed_turns_in_a_row_end_the_call_on_the_clinics_own_number(fixed_clock):
+    """A loop of apologies is worse than an honest ending: the second failed turn hands the
+    caller the number of a human being and hangs up."""
+    from spatalk.brain.renderer import render_script
+    from spatalk.voice.resilience import apology_for_error, error_frames
+
+    session, cfg = _voice_session(fixed_clock)
+    now = fixed_clock.now()
+
+    first = apology_for_error(session, cfg, now, "503", at=100.0)
+    assert first.text == render_script("model_unavailable", cfg, now, urgent=False)
+    assert session.model_failures == 1 and session.ended is False
+
+    # The next turn began: the model was asked again and failed again.
+    session.model_turn_open = True
+    frames = error_frames(session, cfg, now, "503 again", at=101.0)
+    assert [type(f).__name__ for f in frames] == ["TTSSpeakFrame", "EndFrame"]
+    assert frames[0].text == render_script("model_down", cfg, now, urgent=False)
+    assert session.ended is True
+    # And after the goodbye, nothing more is said.
+    assert error_frames(session, cfg, now, "503 once more", at=102.0) == []
+
+
+def test_a_turn_the_model_answered_in_between_resets_the_count(fixed_clock):
+    from spatalk.brain.renderer import render_script
+    from spatalk.voice.resilience import apology_for_error
+
+    session, cfg = _voice_session(fixed_clock)
+    now = fixed_clock.now()
+
+    apology_for_error(session, cfg, now, "503", at=100.0)
+    assert session.model_failures == 1
+    # What the output guard does when the model actually answered a turn.
+    session.model_failures = 0
+    session.model_turn_open = True
+    second = apology_for_error(session, cfg, now, "503 later", at=101.0)
+    assert second.text == render_script("model_unavailable", cfg, now, urgent=False)
+    assert session.ended is False
+
+
+def test_a_burst_of_errors_inside_one_turn_is_still_one_apology(fixed_clock):
+    """The SDK's retries and the aggregator's re-sends raise several errors for one turn."""
+    from spatalk.voice.resilience import apology_for_error
+
+    session, cfg = _voice_session(fixed_clock)
+    now = fixed_clock.now()
+    assert apology_for_error(session, cfg, now, "503", at=100.0) is not None
+    assert apology_for_error(session, cfg, now, "503", at=100.5) is None
+    assert apology_for_error(session, cfg, now, "503", at=101.0) is None
+    assert session.model_failures == 1, "one turn failed, not three"
+
+
+def test_the_error_frames_of_an_ordinary_apology_do_not_end_the_call(fixed_clock):
+    from spatalk.voice.resilience import error_frames
+
+    session, cfg = _voice_session(fixed_clock)
+    frames = error_frames(session, cfg, fixed_clock.now(), "503", at=100.0)
+    assert [type(f).__name__ for f in frames] == ["TTSSpeakFrame"]
+    assert session.ended is False
+
+
+async def test_the_output_guard_marks_a_new_turn_and_a_model_that_answered(fixed_clock):
+    from spatalk.voice.processors import OutputGuardProcessor
+
+    session, _ = _voice_session(fixed_clock)
+    session.model_failures = 1
+    await run_test(
+        OutputGuardProcessor(session),
+        frames_to_send=[
+            LLMFullResponseStartFrame(),
+            LLMTextFrame("The express treatment is $99."),
+            LLMFullResponseEndFrame(),
+        ],
+        expected_down_frames=[LLMFullResponseStartFrame, LLMTextFrame, LLMFullResponseEndFrame],
+        start_timeout=START_TIMEOUT,
+    )
+    assert session.model_turn_open is True, "a fresh attempt began"
+    assert session.model_failures == 0, "the model answered, so the run of failures is over"
+
+
+async def test_a_turn_that_produced_no_words_does_not_clear_the_failure_count(fixed_clock):
+    """A failed turn still pushes a start and an end frame around nothing at all: pipecat's
+    `base_llm.process_frame` pushes the end frame in a `finally`. If that cleared the count,
+    two dead turns in a row would never be recognised and the caller would loop forever."""
+    from spatalk.voice.processors import OutputGuardProcessor
+
+    session, _ = _voice_session(fixed_clock)
+    session.model_failures = 1
+    await run_test(
+        OutputGuardProcessor(session),
+        frames_to_send=[LLMFullResponseStartFrame(), LLMFullResponseEndFrame()],
+        expected_down_frames=[LLMFullResponseStartFrame, LLMFullResponseEndFrame],
+        start_timeout=START_TIMEOUT,
+    )
+    assert session.model_failures == 1
+
+
+def test_the_model_down_line_is_config_gives_the_clinics_number_and_claims_nothing():
+    from spatalk.tenants.bundle import load_bundle
+    from spatalk.tenants.schema import Scripts
+
+    cfg = load_bundle(BUNDLE)
+    assert "{phone}" in Scripts.model_fields["model_down"].default
+    rendered = cfg.scripts.model_down.format(phone=cfg.public_phone)
+    assert cfg.public_phone and cfg.public_phone in rendered
+    for claim in ("sent", "booked", "confirmed", "passed it", "filed"):
+        assert claim not in cfg.scripts.model_down
+
+
+def test_the_model_down_line_is_in_the_reference_and_in_the_bundle():
+    import yaml
+
+    doc = (REPO / "docs" / "reference" / "tenant-config.md").read_text(encoding="utf-8")
+    assert "model_down:" in doc
+    bundle = yaml.safe_load((BUNDLE / "scripts.yaml").read_text(encoding="utf-8"))
+    assert "model_down" in bundle
+
+
+# --- /healthz says which vendor is answering --------------------------------------------
+
+
+def test_llm_health_reports_the_pair_the_active_vendor_and_no_deadline_when_all_is_well():
+    from datetime import datetime, timezone
+
+    from spatalk.brain.breaker import VendorBreaker, llm_health
+
+    now = datetime(2026, 9, 3, 20, 0, tzinfo=timezone.utc)
+    breaker = VendorBreaker(
+        failures=1, window_secs=60, cooldown_secs=300, monotonic=_FakeMonotonic()
+    )
+    settings = _settings(llm_model="gemini-2.5-flash", llm_model_fallback="openai:gpt-4.1-mini")
+    assert llm_health(settings, now, breaker) == {
+        "primary": "google",
+        "secondary": "openai",
+        "active": "google",
+        "breaker_open_until": None,
+    }
+
+
+def test_llm_health_names_the_vendor_now_answering_and_when_the_primary_is_tried_again():
+    from datetime import datetime, timezone
+
+    from spatalk.brain.breaker import VendorBreaker, llm_health
+
+    now = datetime(2026, 9, 3, 20, 0, tzinfo=timezone.utc)
+    breaker = VendorBreaker(
+        failures=1, window_secs=60, cooldown_secs=300, monotonic=_FakeMonotonic()
+    )
+    breaker.record_failure("google")
+    health = llm_health(
+        _settings(llm_model="gemini-2.5-flash", llm_model_fallback="openai:gpt-4.1-mini"),
+        now,
+        breaker,
+    )
+    assert health["active"] == "openai"
+    assert health["breaker_open_until"] == "2026-09-03T20:05:00+00:00"
+
+
+def test_llm_health_on_a_runtime_with_no_fallback_says_so():
+    from datetime import datetime, timezone
+
+    from spatalk.brain.breaker import VendorBreaker, llm_health
+
+    health = llm_health(
+        _settings(llm_model="gemini-2.5-flash"),
+        datetime(2026, 9, 3, 20, 0, tzinfo=timezone.utc),
+        VendorBreaker(monotonic=_FakeMonotonic()),
+    )
+    assert health["secondary"] is None and health["active"] == "google"
+
+
+async def test_healthz_publishes_the_llm_block(sf, registry, fixed_clock):
+    from httpx import ASGITransport, AsyncClient
+
+    from spatalk import jobs
+    from spatalk.http.app import create_app
+    from spatalk.ledger.delivery import MemoryDelivery
+    from spatalk.ledger.items import PgLedger
+
+    ctx = jobs.JobContext(
+        sf=sf,
+        clock=fixed_clock,
+        registry=registry,
+        ledger=PgLedger(sf, fixed_clock),
+        delivery=MemoryDelivery(),
+        settings=_settings(secret_key="s", llm_model="gemini-2.5-flash"),
+    )
+    app = create_app(ctx, start_background=False)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
+        body = (await c.get("/healthz")).json()
+    assert body["llm"] == {
+        "primary": "google",
+        "secondary": None,
+        "active": "google",
+        "breaker_open_until": None,
+    }
+
+
+def test_the_reference_documents_the_healthz_llm_block():
+    text = (REPO / "docs" / "reference" / "api-surface.md").read_text(encoding="utf-8")
+    assert "breaker_open_until" in text

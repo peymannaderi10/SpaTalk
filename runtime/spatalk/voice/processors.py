@@ -197,8 +197,15 @@ class OutputGuardProcessor(FrameProcessor):
         await super().process_frame(frame, direction)
         if isinstance(frame, LLMFullResponseStartFrame):
             self._buffer, self._dropping = "", False
+            # A fresh completion began, so an error after this one is a new failed *turn*
+            # and not another error from the turn that already apologised (llm failover
+            # plan, Task F2). The count itself is cleared only by words coming back: a
+            # failed turn pushes this frame too, in `base_llm.process_frame`.
+            self._s.model_turn_open = True
             await self.push_frame(frame, direction)
         elif isinstance(frame, LLMTextFrame) and direction == FrameDirection.DOWNSTREAM:
+            # The model answered. Whatever run of failures was building up is over.
+            self._s.model_failures = 0
             self._buffer += frame.text
             parts = SENTENCE_END.split(self._buffer)
             for complete in parts[:-1]:

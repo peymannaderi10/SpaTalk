@@ -31,7 +31,9 @@ def test_both_gemini_clients_retry_transient_errors():
         assert status in opts.retry_options.http_status_codes
     assert opts.retry_options.max_delay <= 2.0  # a caller is waiting; no long backoffs on the phone
 
-    voice = make_llm(Settings(_env_file=None, secret_key="s", google_api_key="k", llm_model="gemini-3.5-flash"))
+    # `make_llm` returns (primary, secondary or None) since the llm failover plan, Task F2.
+    voice, fallback = make_llm(Settings(_env_file=None, secret_key="s", google_api_key="k", llm_model="gemini-3.5-flash"))
+    assert fallback is None, "no LLM_MODEL_FALLBACK configured means no second vendor"
     assert 503 in voice._http_options.retry_options.http_status_codes
 
     text = GeminiClient("k", "gemini-3.5-flash")

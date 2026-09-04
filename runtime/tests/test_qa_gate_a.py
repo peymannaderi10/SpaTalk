@@ -481,8 +481,10 @@ def test_stt_and_tts_providers_are_chosen_by_environment_without_network():
     assert type(make_stt(swapped)).__name__ == "DeepgramFluxSTTService"
     assert type(make_tts(swapped)).__name__ == "DeepgramTTSService"
 
-    llm = make_llm(Settings(_env_file=None, google_api_key="k", llm_model="gemini-2.5-flash-lite"))
-    assert type(llm).__name__ == "GoogleLLMService"
+    # (primary, secondary or None) since the llm failover plan, Task F2; with no
+    # LLM_MODEL_FALLBACK configured the second half is None and the pipeline is unchanged.
+    llm, secondary = make_llm(Settings(_env_file=None, google_api_key="k", llm_model="gemini-2.5-flash-lite"))
+    assert type(llm).__name__ == "GoogleLLMService" and secondary is None
 
 
 VENDOR_FREE_MODULES = (

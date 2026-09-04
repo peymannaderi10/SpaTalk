@@ -38,6 +38,13 @@ class VoiceSession:
     recent_bot_text: str = ""
     # When the caller last heard the model_unavailable line (monotonic seconds).
     last_apology_at: float | None = None
+    # --- llm failover (llm failover plan, Task F2) ---
+    # Turns that reached an apology with no answered turn in between. The second one ends
+    # the call on the clinic's own number instead of looping apologies at the caller.
+    model_failures: int = 0
+    # True once a fresh completion has started (LLMFullResponseStartFrame). It is what tells
+    # a new failed *turn* from the burst of errors one turn's retries produce.
+    model_turn_open: bool = False
     # --- operations (operations plan, Task E5) ---
     # Every TTFB reading of the call, in ms, filed under the stage that produced it. The
     # turn number in `latencies_ms` says the caller waited; this says which vendor made

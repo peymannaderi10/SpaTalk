@@ -129,6 +129,10 @@ def create_app(ctx: jobs.JobContext, start_background: bool = True) -> FastAPI:
             "commit": ctx.settings.git_commit,
             # --- monitoring (operations plan, Task E7) ---
             **await alerts.health_snapshot(ctx),
+            # --- which model vendor is answering (llm failover plan, Task F2) ---
+            # `secondary` is null when no fallback is configured, and `active` is the vendor
+            # the next turn goes to, so an outage is visible from outside the process.
+            "llm": breaker.llm_health(ctx.settings, ctx.clock.now()),
         }
 
     @app.websocket("/ws/{token}")

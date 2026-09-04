@@ -165,6 +165,13 @@ class Scripts(BaseModel, frozen=True):
     model_unavailable: str = (
         "Sorry, I'm having a little trouble on my end. Could you say that once more?"
     )
+    # Spoken once, and then the call ends, when a second turn in a row failed at every
+    # configured vendor (llm failover plan, Task F2). It promises nothing and hands the
+    # caller a human being instead of another apology.
+    model_down: str = (
+        "I'm sorry, I'm not able to help on this line right now. "
+        "Please call the clinic directly at {phone}."
+    )
 
     # The one text a sender may get while the tenant's assistant is paused on SMS (plan F).
     # It names no reply time: nothing is generated until the local day rolls over.

@@ -31,11 +31,11 @@ def test_the_voice_llm_carries_the_right_thinking_field_for_its_model():
     from spatalk.settings import Settings
     from spatalk.voice.pipeline import make_llm
 
-    lite = make_llm(Settings(_env_file=None, secret_key="s", google_api_key="k", llm_model="gemini-flash-lite-latest"))
+    lite, _ = make_llm(Settings(_env_file=None, secret_key="s", google_api_key="k", llm_model="gemini-flash-lite-latest"))
     assert lite._settings.thinking.thinking_level == "minimal"
     assert lite._settings.thinking.thinking_budget is None
 
-    legacy = make_llm(Settings(_env_file=None, secret_key="s", google_api_key="k", llm_model="gemini-2.5-flash"))
+    legacy, _ = make_llm(Settings(_env_file=None, secret_key="s", google_api_key="k", llm_model="gemini-2.5-flash"))
     assert legacy._settings.thinking.thinking_budget == 0
     assert legacy._settings.thinking.thinking_level is None
 
