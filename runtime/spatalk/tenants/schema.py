@@ -162,6 +162,9 @@ class Scripts(BaseModel, frozen=True):
     notes_label: str = "AI notes, drafted from the transcript"
     # Spoken once when the model provider fails after its retries (founder calls
     # 2026-09-03 21:03 and 21:05); asks for a repeat, claims nothing.
+    # Spoken once when the caller has been silent for a while after a question
+    # (founder question 2026-09-03); the next silence gets the goodbye.
+    still_there: str = "Are you still there? Take your time, I'm listening."
     model_unavailable: str = (
         "Sorry, I'm having a little trouble on my end. Could you say that once more?"
     )

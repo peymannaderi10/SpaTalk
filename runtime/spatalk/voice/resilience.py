@@ -96,3 +96,26 @@ def error_frames(
     if spoken is None:
         return []
     return [spoken, EndFrame()] if session.ended else [spoken]
+
+
+def idle_frames(session: VoiceSession, cfg: TenantConfig, now: datetime) -> list[Frame]:
+    """What to say when the caller has been silent after the assistant's turn.
+
+    Once: the tenant's ``still_there`` line. The next time, with no words from the caller in
+    between (``RulesGateProcessor`` clears the count on a final transcription): the goodbye and
+    the end of the call, the same shape as the idle timeout. Founder question 2026-09-03: "if
+    they don't reply for a while, should we ask again?" Once.
+    """
+    if session.ended:
+        return []
+    session.idle_nudges += 1
+    if session.idle_nudges == 1:
+        logger.info("caller silent; asking once whether they are still there")
+        return [
+            TTSSpeakFrame(
+                text=render_script("still_there", cfg, now, urgent=False), append_to_context=False
+            )
+        ]
+    session.ended = True
+    logger.info("caller silent after the nudge; saying goodbye")
+    return [TTSSpeakFrame(text=render_script("goodbye", cfg, now, urgent=False)), EndFrame()]

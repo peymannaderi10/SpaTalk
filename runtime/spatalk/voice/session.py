@@ -45,6 +45,8 @@ class VoiceSession:
     # True once a fresh completion has started (LLMFullResponseStartFrame). It is what tells
     # a new failed *turn* from the burst of errors one turn's retries produce.
     model_turn_open: bool = False
+    # Times the caller was asked whether they are still there since they last spoke.
+    idle_nudges: int = 0
     # --- operations (operations plan, Task E5) ---
     # Every TTFB reading of the call, in ms, filed under the stage that produced it. The
     # turn number in `latencies_ms` says the caller waited; this says which vendor made

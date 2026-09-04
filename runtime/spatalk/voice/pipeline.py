@@ -16,6 +16,7 @@ from loguru import logger
 from pipecat.audio.turn.smart_turn.base_smart_turn import SmartTurnParams
 from pipecat.audio.turn.smart_turn.local_smart_turn_v3 import LocalSmartTurnAnalyzerV3
 from pipecat.audio.vad.silero import SileroVADAnalyzer
+from pipecat.audio.vad.vad_analyzer import VADParams
 from pipecat.frames.frames import EndFrame, TTSSpeakFrame
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.worker import PipelineParams, PipelineWorker
@@ -71,7 +72,7 @@ from spatalk.voice.handlers import register_tool_handlers
 from spatalk.voice.llm_router import LLMRouter
 from spatalk.voice.observers import TurnLatencyObserver, UsageObserver
 from spatalk.voice.processors import FillerProcessor, OutputGuardProcessor, RulesGateProcessor
-from spatalk.voice.resilience import error_frames
+from spatalk.voice.resilience import idle_frames, error_frames
 from spatalk.voice.session import VoiceSession
 from spatalk.voice.tokens import verify_stream_token
 # Operations plan, Task E10: live transfer to a staffed back-line, Option A (the leg the
@@ -92,6 +93,23 @@ TURN_PRE_SPEECH_MS = 300
 # agreement cut every answer short (founder call 2026-09-03). When the assistant is silent
 # a single word still starts the turn, so nothing gets slower.
 INTERRUPT_MIN_WORDS = 3
+# A caller's short, quiet answer ("No", founder call 2026-09-03 22:05) fell under Pipecat's
+# default detector thresholds (confidence 0.7, 0.2 s of speech, volume 0.6), so no speech
+# was ever registered and nothing closed the turn. Barge-in is still gated by the word
+# count above, so a more sensitive detector costs nothing while the assistant talks.
+VAD_CONFIDENCE = 0.6
+VAD_START_SECS = 0.15
+VAD_MIN_VOLUME = 0.4
+# If no stop strategy closes a turn (the detector missed the speech), the aggregator's
+# watchdog does, this long after the last transcription activity. Pipecat's default is
+# five seconds; on the phone two is already long.
+TURN_STOP_WATCHDOG_SECS = 2.0
+# A caller who says nothing for this long after a question is asked once whether they
+# are still there (scripts.still_there); the next silence gets the goodbye.
+IDLE_NUDGE_SECS = 10.0
+# Soniox finalizes a pause on its own after at most this many milliseconds, so a final
+# transcript reaches the aggregator even when the detector heard nothing.
+SONIOX_ENDPOINT_DELAY_MS = 800
 
 
 def user_turn_params() -> LLMUserAggregatorParams:
@@ -100,7 +118,13 @@ def user_turn_params() -> LLMUserAggregatorParams:
         params=SmartTurnParams(stop_secs=TURN_END_FALLBACK_SECS, pre_speech_ms=TURN_PRE_SPEECH_MS)
     )
     return LLMUserAggregatorParams(
-        vad_analyzer=SileroVADAnalyzer(),
+        vad_analyzer=SileroVADAnalyzer(
+            params=VADParams(
+                confidence=VAD_CONFIDENCE, start_secs=VAD_START_SECS, min_volume=VAD_MIN_VOLUME
+            )
+        ),
+        user_turn_stop_timeout=TURN_STOP_WATCHDOG_SECS,
+        user_idle_timeout=IDLE_NUDGE_SECS,
         user_turn_strategies=UserTurnStrategies(
             start=[MinWordsUserTurnStartStrategy(min_words=INTERRUPT_MIN_WORDS, use_interim=True)],
             stop=[TurnAnalyzerUserTurnStopStrategy(turn_analyzer=analyzer)],
@@ -120,7 +144,11 @@ def make_stt(settings):
 
     return SonioxSTTService(
         api_key=settings.soniox_api_key,
-        settings=SonioxSTTService.Settings(model="stt-rt-v5"),
+        settings=SonioxSTTService.Settings(
+            model="stt-rt-v5",
+            max_endpoint_delay_ms=SONIOX_ENDPOINT_DELAY_MS,
+            endpoint_latency_adjustment_level=1,
+        ),
     )
 
 
@@ -348,6 +376,14 @@ async def run_call(websocket: WebSocket, token: str, ctx) -> None:
         # rather than leave the line silent until the idle timeout; on the second such turn
         # in a row the caller is given the clinic's own number and the call ends.
         frames = error_frames(session, cfg, now, str(getattr(frame, "error", frame)))
+        if frames:
+            await worker.queue_frames(frames)
+
+    @user_agg.event_handler("on_user_turn_idle")
+    async def on_user_idle(_aggregator):
+        # The caller has said nothing for a while after the assistant's turn: ask once
+        # whether they are still there, and say goodbye on the next silence.
+        frames = idle_frames(session, cfg, now)
         if frames:
             await worker.queue_frames(frames)
 

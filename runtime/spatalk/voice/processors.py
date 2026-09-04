@@ -8,6 +8,7 @@ so the replacement sentence is true.
 
 from __future__ import annotations
 
+import asyncio
 import re
 import time
 from collections.abc import Callable
@@ -47,6 +48,13 @@ SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
 # the assistant fell silent).
 ECHO_TAIL_SECS = 1.0
 
+# A provisional transcript the transcriber keeps re-sending unchanged is one utterance,
+# not many: every copy re-armed the aggregator's turn watchdog (founder call 2026-09-03
+# 22:05, a one-word "No" hung the turn for twenty seconds). After this long with no new
+# words and no final, the last interim is promoted to a final transcription so the turn
+# can close with the caller's words in it.
+STALE_INTERIM_SECS = 1.5
+
 
 class RulesGateProcessor(FrameProcessor):
     """Sits after STT. Band-3 lexicon hits are answered with the fixed script and the model never runs."""
@@ -59,6 +67,22 @@ class RulesGateProcessor(FrameProcessor):
         self._bot_stopped_at: float | None = None
         self._utterance_open = False
         self._may_echo = False
+        self._last_interim: str | None = None
+        self._promotion: asyncio.Task | None = None
+
+    async def _promote_stale_interim(self, frame: InterimTranscriptionFrame):
+        await asyncio.sleep(STALE_INTERIM_SECS)
+        logger.info("no final transcription after {!r}; promoting the interim", frame.text)
+        self._promotion = None
+        await self.process_frame(
+            TranscriptionFrame(text=frame.text, user_id=frame.user_id, timestamp=frame.timestamp),
+            FrameDirection.DOWNSTREAM,
+        )
+
+    async def _cancel_promotion(self):
+        if self._promotion is not None:
+            task, self._promotion = self._promotion, None
+            await self.cancel_task(task)
 
     def _heard_while_assistant_spoke(self) -> bool:
         if self._bot_speaking:
@@ -75,6 +99,18 @@ class RulesGateProcessor(FrameProcessor):
         elif isinstance(frame, BotStoppedSpeakingFrame):
             self._bot_speaking = False
             self._bot_stopped_at = self._monotonic()
+        if isinstance(frame, InterimTranscriptionFrame) and direction == FrameDirection.DOWNSTREAM:
+            if frame.text == self._last_interim:
+                return
+            self._last_interim = frame.text
+            await self._cancel_promotion()
+            if frame.text.strip():
+                self._promotion = self.create_task(self._promote_stale_interim(frame))
+        if isinstance(frame, TranscriptionFrame) and direction == FrameDirection.DOWNSTREAM:
+            self._last_interim = None
+            await self._cancel_promotion()
+            # The caller spoke: any \"still there?\" count starts over.
+            self._s.idle_nudges = 0
         if (
             isinstance(frame, (TranscriptionFrame, InterimTranscriptionFrame))
             and direction == FrameDirection.DOWNSTREAM

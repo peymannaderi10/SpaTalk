@@ -113,6 +113,7 @@ sms_paused: "Thanks for texting {name}. The assistant is paused right now. A mem
 # Staff-only wording for the call notes [N1]. Never spoken, never sent to a customer.
 notes_label: "AI notes, drafted from the transcript"                                        # heads the notes block on the portal card, the staff email and the Slack post
 notes_health_line: "Caller mentioned a health matter; read the transcript before calling."  # replaces any drafted sentence the health-context or clinical lexicon matches
+still_there: "Are you still there? Take your time, I'm listening."   # once, after ten seconds of silence following the assistant's turn; the next silence gets the goodbye
 model_unavailable: "Sorry, I'm having a little trouble on my end. Could you say that once more?"   # spoken once per ten seconds when the model provider fails after the SDK's retries; the repeat is a new turn
 model_down: "I'm sorry, I'm not able to help on this line right now. Please call the clinic directly at {phone}."   # spoken once, and the call then ends, when a second turn in a row failed at every configured vendor (LLM_MODEL and LLM_MODEL_FALLBACK)
 ```

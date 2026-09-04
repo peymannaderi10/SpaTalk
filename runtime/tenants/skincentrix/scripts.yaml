@@ -32,5 +32,6 @@ fillers: []
 # Staff-only wording for the call notes (call-notes plan, N1). Never spoken, never sent to a customer.
 notes_label: "AI notes, drafted from the transcript"
 notes_health_line: "Caller mentioned a health matter; read the transcript before calling."
+still_there: "Are you still there? Take your time, I'm listening."
 model_unavailable: "Sorry, I'm having a little trouble on my end. Could you say that once more?"
 model_down: "I'm sorry, I'm not able to help on this line right now. Please call the clinic directly at {phone}."
