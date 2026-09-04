@@ -6,6 +6,7 @@ import { subscriptionProblem } from "../payment/entitlement";
 import { PageHeader } from "./components/page-header";
 import { Alert, AlertDescription, AlertTitle } from "./components/ui/alert";
 import { OrgAppLayout } from "./layout/OrgAppLayout";
+import { cn } from "./utils";
 
 /**
  * The frame every client page sits in: the organisation it is about, the app
@@ -176,7 +177,14 @@ function Frame({
       fixed={fixed}
       fluid={fluid}
     >
-      <div className="flex flex-1 flex-col gap-4 sm:gap-6">
+      <div
+        className={cn(
+          "flex flex-1 flex-col gap-4 sm:gap-6",
+          // A fixed page scrolls inside itself, and a flex child only shrinks
+          // to let that happen once its own overflow is clipped.
+          fixed && "overflow-hidden",
+        )}
+      >
         <PageHeader title={title} description={description} actions={actions} />
         {children}
       </div>

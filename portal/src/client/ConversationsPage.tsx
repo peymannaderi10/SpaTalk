@@ -66,7 +66,6 @@ export function ConversationsPage() {
     <OrgShell
       title="Conversations"
       description="Every call, text and chat the assistant has answered."
-      fixed
     >
       {(org) => <Body org={org} />}
     </OrgShell>
