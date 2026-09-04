@@ -9,7 +9,7 @@ export function LoginPage() {
   return (
     <AuthPageLayout
       title="Sign in"
-      description="Enter your email and password to open your clinic's front desk."
+      description="Enter your email and password to open your clinic's dashboard."
       footer={
         <>
           Don't have an account yet?{" "}
@@ -26,7 +26,11 @@ export function LoginPage() {
           >
             Reset it
           </WaspRouterLink>
-          .
+          .{" "}
+          {/* Named, not linked: the platform's address is given to an agency
+              admin privately rather than offered to everyone who reads this
+              page. Both pages land in the same place either way. */}
+          <span className="block">Platform admins sign in at /admin/login.</span>
         </>
       }
     >

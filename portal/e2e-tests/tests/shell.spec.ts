@@ -89,9 +89,13 @@ test.describe("the sidebar", () => {
       await expect(ownerPage.getByTestId(testId)).toBeVisible();
     }
 
-    // The agency admin is an admin as well as an owner here, so the platform
-    // section is on the sidebar too.
-    await expect(ownerPage.getByTestId("nav-admin-tenants")).toBeVisible();
+    // The agency admin is an admin as well as an owner here, and the platform
+    // section is still not in this shell: a clinic's navigation is about the
+    // clinic. The way back is the organisation switcher's last entry.
+    await expect(ownerPage.getByTestId("nav-admin-tenants")).toHaveCount(0);
+    await ownerPage.getByTestId("org-switcher").click();
+    await expect(ownerPage.getByTestId("org-switcher-platform")).toBeVisible();
+    await ownerPage.keyboard.press("Escape");
 
     await expect(ownerPage.getByTestId("nav-overview")).toHaveAttribute(
       "data-active",

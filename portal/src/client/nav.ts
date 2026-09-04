@@ -20,16 +20,23 @@ import {
 } from "@tabler/icons-react";
 
 /**
- * The sidebar, as data. Nothing here renders; Task R1 mounts it.
+ * The sidebar, as data — for both shells.
+ *
+ * There are two, and they are separate. `NAV_SECTIONS` is a business's shell,
+ * at `/app/:orgSlug`: the pages of one clinic, and nothing about the agency,
+ * for anyone at all. `PLATFORM_SECTIONS` is the agency's own shell, at
+ * `/admin`. An agency admin standing in a clinic's pages is looking at that
+ * clinic; the way back to the platform is the user menu and the organisation
+ * switcher, not a section of the clinic's own navigation.
  *
  * `to` is the route pattern exactly as the Wasp spec declares it, `:orgSlug`
  * and all, plus a query string where one page holds several sidebar items.
  * `navPath` turns a pattern into the href for one organisation.
  *
  * `nav.test.ts` reads the routes out of the Wasp spec files and fails unless
- * every route under `/app/:orgSlug` or `/admin` is either in a section here or
- * named, with a reason, in `ROUTES_OFF_THE_SIDEBAR`. A new page therefore
- * cannot be added without someone deciding where a person finds it.
+ * every route under `/app/:orgSlug` or `/admin` is in exactly one of the two
+ * shells or named, with a reason, in `ROUTES_OFF_THE_SIDEBAR`. A new page
+ * therefore cannot be added without someone deciding where a person finds it.
  */
 
 export type NavContext = {
@@ -79,12 +86,10 @@ const SETTINGS_TABS: { label: string; tab: string; icon: TablerIcon }[] = [
   { label: "Versions", tab: "versions", icon: IconHistory },
 ];
 
-/**
- * The agency's own section. Named rather than typed out twice because the
- * admin shell shows this section and nothing else.
- */
+/** The agency's own section, named because the admin shell titles itself with it. */
 export const PLATFORM_SECTION = "Platform";
 
+/** The business shell: one clinic's pages, at `/app/:orgSlug`. */
 export const NAV_SECTIONS: NavSection[] = [
   {
     title: "Front desk",
@@ -141,6 +146,13 @@ export const NAV_SECTIONS: NavSection[] = [
       },
     ],
   },
+];
+
+/**
+ * The admin shell: the agency's own pages, at `/admin`, and nothing about any
+ * one organisation, because `/admin` is not about one.
+ */
+export const PLATFORM_SECTIONS: NavSection[] = [
   {
     title: PLATFORM_SECTION,
     items: [
@@ -184,12 +196,17 @@ export const ROUTES_OFF_THE_SIDEBAR: { route: string; reason: string }[] = [
   {
     route: "/app/:orgSlug",
     reason:
-      "The organisation's own root. The sidebar's organisation switcher is the way in, and the root page only offers the links the sidebar already carries.",
+      "The organisation's own root. Signing in lands here, and the organisation switcher is the way between one and another; the root page only offers the links the sidebar already carries.",
   },
   {
     route: "/admin/tenants/new",
     reason:
       "Reached from the Tenants page, which is where someone is when they decide to add one.",
+  },
+  {
+    route: "/admin/login",
+    reason:
+      "A signed-out page: the platform's own sign-in. Nobody inside a shell needs it, and its address is given to an agency admin privately rather than linked from the app.",
   },
 ];
 
@@ -204,26 +221,37 @@ export function navPath(to: string, orgSlug: string): string {
   return to.replace(":orgSlug", encodeURIComponent(orgSlug));
 }
 
-/** The sections this viewer may see, with the items they may see, empty ones dropped. */
+function shown(sections: NavSection[], ctx: NavContext): NavSection[] {
+  return sections
+    .map((section) => ({
+      ...section,
+      items: section.items.filter((item) => item.visible(ctx)),
+    }))
+    .filter((section) => section.items.length > 0);
+}
+
+/**
+ * What a business's shell shows: this clinic's pages, filtered by this
+ * viewer's role. Never the agency's own section, for anyone — an admin
+ * standing in a clinic is looking at the clinic.
+ */
 export function visibleSections(ctx: NavContext): NavSection[] {
-  return NAV_SECTIONS.map((section) => ({
-    ...section,
-    items: section.items.filter((item) => item.visible(ctx)),
-  })).filter((section) => section.items.length > 0);
+  return shown(NAV_SECTIONS, ctx);
 }
 
 /**
  * What the admin shell shows: the agency's own section, and nothing from any
  * organisation, because `/admin` is not about one. Empty for anyone who is not
- * an agency admin, which is the same answer `visibleSections` gives.
+ * an agency admin, which is only a courtesy — every operation behind those
+ * pages refuses a non-admin on the server.
  */
 export function platformSections(ctx: NavContext): NavSection[] {
-  return visibleSections(ctx).filter(
-    (section) => section.title === PLATFORM_SECTION,
-  );
+  return shown(PLATFORM_SECTIONS, ctx);
 }
 
-/** Every item in every section, in sidebar order. */
+/** Every item of both shells, in sidebar order: what `nav.test.ts` accounts for. */
 export function allNavItems(): NavItem[] {
-  return NAV_SECTIONS.flatMap((section) => section.items);
+  return [...NAV_SECTIONS, ...PLATFORM_SECTIONS].flatMap(
+    (section) => section.items,
+  );
 }

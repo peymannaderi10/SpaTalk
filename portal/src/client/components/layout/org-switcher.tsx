@@ -1,10 +1,17 @@
-import { IconBuilding, IconCheck, IconChevronDown } from "@tabler/icons-react";
+import {
+  IconBuilding,
+  IconCheck,
+  IconChevronDown,
+  type TablerIcon,
+} from "@tabler/icons-react";
+import { Link } from "react-router";
 
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
 import {
@@ -31,17 +38,31 @@ export type SwitchableOrg = {
   slug: string;
 };
 
+/**
+ * Somewhere to go that is not one of the organisations: the platform's own
+ * dashboard, for an agency admin. The caller decides whether there is one.
+ */
+export type SwitcherLink = {
+  label: string;
+  to: string;
+  testId: string;
+  icon?: TablerIcon;
+};
+
 export function OrgSwitcher({
   orgs,
   currentSlug,
   onSelect,
   emptyLabel = "No organisation",
+  links = [],
 }: {
   orgs: SwitchableOrg[];
   currentSlug?: string | null;
   onSelect: (slug: string) => void;
   /** Shown while the list is still loading, or when there is nothing to pick. */
   emptyLabel?: string;
+  /** Appended under the organisations, after a rule. */
+  links?: SwitcherLink[];
 }) {
   const { isMobile, setOpenMobile } = useSidebar();
   const current = orgs.find((org) => org.slug === currentSlug);
@@ -97,6 +118,20 @@ export function OrgSwitcher({
                 {org.slug === currentSlug && (
                   <IconCheck className="ms-auto size-4" />
                 )}
+              </DropdownMenuItem>
+            ))}
+            {links.length > 0 && <DropdownMenuSeparator />}
+            {links.map((link) => (
+              <DropdownMenuItem
+                key={link.to}
+                data-testid={link.testId}
+                asChild
+                className="gap-2 p-2"
+              >
+                <Link to={link.to} onClick={() => setOpenMobile(false)}>
+                  {link.icon && <link.icon className="size-4" />}
+                  <span className="truncate">{link.label}</span>
+                </Link>
               </DropdownMenuItem>
             ))}
           </DropdownMenuContent>

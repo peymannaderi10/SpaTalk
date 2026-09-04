@@ -1,5 +1,6 @@
 import { action, page, query, route, type Spec } from "@wasp.sh/spec";
 
+import { AdminLoginPage } from "./AdminLoginPage" with { type: "ref" };
 import { AnalyticsDashboardPage } from "./dashboards/analytics/AnalyticsDashboardPage" with { type: "ref" };
 import { HealthPage } from "./HealthPage" with { type: "ref" };
 import { NewTenantWizard } from "./NewTenantWizard" with { type: "ref" };
@@ -19,6 +20,11 @@ import { UsersDashboardPage } from "./dashboards/users/UsersDashboardPage" with 
  */
 
 export const adminSpec: Spec = [
+  // The one page here that is not authRequired: it is where an agency admin
+  // signs in. It grants nothing — the session it creates is the same session
+  // `/login` creates — so it is safe to be open, and `/app` is what sends the
+  // person who used it wherever their work actually is.
+  route("AdminLoginRoute", "/admin/login", page(AdminLoginPage)),
   route(
     "AdminRoute",
     "/admin",

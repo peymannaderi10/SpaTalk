@@ -1,7 +1,12 @@
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { beforeAll, describe, expect, it } from "vitest";
-import { NAV_SECTIONS, platformSections, type NavContext } from "../nav";
+import {
+  NAV_SECTIONS,
+  PLATFORM_SECTIONS,
+  platformSections,
+  type NavContext,
+} from "../nav";
 import { AppLayout } from "./AppLayout";
 
 /**
@@ -64,6 +69,11 @@ function itemsOf(title: string) {
   return section.items;
 }
 
+/** The agency's own items, which live in the other shell entirely. */
+function platformItems() {
+  return PLATFORM_SECTIONS.flatMap((section) => section.items);
+}
+
 describe("the app shell", () => {
   it("renders every item of every section an owner may see, with its testid", () => {
     mount(owner);
@@ -79,17 +89,23 @@ describe("the app shell", () => {
     }
   });
 
-  it("hides the platform section from anyone who is not an agency admin", () => {
-    mount(owner);
-    for (const item of itemsOf("Platform")) {
-      expect(screen.queryByTestId(item.testId)).toBeNull();
+  it("keeps the platform section out of a business's shell, for an agency admin too", () => {
+    // The two shells are separate: a clinic's navigation is about the clinic,
+    // whoever is looking at it. An admin's way back is the user menu and the
+    // organisation switcher, not a section here.
+    for (const context of [owner, staff, admin]) {
+      const { unmount } = mount(context);
+      for (const item of platformItems()) {
+        expect(screen.queryByTestId(item.testId)).toBeNull();
+      }
+      expect(screen.queryByText("Platform")).toBeNull();
+      unmount();
     }
-    expect(screen.queryByText("Platform")).toBeNull();
   });
 
-  it("shows the platform section to an agency admin", () => {
-    mount(admin);
-    for (const item of itemsOf("Platform")) {
+  it("shows the platform section when it is the admin shell being rendered", () => {
+    mount(admin, { sections: platformSections(admin) });
+    for (const item of platformItems()) {
       expect(screen.getByTestId(item.testId)).toBeTruthy();
     }
   });
@@ -131,7 +147,7 @@ describe("the app shell", () => {
   it("renders only the sections it is given when the caller narrows them", () => {
     mount(admin, { sections: platformSections(admin) });
 
-    for (const item of itemsOf("Platform")) {
+    for (const item of platformItems()) {
       expect(screen.getByTestId(item.testId)).toBeTruthy();
     }
     for (const item of itemsOf("Front desk")) {

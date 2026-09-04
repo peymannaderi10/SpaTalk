@@ -1,4 +1,4 @@
-import { IconBuildingStore, IconUserCircle } from "@tabler/icons-react";
+import { IconUserCircle } from "@tabler/icons-react";
 import { ReactNode } from "react";
 import { Link, Navigate, useLocation } from "react-router";
 import { type AuthUser } from "wasp/auth";
@@ -53,10 +53,10 @@ export function DefaultLayout({ children, user }: Props) {
       profile={{
         name: user.username ?? user.email ?? "You",
         email: user.email,
-        items: [
-          { label: "Your organisations", to: "/app", icon: IconBuildingStore },
-          { label: "Account", to: "/account", icon: IconUserCircle },
-        ],
+        // No "your organisations" entry: `/app` is a resolver now and would
+        // send an agency admin straight back here. A clinic is reached from
+        // the Tenants page, which is where the agency's list of them is.
+        items: [{ label: "Account", to: "/account", icon: IconUserCircle }],
         onSignOut: () => {
           void logout();
         },

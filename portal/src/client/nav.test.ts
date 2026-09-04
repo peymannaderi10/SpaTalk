@@ -6,6 +6,7 @@ import {
   navPath,
   navRoute,
   NAV_SECTIONS,
+  PLATFORM_SECTIONS,
   platformSections,
   ROUTES_OFF_THE_SIDEBAR,
   visibleSections,
@@ -92,6 +93,40 @@ describe("the sidebar model", () => {
     }
   });
 
+  it("puts every declared route in the shell that owns it, or names it as off both", () => {
+    // There are two shells now: a business's, at `/app/:orgSlug`, and the
+    // agency's, at `/admin`. A route belongs to exactly one of them, and a
+    // route in neither has to be written down in ROUTES_OFF_THE_SIDEBAR with
+    // a reason — otherwise it is a page nobody can find.
+    const business = NAV_SECTIONS.flatMap((section) =>
+      section.items.map((item) => navRoute(item.to)),
+    );
+    const platform = PLATFORM_SECTIONS.flatMap((section) =>
+      section.items.map((item) => navRoute(item.to)),
+    );
+    const offSidebar = ROUTES_OFF_THE_SIDEBAR.map((entry) => entry.route);
+
+    for (const route of declared) {
+      const shells = [
+        business.includes(route) ? "the business shell" : null,
+        platform.includes(route) ? "the admin shell" : null,
+        offSidebar.includes(route) ? "off the sidebar" : null,
+      ].filter(Boolean);
+      expect(
+        shells,
+        `${route} is in ${shells.length === 0 ? "no shell and no ROUTES_OFF_THE_SIDEBAR entry" : `several places: ${shells.join(", ")}`}`,
+      ).toHaveLength(1);
+    }
+
+    // And neither shell reaches into the other's half of the app.
+    for (const route of business) {
+      expect(route.startsWith("/app/:orgSlug")).toBe(true);
+    }
+    for (const route of platform) {
+      expect(route === "/admin" || route.startsWith("/admin/")).toBe(true);
+    }
+  });
+
   it("invents no route the Wasp spec does not declare", () => {
     for (const item of allNavItems()) {
       expect(declared, `${item.testId} points at a route nothing declares`).toContain(
@@ -130,11 +165,13 @@ describe("the sidebar model", () => {
     }
   });
 
-  it("carries the sections the shell expects, in order", () => {
+  it("carries the sections each shell expects, in order", () => {
     expect(NAV_SECTIONS.map((section) => section.title)).toEqual([
       "Front desk",
       "Setup",
       "Account",
+    ]);
+    expect(PLATFORM_SECTIONS.map((section) => section.title)).toEqual([
       "Platform",
     ]);
   });
@@ -153,12 +190,19 @@ describe("the sidebar model", () => {
     ]);
   });
 
-  it("shows the platform section to an agency admin only", () => {
-    const admin = visibleSections({ orgSlug: "skincentrix", role: "STAFF", isAdmin: true });
-    expect(admin.map((section) => section.title)).toContain("Platform");
-
-    const staff = visibleSections({ orgSlug: "skincentrix", role: "STAFF", isAdmin: false });
-    expect(staff.map((section) => section.title)).not.toContain("Platform");
+  it("keeps the platform section out of a business's shell, for an agency admin too", () => {
+    // The two shells are separate: standing in a clinic's pages, even the
+    // agency's own admin is looking at that clinic, not at the platform.
+    for (const isAdmin of [true, false]) {
+      const sections = visibleSections({
+        orgSlug: "skincentrix",
+        role: "OWNER",
+        isAdmin,
+      });
+      expect(sections.map((section) => section.title)).not.toContain(
+        "Platform",
+      );
+    }
   });
 
   it("gives the admin shell the platform section and nothing else", () => {
@@ -169,9 +213,7 @@ describe("the sidebar model", () => {
     });
     expect(sections.map((section) => section.title)).toEqual(["Platform"]);
     expect(sections[0].items.map((item) => item.testId)).toEqual(
-      NAV_SECTIONS.find((section) => section.title === "Platform")!.items.map(
-        (item) => item.testId,
-      ),
+      PLATFORM_SECTIONS[0].items.map((item) => item.testId),
     );
   });
 

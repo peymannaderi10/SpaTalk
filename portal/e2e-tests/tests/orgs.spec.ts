@@ -72,9 +72,11 @@ test.describe("organisations", () => {
     expect(created.body.slug).toBe(ORG_SLUG);
     organizationId = created.body.id;
 
-    await adminPage.goto("/app");
+    // `/app` resolves now, and it resolves an agency admin to the platform, so
+    // the way the agency reaches one client's pages is the tenants table.
+    await adminPage.goto("/admin/tenants");
     await expect(
-      adminPage.getByRole("link", { name: ORG_NAME }),
+      adminPage.getByTestId(`tenant-dashboard-${ORG_SLUG}`),
     ).toBeVisible(FIRST_RENDER);
 
     await adminPage.goto(`/app/${ORG_SLUG}`);
@@ -155,9 +157,12 @@ test.describe("organisations", () => {
       staffPage.getByText("STAFF", { exact: true }),
     ).toBeVisible();
 
+    // They belong to one organisation, so `/app` no longer asks which: it puts
+    // them in it.
     await staffPage.goto("/app");
+    await staffPage.waitForURL(`**/app/${ORG_SLUG}`, FIRST_RENDER);
     await expect(
-      staffPage.getByRole("link", { name: ORG_NAME }),
+      staffPage.getByRole("heading", { name: ORG_NAME }),
     ).toBeVisible(FIRST_RENDER);
   });
 

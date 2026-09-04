@@ -27,6 +27,7 @@ import {
   TableHeader,
   TableRow,
 } from "../client/components/ui/table";
+import { orgHomePath } from "../client/entry";
 import { formatCad, formatDateTime, formatMinutes } from "../client/formatting";
 import { cn } from "../client/utils";
 import {
@@ -184,6 +185,11 @@ export function TenantsPage({ user }: { user: AuthUser }) {
                         </Button>
                       </TableHead>
                     ))}
+                    {/* The row action's column: unlabelled, so the action has
+                        a cell of its own without a heading over it. */}
+                    <TableHead className="w-0">
+                      <span className="sr-only">Actions</span>
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -276,6 +282,19 @@ function Row({ row }: { row: AgencyTenantRow }) {
         ) : (
           <span className="text-muted-foreground">No subscription</span>
         )}
+      </TableCell>
+      <TableCell className="text-right">
+        {/* How the agency opens a client's own pages. Access is unchanged: an
+            agency admin already has OWNER access to any organisation by slug
+            (`organizations/access.ts`), so this is a link, not a grant. */}
+        <Button asChild variant="outline" size="sm">
+          <Link
+            to={orgHomePath(row.slug)}
+            data-testid={`tenant-dashboard-${row.slug}`}
+          >
+            View dashboard
+          </Link>
+        </Button>
       </TableCell>
     </TableRow>
   );

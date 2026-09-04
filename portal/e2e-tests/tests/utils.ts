@@ -143,6 +143,17 @@ export async function logUserIn({
 }
 
 /**
+ * Where signing in ends up.
+ *
+ * `/app` is a resolver, not a page (`portal/src/client/entry.ts`): an agency
+ * admin goes on to `/admin`, a person who belongs to one organisation into it,
+ * and only a person who belongs to none stays put. A helper that has just
+ * signed somebody in does not know which of those they are, so it waits for
+ * any of the three rather than for `/app` alone.
+ */
+const AFTER_SIGN_IN = /\/(app|admin)(\/|$)/;
+
+/**
  * An account the suite may have created on an earlier run: the database
  * outlives a run, so a fixed address (the agency admin) is signed in if it
  * exists and created if it does not.
@@ -164,14 +175,14 @@ export async function signInOrSignUp({
   ]);
 
   if (response.status() === 200) {
-    await page.waitForURL("**/app");
+    await page.waitForURL(AFTER_SIGN_IN);
     return;
   }
 
   await signUserUp({ page, user });
   await verifyUserEmail({ page, user });
   await logUserIn({ page, user });
-  await page.waitForURL("**/app");
+  await page.waitForURL(AFTER_SIGN_IN);
 }
 
 export const SERVER_URL = process.env.WASP_SERVER_URL ?? "http://localhost:3001";

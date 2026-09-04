@@ -1,5 +1,4 @@
 import {
-  IconBuildingStore,
   IconClipboardList,
   IconMessages,
   IconShieldLock,
@@ -18,7 +17,9 @@ import {
   OrgSwitcher,
   type CommandAction,
   type Crumb,
+  type SwitcherLink,
 } from "../components/layout";
+import { orgHomePath, PLATFORM_HOME } from "../entry";
 import { channelLabel, itemTypeLabel } from "../formatting";
 import { navPath, type NavContext } from "../nav";
 import { AppLayout } from "./AppLayout";
@@ -78,7 +79,8 @@ export function OrgAppLayout({
         <OrgSwitcher
           orgs={mine}
           currentSlug={orgSlug}
-          onSelect={(slug) => navigate(`/app/${slug}`)}
+          onSelect={(slug) => navigate(orgHomePath(slug))}
+          links={switcherLinks(Boolean(user?.isAdmin))}
         />
       }
       profile={{
@@ -100,14 +102,47 @@ export function OrgAppLayout({
   );
 }
 
+/** What the label says, in both places an admin can read it. */
+const PLATFORM_DASHBOARD = "Platform dashboard";
+
+/**
+ * The user menu. There is no "your organisations" entry any more: `/app` is a
+ * resolver, not a list, so for almost everybody that link led straight back to
+ * the page they were already on. Moving between organisations is the switcher
+ * at the top of the sidebar, which is where the organisations are.
+ *
+ * An agency admin gets the one way out of a clinic's shell that is not a
+ * clinic: the platform's own dashboard.
+ */
 function profileItems(isAdmin: boolean) {
-  const items = [
-    { label: "Your organisations", to: "/app", icon: IconBuildingStore },
-    { label: "Account", to: "/account", icon: IconUserCircle },
-  ];
+  const items = [{ label: "Account", to: "/account", icon: IconUserCircle }];
   return isAdmin
-    ? [...items, { label: "Platform", to: "/admin", icon: IconShieldLock }]
+    ? [
+        ...items,
+        {
+          label: PLATFORM_DASHBOARD,
+          to: PLATFORM_HOME,
+          icon: IconShieldLock,
+        },
+      ]
     : items;
+}
+
+/**
+ * The switcher's last entry, for an agency admin only: the other shell. It
+ * sits under a rule, below the organisations, because it is not one of them.
+ */
+function switcherLinks(isAdmin: boolean): SwitcherLink[] {
+  return isAdmin
+    ? [
+        {
+          label: PLATFORM_DASHBOARD,
+          to: PLATFORM_HOME,
+          testId: "org-switcher-platform",
+          icon: IconShieldLock,
+        },
+      ]
+    : [];
 }
 
 /**
