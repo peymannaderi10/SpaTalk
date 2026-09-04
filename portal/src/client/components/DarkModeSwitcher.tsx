@@ -1,4 +1,4 @@
-import { Moon, Sun } from "lucide-react";
+import { IconMoon, IconSun } from "@tabler/icons-react";
 import { Label } from "../../client/components/ui/label";
 import { useColorMode } from "../hooks/useColorMode";
 import { cn } from "../utils";
@@ -48,12 +48,12 @@ function ModeIcon({ isInLightMode }: { isInLightMode: boolean }) {
       <span
         className={cn(iconStyle, isInLightMode ? "opacity-100" : "opacity-0")}
       >
-        <Sun className="size-4 fill-amber-500 stroke-amber-500" />
+        <IconSun className="size-4 fill-amber-500 stroke-amber-500" />
       </span>
       <span
         className={cn(iconStyle, !isInLightMode ? "opacity-100" : "opacity-0")}
       >
-        <Moon className="size-4 fill-slate-600 stroke-slate-600" />
+        <IconMoon className="size-4 fill-slate-600 stroke-slate-600" />
       </span>
     </>
   );

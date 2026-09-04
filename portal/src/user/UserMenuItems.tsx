@@ -1,4 +1,4 @@
-import { LogOut } from "lucide-react";
+import { IconLogout } from "@tabler/icons-react";
 import { logout } from "wasp/client/auth";
 import { Link as WaspRouterLink } from "wasp/client/router";
 import { type User } from "wasp/entities";
@@ -38,7 +38,7 @@ export function UserMenuItems({
           }}
           className="text-foreground hover:bg-accent hover:text-accent-foreground flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium leading-7 transition-colors"
         >
-          <LogOut size="1.1rem" />
+          <IconLogout size="1.1rem" />
           Log Out
         </button>
       </li>

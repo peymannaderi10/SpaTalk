@@ -1,4 +1,4 @@
-import { CheckCircle } from "lucide-react";
+import { IconCircleCheck } from "@tabler/icons-react";
 import { Link } from "react-router";
 import { useAuth } from "wasp/client/auth";
 import { listMyOrganizations, useQuery } from "wasp/client/operations";
@@ -65,7 +65,7 @@ export function PricingPage() {
               >
                 {PLAN_FEATURES.map((feature) => (
                   <li key={feature} className="flex gap-x-3">
-                    <CheckCircle
+                    <IconCircleCheck
                       className="text-primary h-5 w-5 flex-none"
                       aria-hidden="true"
                     />

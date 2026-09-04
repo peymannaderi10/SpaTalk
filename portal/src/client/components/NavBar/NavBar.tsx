@@ -1,4 +1,4 @@
-import { LogIn, Menu } from "lucide-react";
+import { IconLogin2, IconMenu2 } from "@tabler/icons-react";
 import { Dispatch, SetStateAction, useEffect, useState } from "react";
 import { Link as ReactRouterLink } from "react-router";
 import { useAuth } from "wasp/client/auth";
@@ -126,7 +126,7 @@ function NavBarDesktopUserDropdown({ isScrolled }: { isScrolled: boolean }) {
         >
           <div className="text-foreground hover:text-primary flex items-center transition-colors duration-300 ease-in-out">
             Log in{" "}
-            <LogIn
+            <IconLogin2
               size={isScrolled ? "1rem" : "1.1rem"}
               className={cn("transition-all duration-300", {
                 "ml-1 mt-[0.1rem]": !isScrolled,
@@ -165,7 +165,7 @@ function NavBarMobileMenu({
             )}
           >
             <span className="sr-only">Open main menu</span>
-            <Menu
+            <IconMenu2
               className={cn("transition-all duration-300", {
                 "size-8 p-1": !isScrolled,
                 "size-6 p-0.5": isScrolled,
@@ -192,7 +192,7 @@ function NavBarMobileMenu({
                 {isUserLoading ? null : !user ? (
                   <WaspRouterLink to={routes.LoginRoute.to}>
                     <div className="text-foreground hover:text-primary flex items-center justify-end transition-colors duration-300 ease-in-out">
-                      Log in <LogIn size="1.1rem" className="ml-1" />
+                      Log in <IconLogin2 size="1.1rem" className="ml-1" />
                     </div>
                   </WaspRouterLink>
                 ) : (

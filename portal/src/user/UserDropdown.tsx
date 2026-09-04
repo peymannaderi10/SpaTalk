@@ -1,4 +1,4 @@
-import { ChevronDown, LogOut, User } from "lucide-react";
+import { IconChevronDown, IconLogout, IconUser } from "@tabler/icons-react";
 import { useState } from "react";
 import { logout } from "wasp/client/auth";
 import { Link as WaspRouterLink } from "wasp/client/router";
@@ -21,8 +21,8 @@ export function UserDropdown({ user }: { user: Partial<UserEntity> }) {
           <span className="text-foreground mr-2 hidden text-right text-sm font-medium lg:block">
             {user.username}
           </span>
-          <User className="size-5" />
-          <ChevronDown className="size-4" />
+          <IconUser className="size-5" />
+          <IconChevronDown className="size-4" />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent>
@@ -51,7 +51,7 @@ export function UserDropdown({ user }: { user: Partial<UserEntity> }) {
             onClick={() => logout()}
             className="flex w-full items-center gap-3"
           >
-            <LogOut size="1.1rem" />
+            <IconLogout size="1.1rem" />
             Log Out
           </button>
         </DropdownMenuItem>

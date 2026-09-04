@@ -1,25 +1,29 @@
-import { LayoutDashboard, Settings, Shield } from "lucide-react";
+import {
+  IconLayoutDashboard,
+  IconSettings,
+  IconShield,
+} from "@tabler/icons-react";
 import { routes } from "wasp/client/router";
 
 export const userMenuItems = [
   {
     name: "Your front desk",
     to: routes.AppRoute.to,
-    icon: LayoutDashboard,
+    icon: IconLayoutDashboard,
     isAdminOnly: false,
     isAuthRequired: true,
   },
   {
     name: "Account Settings",
     to: routes.AccountRoute.to,
-    icon: Settings,
+    icon: IconSettings,
     isAuthRequired: false,
     isAdminOnly: false,
   },
   {
     name: "Admin Dashboard",
     to: routes.AdminRoute.to,
-    icon: Shield,
+    icon: IconShield,
     isAuthRequired: false,
     isAdminOnly: true,
   },

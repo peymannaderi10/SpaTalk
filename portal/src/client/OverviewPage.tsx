@@ -10,6 +10,7 @@ import {
   type TablerIcon,
 } from "@tabler/icons-react";
 import { getTenantOverview, useQuery } from "wasp/client/operations";
+import { UsageChart, type UsagePoint } from "./charts/usage-chart";
 import { EmptyState } from "./components/empty-state";
 import {
   Card,
@@ -207,64 +208,34 @@ type UsageDay = {
  * (`src/features/dashboard/components/overview.tsx`): one component, given the
  * series, owning everything inside the card.
  *
- * It draws the window's three totals and the busiest day rather than bars.
- * Task R3 replaces the body with the shadcn chart components, which is where
- * Recharts arrives; until then this says only what the runtime answered and
- * promises nothing about a picture.
+ * The drawing itself is `UsageChart`, the shadcn chart component on Recharts.
+ * All this does is turn the runtime's day into a point: the two SMS directions
+ * are one "texts" bar, because a text in and a text out are both the front desk
+ * having a conversation, and the date becomes the label the axis shows.
  */
 function UsageOverview({ days }: { days: UsageDay[] }) {
-  const totals = days.reduce(
-    (sum, day) => ({
-      calls: sum.calls + day.calls,
-      texts: sum.texts + day.sms_in + day.sms_out,
-      chats: sum.chats + day.chats,
-    }),
-    { calls: 0, texts: 0, chats: 0 },
-  );
-  const busiest = days.reduce<UsageDay | null>((best, day) => {
-    const load = day.calls + day.sms_in + day.sms_out + day.chats;
-    const bestLoad = best
-      ? best.calls + best.sms_in + best.sms_out + best.chats
-      : -1;
-    return load > bestLoad ? day : best;
-  }, null);
-  const peak = busiest
-    ? busiest.calls + busiest.sms_in + busiest.sms_out + busiest.chats
-    : 0;
+  const points: UsagePoint[] = days.map((day) => ({
+    day: dayLabel(day.date),
+    calls: day.calls,
+    texts: day.sms_in + day.sms_out,
+    chats: day.chats,
+  }));
 
-  const series: { label: string; value: number; icon: TablerIcon }[] = [
-    { label: "Calls", value: totals.calls, icon: IconPhone },
-    { label: "Texts", value: totals.texts, icon: IconMessage },
-    { label: "Chats", value: totals.chats, icon: IconMessageChatbot },
-  ];
-  const most = Math.max(1, ...series.map((entry) => entry.value));
+  return <UsageChart data={points} />;
+}
 
-  return (
-    <div className="space-y-6 pe-2">
-      {series.map((entry) => (
-        <div key={entry.label} className="space-y-2">
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-muted-foreground flex items-center gap-2">
-              <entry.icon className="size-4" />
-              {entry.label}
-            </span>
-            <span className="font-medium">{entry.value}</span>
-          </div>
-          <div className="bg-muted h-2 w-full overflow-hidden rounded-full">
-            <div
-              className="bg-primary h-full rounded-full"
-              style={{ width: `${Math.round((entry.value / most) * 100)}%` }}
-            />
-          </div>
-        </div>
-      ))}
-      <p className="text-muted-foreground text-xs">
-        {busiest
-          ? `Busiest day: ${busiest.date}, ${peak} ${peak === 1 ? "conversation" : "conversations"}.`
-          : "No days recorded yet."}
-      </p>
-    </div>
-  );
+/**
+ * `2026-09-03` as `Sep 3`. Parsed at local midnight rather than through
+ * `new Date("2026-09-03")`, which is UTC midnight and reads as the day before
+ * anywhere west of Greenwich — including this clinic.
+ */
+function dayLabel(date: string): string {
+  const [year, month, day] = date.split("-").map(Number);
+  if (!year || !month || !day) return date;
+  return new Date(year, month - 1, day).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
 }
 
 function Tile({
