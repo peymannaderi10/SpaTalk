@@ -135,7 +135,7 @@ Index: `(conversation_id, id)`.
 
 There is no free-text column on this table and there must never be one. The three lead-context columns are closed vocabularies drawn from the tenant config, checked by the ledger on write.
 
-The request summary staff read (`"New booking: Mirapeel facial for pigmentation. New client, no practitioner preference. Callback Thursday afternoon."`) is **derived, never stored**: `spatalk.ledger.summary.summarize_item(item, cfg)` composes it from these columns and fixed labels, so it cannot drift from the fields. The SMS, email, Slack and portal renderings all call it. The call notes are the other half of what staff read and are not part of it: they are drafted by a model, live on `conversations.notes`, and are shown beside the summary under their own label, never merged into it [N1].
+The request summary staff read (`"New booking: Mirapeel facial for pigmentation. New client, no practitioner preference. Would like to come in Thursday afternoon."`) is **derived, never stored**: `spatalk.ledger.summary.summarize_item(item, cfg)` composes it from these columns and fixed labels, so it cannot drift from the fields. The SMS, email, Slack and portal renderings all call it. The call notes are the other half of what staff read and are not part of it: they are drafted by a model, live on `conversations.notes`, and are shown beside the summary under their own label, never merged into it [N1].
 
 Indexes: `(tenant_id, state, due_at)`; partial `(due_at) where state = 'open' and escalated_at is null` for the breach scan.
 

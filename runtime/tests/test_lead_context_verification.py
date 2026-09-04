@@ -580,7 +580,7 @@ def test_the_owner_text_of_an_ordinary_lead_carries_the_whole_story(fixed_clock)
     assert item.contact_phone in text
     assert "New booking:" in text and "body contouring" in text
     assert "New client" in text and "Mariam Khaizaran" in text
-    assert "Callback afternoons" in text
+    assert "Would like to come in afternoons" in text
 
 
 def test_the_summary_never_outranks_the_health_line_or_the_callers_number(fixed_clock):
@@ -800,16 +800,25 @@ def test_the_portal_labels_speak_the_runtime_vocabulary():
 
 def test_the_request_card_shows_words_and_never_a_raw_service_id():
     """Task L2: "Service (by name) ... No raw ids, no "any any", no field shown when empty"."""
-    card = (REPO / "portal" / "src" / "client" / "RequestsPage.tsx").read_text(encoding="utf-8")
+    # The card's facts moved from RequestsPage.tsx into requests.ts with the portal reskin (R2);
+    # the rule is about the request card wherever its source lives.
+    client = REPO / "portal" / "src" / "client"
+    card = "\n".join(
+        (client / name).read_text(encoding="utf-8") for name in ("RequestsPage.tsx", "requests.ts")
+    )
     assert "service_id" not in card
     assert "item.summary" in card and "item.preferred_text" in card
     assert "clientLabel(item.returning_client)" in card
     assert "practitionerLabel(item.practitioner)" in card
     assert "item.concern" in card
-    # Every optional fact is guarded, so an unasked question renders nothing at all.
-    for guarded in ("clientLabel(item.returning_client) &&", "practitionerLabel(item.practitioner) &&",
-                    "item.concern &&"):
-        assert guarded in card, f"unguarded fact: {guarded}"
+    # Every optional fact goes through one `push` that drops an empty value, so an unasked
+    # question renders nothing at all (the reskin replaced per-fact `&&` guards with it).
+    for fact in ('push("Client", clientLabel(item.returning_client))',
+                 'push("Practitioner", practitionerLabel(item.practitioner))',
+                 'push("Concern", item.concern ?? "")'):
+        assert fact in card, f"fact not routed through push: {fact}"
+    assert "const push = (label: string, value: string) =>" in card
+    assert "if (value) {" in card
 
 
 def test_the_generated_portal_client_declares_the_six_new_fields():

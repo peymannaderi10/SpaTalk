@@ -13,7 +13,8 @@ prompt:
 
 * :func:`ground` is the honesty layer. A model asked to summarise will happily add a motive
   nobody stated, and staff would read it as something the caller said. So every sentence must
-  share at least three content words with what the caller actually typed or said, or it is
+  share three content words with what the caller actually typed or said, or contain no
+  content word the caller did not use (a short true sentence cannot reach three), or it is
   dropped. Nothing survives, nothing is stored.
 * :func:`scrub_health` is the health line. The assistant never asks about a condition; if a
   caller volunteers one it is a boolean flag and the detail stays in the transcript. The same
@@ -59,7 +60,7 @@ STOP_WORDS = frozenset(
     {
         "about", "after", "also", "another", "anything", "asked", "asking", "back", "because",
         "been", "before", "being", "both", "call", "called", "caller", "callers", "calling",
-        "client", "clinic", "come", "coming", "could", "does", "doing", "down", "during",
+        "client", "clinic", "come", "customer", "customers", "coming", "could", "does", "doing", "down", "during",
         "each", "else", "even", "ever", "from", "gets", "getting", "give", "given", "going",
         "have", "having", "here", "hope", "hopes", "hoping", "into", "just", "know", "like",
         "likes", "made", "make", "many", "mentioned", "more", "most", "much", "must", "next",
@@ -117,22 +118,34 @@ def _sentences(text: str) -> list[str]:
     return [s.strip() for s in _SENTENCE_SPLIT.split(text.strip()) if s.strip()]
 
 
+def _grounded(sentence: str, said: set[str]) -> bool:
+    """Three of the caller's words, or nothing but the caller's words.
+
+    Three shared content words trace a sentence to the turn it came from. A short sentence
+    can never reach three (\"The customer wants to book an appointment.\", call from the 437
+    number, 2026-09-03), so it passes when every content word in it is one the caller used
+    and at least one is: nothing in it is invented. A sentence with a word the caller never
+    said (\"a laser package\") needs the three.
+    """
+    words = set(_content_words(sentence))
+    shared = words & said
+    if len(shared) >= MIN_GROUNDED_WORDS:
+        return True
+    return bool(shared) and words == shared
+
+
 def ground(notes: str, user_turns: list[str]) -> str | None:
     """Keep only the sentences the caller's own words support; ``None`` when none survive.
 
-    A sentence stays when at least :data:`MIN_GROUNDED_WORDS` of its content words appear in
-    what the caller said. Three is the threshold because one or two shared words is what any
-    sentence about the same subject would share; three is a claim traceable to the turn it
-    came from.
+    A sentence stays when :func:`_grounded` says so: :data:`MIN_GROUNDED_WORDS` of its content
+    words appear in what the caller said, or every content word in it does. Three is a claim
+    traceable to the turn it came from; a shorter sentence is kept only when nothing in it is
+    the model's own word.
     """
     said = set()
     for turn in user_turns:
         said.update(_content_words(turn))
-    kept = [
-        sentence
-        for sentence in _sentences(notes or "")
-        if len(set(_content_words(sentence)) & said) >= MIN_GROUNDED_WORDS
-    ]
+    kept = [sentence for sentence in _sentences(notes or "") if _grounded(sentence, said)]
     return " ".join(kept) or None
 
 

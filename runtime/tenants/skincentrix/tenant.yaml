@@ -20,7 +20,7 @@ holidays: []
 voice_numbers: []          # filled by `spatalk numbers add` after Telnyx purchase
 sms_from_number: "+12899170079"   # the tenant messaging number staff texts come from (S1)
 transfer_number: null      # UNVERIFIED: a TELUS extension that does not forward to us
-booking_url_default: https://skincentrix.janeapp.com/locations/skincentrix
+booking_url_default: https://skincentrix.janeapp.com/
 # SMS flood guard (plan F): the defaults, written out so the clinic can see and change them.
 sms_guard:
   burst_limit: 12
@@ -36,9 +36,9 @@ persona:
   # "Ava" is a placeholder the founder can rename; the disclosure still says AI.
   assistant_name: Ava
   tone: >-
-    warm, upbeat and genuinely friendly, like the best front-desk person the clinic ever had:
-    conversational, uses contractions, sounds happy to help, knows the treatments well and
-    enjoys talking about them, never clinical, never salesy, never robotic
+    warm, calm and genuinely friendly, like the best front-desk person the clinic ever had:
+    conversational, uses contractions, unhurried, knows the treatments well, never gushing,
+    never clinical, never salesy, never robotic
   max_sentences_per_turn: 3
 # The people a caller may ask for by name (lead context plan, L1). Names and roles from
 # skincentrix.com and knowledge.md; this list, plus "any", is the whole of what the model

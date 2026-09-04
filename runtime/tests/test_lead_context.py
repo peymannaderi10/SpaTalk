@@ -388,7 +388,7 @@ def test_a_new_booking_with_everything_set_reads_as_one_sentence():
     )
     assert text == (
         "New booking: Mirapeel facial with LED, microcurrent and cupping for pigmentation. "
-        "New client, no practitioner preference. Callback afternoons."
+        "New client, no practitioner preference. Would like to come in afternoons."
     )
 
 
@@ -406,7 +406,7 @@ def test_a_returning_caller_who_asked_for_someone_says_so():
     )
     assert text == (
         "New booking: Full face PRP. Returning client, would like Faisal Rohile. "
-        "Callback Thursday 10 September, mornings."
+        "Would like to come in Thursday 10 September, mornings."
     )
 
 
@@ -414,7 +414,7 @@ def test_a_callback_with_nothing_set_says_nothing_it_does_not_know():
     from spatalk.ledger.summary import summarize_item
 
     text = summarize_item(_item(type="callback", service_id=None), _cfg())
-    assert text == "Callback: Callback requested. Callback any day."
+    assert text == "Callback: Callback requested. Would like to come in any day."
     assert "None" not in text and "any any" not in text
 
 
@@ -625,5 +625,5 @@ def test_item_out_leaves_service_name_empty_when_there_is_no_service(fixed_clock
         _cfg(),
     )
     assert out.service_name is None
-    assert out.summary == "Callback: Callback requested. Callback any day."
+    assert out.summary == "Callback: Callback requested. Would like to come in any day."
     assert out.preferred_text == "any day"

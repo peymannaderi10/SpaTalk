@@ -56,3 +56,49 @@ def test_the_offer_wording_stays_out_of_the_prompt():
     instructions = build_system_prompt(_cfg(), "voice", NOW).split("HOURS:")[0].lower()
     for word in ("$50", "credit", "consultation", "underarm", "free "):
         assert word not in instructions, word
+
+
+# --- after the call from the 437 number, 2026-09-03 20:38 ----------------------------------
+
+
+def test_a_vague_book_request_is_asked_what_to_book():
+    """The caller heard the offers and said "I want to book an appointment"; Ava went straight to
+    the name. Nothing had been chosen."""
+    from spatalk.brain.prompt import build_system_prompt
+
+    p = build_system_prompt(_cfg(), "voice", NOW).lower()
+    booking = p.split("when they want to book", 1)[1]
+    assert "have not named a treatment, a concern or one of the offers" in booking
+    assert "a treatment you suggested earlier is not their choice" in booking
+    assert booking.index("have not named a treatment") < booking.index("first name")
+
+
+def test_the_preferred_day_is_never_when_the_team_will_call():
+    """"I'm looking to come on Tuesday" became "have our team call you on Tuesday"."""
+    from spatalk.brain.prompt import build_system_prompt
+
+    for channel in ("voice", "sms"):
+        p = build_system_prompt(_cfg(), channel, NOW).lower()
+        assert "never when the team will call" in p
+        assert "never say when the team will call, text or reach out" in p
+
+
+def test_the_voice_is_calm():
+    """Feedback from the caller: a little too high energy."""
+    from spatalk.brain.prompt import build_system_prompt
+
+    cfg = _cfg()
+    p = build_system_prompt(cfg, "voice", NOW)
+    assert "At most one exclamation mark" in p
+    assert "[cheerful] at most once per call" in p
+    assert "calm" in cfg.persona.tone and "upbeat" not in cfg.persona.tone
+    assert cfg.scripts.disclosure.startswith("[warm]")
+    assert "!" not in cfg.scripts.disclosure
+
+
+def test_every_booking_link_is_the_plain_jane_address():
+    """The link texted on that call did not work: every service pointed at a /locations path."""
+    cfg = _cfg()
+    assert cfg.booking_url_default == "https://skincentrix.janeapp.com/"
+    for service in cfg.services:
+        assert service.booking_url == "https://skincentrix.janeapp.com/", service.id

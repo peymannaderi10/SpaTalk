@@ -23,7 +23,7 @@ SMS_FROM = "+18885550100"
 
 OFFLINE = (
     "Thanks for texting Skincentrix. We'll reply shortly. "
-    "To book now: https://skincentrix.janeapp.com/locations/skincentrix"
+    "To book now: https://skincentrix.janeapp.com/"
 )
 
 

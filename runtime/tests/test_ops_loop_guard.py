@@ -29,7 +29,7 @@ OWN_VOICE = "+19055550100"          # the number tests/conftest.py maps to skinc
 PUBLIC_PHONE_E164 = "+19057037546"  # tenant.yaml carries it as "905-703-7546"
 CALLER = "+19055550101"
 SMS_FROM = "+18885550100"
-BOOKING_URL = "https://skincentrix.janeapp.com/locations/skincentrix"
+BOOKING_URL = "https://skincentrix.janeapp.com/"
 NOW = datetime(2026, 9, 1, 18, 0, tzinfo=timezone.utc)
 
 

@@ -153,7 +153,7 @@ def summarize_item(item: HasItemFields, cfg: TenantConfig) -> str:
     """One request as one sentence, from closed fields and fixed labels only.
 
     For example: "New booking: Mirapeel facial for pigmentation. New client, no
-    practitioner preference. Callback Thursday afternoon."
+    practitioner preference. Would like to come in Thursday afternoon."
     """
     label = SUMMARY_LABELS.get(item.type, type_label(item.type))
     name = service_name(item, cfg)
@@ -180,6 +180,6 @@ def summarize_item(item: HasItemFields, cfg: TenantConfig) -> str:
 
     when = ""
     if item.type in CALLBACK_TYPES:
-        when = f". Callback {preferred_text(getattr(item, 'preferred_window', None))}"
+        when = f". Would like to come in {preferred_text(getattr(item, 'preferred_window', None))}"
 
     return f"{head}{client}{who}{when}."

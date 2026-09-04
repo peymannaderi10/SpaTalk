@@ -142,11 +142,13 @@ def test_ground_returns_none_when_nothing_survives():
     assert ground("", ["anything"]) is None
 
 
-def test_ground_needs_three_content_words_not_one():
-    """One shared word is a coincidence; the rule is three (call-notes plan, Global Constraints)."""
+def test_ground_drops_an_invented_word_and_keeps_a_short_true_sentence():
+    """Three shared words trace a sentence to its turn; a short sentence can never reach
+    three, so it passes only when every content word in it is the caller's own."""
     from spatalk.ledger.notes import ground
 
-    assert ground("Caller asked about pigmentation.", ["I have pigmentation."]) is None
+    assert ground("Caller asked about pigmentation.", ["I have pigmentation."]) == "Caller asked about pigmentation."
+    assert ground("Caller asked about pigmentation and lasers.", ["I have pigmentation."]) is None
 
 
 # =============================================================================================
@@ -719,8 +721,8 @@ def test_ground_matches_word_stems_not_exact_forms():
     ]
     sentence = "They want to know what services are available for skin pigmentation and are hoping to get a customized plan."
     assert ground(sentence, caller) == sentence
-    # Still three distinct stems, not one word counted three times.
-    assert ground("Custom customs customized.", ["a custom one"]) is None
+    # One stem three times is one word, and "plan" was never said.
+    assert ground("Custom customs customized plan.", ["a custom one"]) is None
 
 
 def test_the_model_reads_the_transcript_as_one_document_not_as_a_chat_to_continue():
@@ -751,3 +753,15 @@ def test_the_drafting_instruction_forbids_guessing_a_gender():
 
     assert "never guess a gender" in DRAFTING_SYSTEM
     assert '"they"' in DRAFTING_SYSTEM
+
+
+def test_a_short_sentence_made_only_of_the_callers_words_is_grounded():
+    """Call from the 437 number, 2026-09-03 20:38 (job 49): the model wrote "The customer wants to
+    book an appointment. They are hoping to come in on a Tuesday." for a caller who said exactly
+    that, and the three-word rule dropped both sentences, so a real lead had no notes."""
+    from spatalk.ledger.notes import ground
+
+    caller = ["I want.  To—  Book an appointment.", "Yeah. I'm looking to come on Tuesday."]
+    notes = "The customer wants to book an appointment. They are hoping to come in on a Tuesday."
+    assert ground(notes, caller) == notes
+    assert ground("The customer wants to book a laser package.", caller) is None
