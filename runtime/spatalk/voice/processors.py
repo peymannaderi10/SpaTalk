@@ -29,6 +29,7 @@ from pipecat.frames.frames import (
 )
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 
+from spatalk.brain.audio_tags import drop_unknown_tags
 from spatalk.brain.guard import guard
 from spatalk.brain.outcomes import Refused
 from spatalk.brain.renderer import render, render_script
@@ -163,7 +164,8 @@ class OutputGuardProcessor(FrameProcessor):
         self._dropping = False
 
     async def _emit(self, sentence: str):
-        sentence = sentence.strip()
+        # A bracketed tool name or aside is not speech (call on gpt-4.1-nano, 2026-09-03).
+        sentence = drop_unknown_tags(sentence.strip())
         if not sentence or self._dropping:
             return
         g = guard(sentence, self._s.has_completed, self._s.cfg, replacement="")

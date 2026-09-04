@@ -24,3 +24,19 @@ def strip_audio_tags(text: str) -> str:
     """Remove every bracketed tag and tidy the spacing left behind."""
     cleaned = _TAG.sub("", text)
     return re.sub(r"[ \t]{2,}", " ", cleaned).strip()
+
+
+# Anything in square brackets that is not one of the performed tags: a tool name a small
+# model wrote as text ("[end_conversation]", call on gpt-4.1-nano 2026-09-03 21:42), a
+# stage direction, a bracketed aside. None of it is speech.
+_ANY_TAG = re.compile(r"\[[^\]\n]{1,60}\]\s*")
+
+
+def drop_unknown_tags(text: str) -> str:
+    """Remove every bracketed token that is not a known audio tag; known tags stay."""
+
+    def keep_or_drop(match: re.Match) -> str:
+        inner = match.group(0).strip()[1:-1].strip().lower()
+        return match.group(0) if inner in AUDIO_TAGS else ""
+
+    return _ANY_TAG.sub(keep_or_drop, text or "").strip() if text else text
