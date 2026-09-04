@@ -86,22 +86,91 @@ GOOGLE = "google"
 OPENAI = "openai"
 
 
+@dataclass(frozen=True)
+class Vendor:
+    """One OpenAI-compatible host: where it lives and which settings field holds its key.
+
+    `base_url` is the default; `LLM_<VENDOR>_BASE_URL` overrides it, so moving a vendor to
+    another region is an environment change like every other vendor decision.
+    """
+
+    base_url: str
+    key_field: str
+
+    @property
+    def key_env(self) -> str:
+        """The environment variable name the settings field is read from."""
+        return self.key_field.upper()
+
+    @property
+    def base_url_field(self) -> str:
+        """The settings field that overrides `base_url`."""
+        return f"llm_{self.key_field.removesuffix('_api_key')}_base_url"
+
+
+# The vendor table (addendum, founder decision 2026-09-03 ~21:40). Every entry speaks the
+# OpenAI Chat Completions protocol, so one client and one Pipecat service serve them all and
+# the cheapest model is reachable by an environment value alone. Adding a vendor is a line
+# here and a key on `Settings`: no other module names one (CLAUDE.md non-negotiable 4).
+#
+# Google is deliberately absent. It is not OpenAI-compatible, it is the bare-name default,
+# and it has its own client.
+VENDORS: dict[str, Vendor] = {
+    OPENAI: Vendor("https://api.openai.com/v1", "openai_api_key"),
+    "openrouter": Vendor("https://openrouter.ai/api/v1", "openrouter_api_key"),
+    "deepseek": Vendor("https://api.deepseek.com/v1", "deepseek_api_key"),
+    "xai": Vendor("https://api.x.ai/v1", "xai_api_key"),
+    "groq": Vendor("https://api.groq.com/openai/v1", "groq_api_key"),
+    "together": Vendor("https://api.together.xyz/v1", "together_api_key"),
+    "fireworks": Vendor("https://api.fireworks.ai/inference/v1", "fireworks_api_key"),
+    # Alibaba's Qwen. The US endpoint, not the Singapore one: measured from the founder's
+    # laptop 2026-09-03, dashscope-us shook hands as fast as Google's endpoint while
+    # dashscope-intl took 1.2 s. Either is one LLM_DASHSCOPE_BASE_URL away.
+    "dashscope": Vendor("https://dashscope-us.aliyuncs.com/compatible-mode/v1", "dashscope_api_key"),
+    # The escape hatch: any other OpenAI-compatible host, including one on the VPS itself.
+    # It has no default URL because there is nothing sensible to default to.
+    "compat": Vendor("", "compat_api_key"),
+}
+
+
 def provider_for(model: str) -> str:
-    """The vendor `model` names: `"openai"` for the `openai:` prefix, else `"google"`."""
-    return OPENAI if (model or "").strip().lower().startswith(OPENAI_PREFIX) else GOOGLE
+    """The vendor `model` names: a table prefix such as `groq:`, else `"google"`."""
+    raw = (model or "").strip().lower()
+    for vendor in VENDORS:
+        if raw.startswith(f"{vendor}:"):
+            return vendor
+    return GOOGLE
 
 
 def model_name(model: str) -> str:
     """`model` as the provider spells it, with any vendor prefix removed."""
     raw = (model or "").strip()
-    if provider_for(raw) != OPENAI:
+    vendor = provider_for(raw)
+    if vendor == GOOGLE:
         return raw
-    name = raw[len(OPENAI_PREFIX) :].strip()
+    name = raw[len(vendor) + 1 :].strip()
     if not name:
         # An empty name would fall through to whatever the SDK defaults to, which is a
         # different model than the one the operator thought they had configured.
-        raise ValueError(f"LLM_MODEL={model!r} names the openai vendor but no model")
+        raise ValueError(f"LLM_MODEL={model!r} names the {vendor} vendor but no model")
     return name
+
+
+def base_url_for(settings, vendor: str) -> str:
+    """The host to talk to for `vendor`: the environment's value, else the table's."""
+    entry = VENDORS[vendor]
+    override = (getattr(settings, entry.base_url_field, "") or "").strip()
+    base_url = override or entry.base_url
+    if not base_url:
+        raise ValueError(
+            f"LLM_MODEL names the {vendor} vendor but {entry.base_url_field.upper()} is not set"
+        )
+    return base_url
+
+
+def vendor_key(settings, vendor: str) -> str:
+    """That vendor's API key, or `""` when the environment has not been given one."""
+    return (getattr(settings, VENDORS[vendor].key_field, "") or "").strip()
 
 
 _NO_MINIMAL = re.compile(r"gemini-3\.(7|8|9)")
@@ -258,13 +327,18 @@ class OpenAIClient:
         model: str,
         temperature: float = 0.3,
         client=None,
+        base_url: str | None = None,
     ):
+        # `base_url` is what makes every OpenAI-compatible host a vendor (addendum): the
+        # protocol is the same, only the address differs. None is OpenAI's own default.
+        self.base_url = base_url
+        self.model = model_name(model)
         if client is None:
             from openai import AsyncOpenAI
 
-            client = AsyncOpenAI(api_key=api_key)
+            client = AsyncOpenAI(api_key=api_key, base_url=base_url)
         self._client = client
-        self._model, self._temperature = model_name(model), temperature
+        self._model, self._temperature = self.model, temperature
 
     async def complete(self, system, history, tools) -> LLMResponse:
         messages = [{"role": "system", "content": system}]
@@ -288,6 +362,60 @@ class OpenAIClient:
             kwargs["tools"] = [{"type": "function", "function": d} for d in decls]
         resp = await self._client.chat.completions.create(**kwargs)
         return parse_chat_completion(resp)
+
+
+# --- the text-channel failover (llm failover plan, Task F1) ------------------------------
+
+
+class FailoverLLMClient:
+    """Two vendors behind one :class:`LLMClient`, so one of them being down is survivable.
+
+    Founder decision 2026-09-03 ~21:20. The turn starts at whichever vendor the breaker
+    says is worth trying; if that one raises — the SDK has already retried the transient
+    statuses by then — the failure is recorded and the *same* turn is sent to the other
+    vendor once. Only when both have raised does the exception reach the caller, and it is
+    the second one's, because that is the failure the customer's message actually died on.
+
+    Nothing here is allowed to change what the model said. The other vendor's
+    :class:`LLMResponse` is returned exactly as it came back, tool calls included: the
+    ledger row is the product, and a failover that quietly dropped a `capture_request`
+    would lose the very thing the caller rang about.
+    """
+
+    def __init__(
+        self,
+        primary: LLMClient,
+        secondary: LLMClient,
+        breaker,
+        vendors: tuple[str, str],
+    ):
+        self.primary, self.secondary = primary, secondary
+        self.vendors = (vendors[0], vendors[1])
+        self._breaker = breaker
+
+    def _order(self) -> list[tuple[str, LLMClient]]:
+        """The two vendors, the one worth trying first at the front."""
+        first, second = self.vendors
+        pairs = [(first, self.primary), (second, self.secondary)]
+        if self._breaker.active(first, second) != first:
+            pairs.reverse()
+        return pairs
+
+    async def complete(self, system, history, tools) -> LLMResponse:
+        last: Exception | None = None
+        for vendor, client in self._order():
+            try:
+                response = await client.complete(system, history, tools)
+            except Exception as e:  # noqa: BLE001  any failure is this vendor's failure
+                last = e
+                self._breaker.record_failure(vendor)
+                logger.warning("llm vendor {} failed this turn: {}", vendor, e)
+                continue
+            self._breaker.record_success(vendor)
+            return response
+        # Both vendors raised. Nothing was said and nothing was filed, so the caller of this
+        # client gets the exception and decides what the customer hears.
+        raise last  # type: ignore[misc]
 
 
 def _contact(d: dict | None) -> ContactInfo:

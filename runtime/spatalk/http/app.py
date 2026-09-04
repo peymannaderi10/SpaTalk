@@ -9,6 +9,7 @@ from fastapi import APIRouter, FastAPI, WebSocket
 from loguru import logger
 
 from spatalk import jobs
+from spatalk.brain import breaker  # per-vendor LLM circuit breaker (llm failover plan, F1)
 from spatalk.clock import SystemClock
 from spatalk.db import make_engine, make_session_factory
 from spatalk.http import actions, internal, slack, slack_events
@@ -91,6 +92,9 @@ def create_app(ctx: jobs.JobContext, start_background: bool = True) -> FastAPI:
     if getattr(ctx, "settings", None) is not None:
         alerts.configure_logging(ctx.settings)
         alerts.init_sentry(ctx.settings)
+        # The process-wide LLM breaker takes the environment's numbers (llm failover plan,
+        # Task F1). It exists with defaults from import, so this only ever adjusts it.
+        breaker.configure(ctx.settings)
     # --- end monitoring ---
     # --- security hardening (operations plan, Task E8) ---
     # In front of every HTTP route, before any router: per-IP token buckets, 429 with

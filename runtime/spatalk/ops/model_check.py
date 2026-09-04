@@ -28,12 +28,14 @@ from dataclasses import dataclass
 
 from loguru import logger
 
-from spatalk.brain.driver import GOOGLE, OPENAI, model_name, provider_for
+from spatalk.brain.driver import GOOGLE, VENDORS, base_url_for, model_name, provider_for
 
 # The environment variable each vendor's listing needs, by provider, for the message a
-# missing key produces. `docs/reference/api-surface.md` is the source of both names.
-KEY_ENV = {GOOGLE: "GOOGLE_API_KEY", OPENAI: "OPENAI_API_KEY"}
-KEY_SETTING = {GOOGLE: "google_api_key", OPENAI: "openai_api_key"}
+# missing key produces. Derived from the one vendor table in `driver.py` (addendum, founder
+# decision 2026-09-03 ~21:40) so a new vendor is checkable the moment it is configurable;
+# `docs/reference/api-surface.md` is the source of the names.
+KEY_ENV = {GOOGLE: "GOOGLE_API_KEY", **{name: v.key_env for name, v in VENDORS.items()}}
+KEY_SETTING = {GOOGLE: "google_api_key", **{name: v.key_field for name, v in VENDORS.items()}}
 
 # What a provider writes when a model is on its way out. Google puts it in the model's
 # description; OpenAI's listing carries no such field at all, so for OpenAI the check is
@@ -147,10 +149,10 @@ def evaluate(models: list[ModelInfo], configured: str) -> CheckResult:
 async def list_models(settings, provider: str) -> list[ModelInfo]:
     """Every model the provider will admit to, as `ModelInfo`. The only network call here."""
     key = getattr(settings, KEY_SETTING[provider], "")
-    if provider == OPENAI:
+    if provider != GOOGLE:
         from openai import AsyncOpenAI
 
-        client = AsyncOpenAI(api_key=key)
+        client = AsyncOpenAI(api_key=key, base_url=base_url_for(settings, provider))
         page = await client.models.list()
         return [ModelInfo(name=m.id) for m in page.data]
     from google import genai

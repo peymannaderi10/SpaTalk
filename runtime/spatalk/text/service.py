@@ -405,18 +405,56 @@ async def _send_followup(payload: dict, ctx: jobs.JobContext) -> None:
         )
 
 
+def make_client_for(settings, model: str) -> LLMClient | None:
+    """One vendor's client for one `vendor:model` string, or None without that vendor's key.
+
+    A bare name is Google; every prefix in `spatalk.brain.driver.VENDORS` is an
+    OpenAI-compatible host and differs only by base URL and key (addendum, founder decision
+    2026-09-03 ~21:40).
+    """
+    from spatalk.brain.driver import GOOGLE, GeminiClient, OpenAIClient, base_url_for, provider_for, vendor_key
+
+    vendor = provider_for(model)
+    if vendor == GOOGLE:
+        return GeminiClient(settings.google_api_key, model) if settings.google_api_key else None
+    key = vendor_key(settings, vendor)
+    return OpenAIClient(key, model, base_url=base_url_for(settings, vendor)) if key else None
+
+
 def make_text_llm(settings) -> LLMClient | None:
     """The production LLM client for text channels, or None when no key is configured.
 
     `LLM_MODEL` names the vendor as well as the model (operations plan, Task E6), and it is
     read here exactly as `voice.pipeline.make_llm` reads it, so one environment change
     swaps every channel at once rather than leaving text on the retired vendor.
-    """
-    from spatalk.brain.driver import OPENAI, GeminiClient, OpenAIClient, provider_for
 
-    if provider_for(settings.llm_model) == OPENAI:
-        key = getattr(settings, "openai_api_key", "")
-        return OpenAIClient(key, settings.llm_model) if key else None
-    if not settings.google_api_key:
-        return None
-    return GeminiClient(settings.google_api_key, settings.llm_model)
+    With `LLM_MODEL_FALLBACK` set to a model at another vendor, the two clients are wrapped
+    in a `FailoverLLMClient` so one vendor's outage costs a turn a second attempt rather
+    than costing the customer an answer (llm failover plan, Task F1). A fallback whose key
+    is missing is not a failover, so it silently leaves the primary alone: two vendors are
+    only two vendors when both can actually be reached.
+    """
+    from spatalk.brain.breaker import BREAKER
+    from spatalk.brain.driver import FailoverLLMClient, provider_for
+
+    primary = make_client_for(settings, settings.llm_model)
+    fallback = (settings.llm_model_fallback or "").strip()
+    if not fallback:
+        return primary
+    secondary = make_client_for(settings, fallback)
+    if primary is None:
+        # `LLM_MODEL` names a vendor whose key was removed: the fallback is still a working
+        # client, so the text channels keep answering instead of going silent.
+        return secondary
+    if secondary is None:
+        logger.warning(
+            "LLM_MODEL_FALLBACK={} has no key configured; text channels stay on one vendor",
+            fallback,
+        )
+        return primary
+    return FailoverLLMClient(
+        primary,
+        secondary,
+        BREAKER,
+        (provider_for(settings.llm_model), provider_for(fallback)),
+    )

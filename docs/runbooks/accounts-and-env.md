@@ -97,6 +97,33 @@ Only needed if the week-one bake-off prefers Inworld's voice or latency, or as t
 3. Copy `GOOGLE_API_KEY`. Set `LLM_MODEL=gemini-2.5-flash`.
 4. Add the same key as a GitHub Actions secret named `GOOGLE_API_KEY` so the regression suite runs in CI.
 
+### 6a. A second model vendor, so one vendor being down is not the front desk being down (10 minutes, optional)
+
+Why: on 2026-09-03 Google answered every request with 503 for twenty minutes and every caller heard an apology. With a fallback configured, the same turn is answered by another company about a second later and the caller hears an answer instead.
+
+Two values activate it, and until they are set **nothing changes**:
+
+1. A key from one vendor below, in `runtime/.env`.
+2. `LLM_MODEL_FALLBACK=<vendor>:<model>` naming a model at that vendor — a *different* company from `LLM_MODEL`, or the failover has nowhere to go.
+
+Pick one. Each is OpenAI-compatible, so the runtime needs only the key; the host is built in and `LLM_<VENDOR>_BASE_URL` overrides it if a region changes.
+
+| Set `LLM_MODEL_FALLBACK` to | Key variable | Where the key comes from |
+|---|---|---|
+| `openai:gpt-4.1-mini` | `OPENAI_API_KEY` | platform.openai.com → API keys |
+| `openrouter:<model>` | `OPENROUTER_API_KEY` | openrouter.ai → Keys (one account, many models; useful when the cheapest model keeps moving) |
+| `deepseek:deepseek-chat` | `DEEPSEEK_API_KEY` | platform.deepseek.com → API keys |
+| `xai:grok-3-mini` | `XAI_API_KEY` | console.x.ai → API keys |
+| `groq:<model>` | `GROQ_API_KEY` | console.groq.com → API keys (open-weight models, fastest tokens per second of the list) |
+| `together:<model>` | `TOGETHER_API_KEY` | api.together.xyz → Settings → API keys |
+| `fireworks:<model>` | `FIREWORKS_API_KEY` | fireworks.ai → Account → API keys |
+| `dashscope:qwen-plus` | `DASHSCOPE_API_KEY` | Alibaba Model Studio (dashscope) → API-KEY; defaults to the US endpoint |
+| `compat:<model>` | `COMPAT_API_KEY` + `LLM_COMPAT_BASE_URL` | any other OpenAI-compatible host, including one running on the VPS |
+
+**Data handling.** The first-party DeepSeek and DashScope endpoints process transcripts outside North America. Skincentrix is a health-adjacent tenant, so if one of those models is the one you want, run the open-weight version through a North America host (Groq, Together or Fireworks) rather than the vendor's own endpoint.
+
+The rest of the failover is defaults: `LLM_BREAKER_FAILURES=3`, `LLM_BREAKER_WINDOW_SECS=60`, `LLM_BREAKER_COOLDOWN_SECS=300`. `GET /healthz` reports `llm.primary`, `llm.secondary` and `llm.active`, which is how you see from the outside which vendor is answering.
+
 ## 7. Amazon SES, email delivery (20 minutes, production access up to 24 hours)
 
 Why: the only email provider with no monthly floor. Delivers tracked items and the morning digest.
@@ -231,7 +258,8 @@ Runtime: `runtime/.env` on the VPS (copy from `runtime/.env.example`). Portal: `
 | `OPS_EMAIL=<your email>`, `OPS_SMS_NUMBER=<your mobile E.164>`, `LOG_FORMAT=json` | runtime | step 0 | alerts |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | portal | step 11 | optional |
 | `DEEPGRAM_API_KEY` | runtime | step 12 | optional |
-| `OPENAI_API_KEY` | runtime, CI | platform.openai.com, only for the model-swap drill | optional |
+| `OPENAI_API_KEY` | runtime, CI | platform.openai.com, for the model-swap drill and as the LLM failover's second vendor | optional |
+| `LLM_MODEL_FALLBACK`, and one of `OPENROUTER_API_KEY`, `DEEPSEEK_API_KEY`, `XAI_API_KEY`, `GROQ_API_KEY`, `TOGETHER_API_KEY`, `FIREWORKS_API_KEY`, `DASHSCOPE_API_KEY`, `COMPAT_API_KEY` (+ `LLM_COMPAT_BASE_URL`) | runtime | step 6a | optional; empty = no failover |
 | `SENTRY_DSN` | runtime | step 14 | optional |
 
 The complete variable list with the plan that introduces each one is in `docs/reference/api-surface.md`.

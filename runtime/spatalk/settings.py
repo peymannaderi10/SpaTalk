@@ -116,6 +116,42 @@ class Settings(BaseSettings):
     # (docs/runbooks/model-swap.md).
     openai_api_key: str = ""
 
+    # --- operations: LLM failover (llm failover plan, Tasks F1 and F2) ---------------------
+    # The second model, in the same `vendor:model` syntax as `LLM_MODEL`. Empty is today's
+    # behaviour exactly: one vendor, no failover, no second key needed. Set it to a model at
+    # a *different* vendor (`LLM_MODEL_FALLBACK=openai:gpt-4.1-mini`) and every turn, on the
+    # phone and on text, gets a second chance at another company when the first one fails.
+    llm_model_fallback: str = ""
+    # When a vendor is treated as down: this many failures inside the window, and it is not
+    # tried again for the cooldown. Three in a minute is a dead vendor, not a bad minute
+    # (founder call 2026-09-03: Google answered 503 for twenty minutes).
+    llm_breaker_failures: int = 3
+    llm_breaker_window_secs: int = 60
+    llm_breaker_cooldown_secs: int = 300
+    # One key per OpenAI-compatible vendor in `spatalk.brain.driver.VENDORS` (addendum,
+    # founder decision 2026-09-03 ~21:40: the cheapest model must be an env value away).
+    # All empty by default; a vendor `LLM_MODEL` does not name needs no key.
+    openrouter_api_key: str = ""
+    deepseek_api_key: str = ""
+    xai_api_key: str = ""
+    groq_api_key: str = ""
+    together_api_key: str = ""
+    fireworks_api_key: str = ""
+    dashscope_api_key: str = ""
+    compat_api_key: str = ""
+    # Each vendor's host, overriding the table's default, so a region change is an env value
+    # too. `LLM_COMPAT_BASE_URL` is the only one with no default: `compat:` is the generic
+    # OpenAI-compatible host and has nothing sensible to fall back to.
+    llm_openai_base_url: str = ""
+    llm_openrouter_base_url: str = ""
+    llm_deepseek_base_url: str = ""
+    llm_xai_base_url: str = ""
+    llm_groq_base_url: str = ""
+    llm_together_base_url: str = ""
+    llm_fireworks_base_url: str = ""
+    llm_dashscope_base_url: str = ""
+    llm_compat_base_url: str = ""
+
     # --- whatsapp (plan W) ----------------------------------------------------------------
     # One platform number fronts every tenant at MVP: the id Meta assigns the WhatsApp
     # business number, and the token the Cloud API calls carry. Empty means the runtime has
