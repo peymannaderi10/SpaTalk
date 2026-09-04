@@ -36,7 +36,7 @@ import uuid
 from loguru import logger
 
 from spatalk import jobs
-from spatalk.brain.driver import LLMClient
+from spatalk.brain.driver import TRANSIENT_STATUSES, LLMClient
 from spatalk.brain.rules import DEFAULT_LEXICONS, _pattern, health_context_mentioned
 from spatalk.conversations import get_transcript, record_usage, set_notes
 from spatalk.models import Conversation, Message
@@ -257,7 +257,12 @@ async def _call_notes_job(payload: dict, ctx: jobs.JobContext) -> None:
     spoke = any(m.role == "user" and (m.text or "").strip() for m in messages)
     try:
         notes = await draft_notes(messages, cfg, llm)
-    except Exception as e:  # noqa: BLE001 - one attempt, then a dead letter with the reason
+    except Exception as e:  # noqa: BLE001 - dead letter, unless the provider was merely busy
+        status = getattr(e, "code", None) or getattr(e, "status_code", None)
+        if status in TRANSIENT_STATUSES:
+            # Job 50, 2026-09-03 21:04: a 503 became a dead letter after one attempt. The
+            # job loop's own backoff and attempt limit handle a busy provider.
+            raise
         raise jobs.DeadLetter(f"{type(e).__name__}: {e}") from e
 
     at = ctx.clock.now()

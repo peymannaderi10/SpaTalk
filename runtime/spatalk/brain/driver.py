@@ -126,6 +126,27 @@ def gemini_thinking_kwargs(model: str, budget: int) -> dict:
     return {"thinking_level": "medium"}
 
 
+# Transient provider failures, retried by the SDK before anyone hears silence (founder
+# calls 2026-09-03 21:03 and 21:05: every request answered 503 "high demand"). Three
+# attempts with short delays: a caller is on the line, so the whole retry budget stays
+# under four seconds; what still fails is spoken about (spatalk.voice.resilience).
+TRANSIENT_STATUSES = (429, 500, 502, 503, 504)
+
+
+def gemini_http_options():
+    """HTTP options for a google-genai client: retry the transient statuses, briefly."""
+    from google.genai import types
+
+    return types.HttpOptions(
+        retry_options=types.HttpRetryOptions(
+            attempts=3,
+            initial_delay=0.5,
+            max_delay=2.0,
+            http_status_codes=list(TRANSIENT_STATUSES),
+        )
+    )
+
+
 class GeminiClient:
     """One swappable LLM vendor. The SDK is imported lazily so tests never need the package."""
 
@@ -138,7 +159,8 @@ class GeminiClient:
     ):
         from google import genai
 
-        self._client = genai.Client(api_key=api_key)
+        self._http_options = gemini_http_options()
+        self._client = genai.Client(api_key=api_key, http_options=self._http_options)
         self._model, self._temperature = model, temperature
         # 0 for a caller who is waiting; -1 (unbounded) for the nightly audit's judge, where
         # reasoning time is free and only the token price is not (operations plan, Task E4).

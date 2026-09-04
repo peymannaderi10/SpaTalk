@@ -765,3 +765,36 @@ def test_a_short_sentence_made_only_of_the_callers_words_is_grounded():
     notes = "The customer wants to book an appointment. They are hoping to come in on a Tuesday."
     assert ground(notes, caller) == notes
     assert ground("The customer wants to book a laser package.", caller) is None
+
+
+async def test_a_transient_provider_error_lets_the_notes_job_retry(sf, registry, fixed_clock):
+    """Job 50, 2026-09-03 21:04: Google's 503 turned into a dead letter after one attempt, so a
+    real caller's notes were never drafted. A 429 or 5xx is the provider's moment, not ours:
+    the job keeps its attempt count and its backoff and tries again."""
+    from sqlalchemy import select
+
+    from spatalk import jobs
+    from spatalk.models import Job
+
+    class Overloaded:
+        code = 503
+
+        async def complete(self, system, history, tools):
+            raise RuntimeError("503 UNAVAILABLE: high demand")
+
+    class Provider503(Exception):
+        code = 503
+
+    class Flaky:
+        async def complete(self, system, history, tools):
+            raise Provider503("503 UNAVAILABLE. This model is currently experiencing high demand")
+
+    cid = await _conversation(sf)
+    await jobs.enqueue(sf, "call_notes", {"conversation_id": str(cid)})
+    await jobs.run_once(sf, _ctx(sf, registry, fixed_clock, Flaky()))
+
+    async with sf() as s:
+        job = (await s.scalars(select(Job))).one()
+    assert job.state != "dead", job.last_error
+    assert job.attempts == 1
+    assert "503" in (job.last_error or "")

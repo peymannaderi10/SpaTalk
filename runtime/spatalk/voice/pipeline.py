@@ -46,7 +46,13 @@ from pipecat.workers.runner import WorkerRunner
 from spatalk.brain.audio_tags import strip_audio_tags
 from spatalk.brain.capabilities import load_capabilities
 # Operations plan, Task E6: the vendor a model string names.
-from spatalk.brain.driver import OPENAI, gemini_thinking_kwargs, model_name, provider_for
+from spatalk.brain.driver import (
+    OPENAI,
+    gemini_http_options,
+    gemini_thinking_kwargs,
+    model_name,
+    provider_for,
+)
 from spatalk.brain.prompt import build_system_prompt
 from spatalk.brain.renderer import render_script
 from spatalk.brain.requests import ConversationRef
@@ -58,6 +64,7 @@ from spatalk.text.textback import schedule_missed_call_textback
 from spatalk.voice.handlers import register_tool_handlers
 from spatalk.voice.observers import TurnLatencyObserver, UsageObserver
 from spatalk.voice.processors import FillerProcessor, OutputGuardProcessor, RulesGateProcessor
+from spatalk.voice.resilience import apology_for_error
 from spatalk.voice.session import VoiceSession
 from spatalk.voice.tokens import verify_stream_token
 # Operations plan, Task E10: live transfer to a staffed back-line, Option A (the leg the
@@ -167,6 +174,7 @@ def make_llm(settings):
         )
     return GoogleLLMService(
         api_key=settings.google_api_key,
+        http_options=gemini_http_options(),
         settings=GoogleLLMService.Settings(
             model=settings.llm_model,
             temperature=LLM_TEMPERATURE,
@@ -284,6 +292,14 @@ async def run_call(websocket: WebSocket, token: str, ctx) -> None:
     @transport.event_handler("on_client_disconnected")
     async def on_disconnected(_transport, _client):
         await runner.cancel()
+
+    @worker.event_handler("on_pipeline_error")
+    async def on_error(_worker, frame):
+        # A provider failure after the SDK's retries: say so once, and ask the caller to
+        # repeat, rather than leave the line silent until the idle timeout.
+        spoken = apology_for_error(session, cfg, now, str(getattr(frame, "error", frame)))
+        if spoken is not None:
+            await worker.queue_frames([spoken])
 
     @worker.event_handler("on_idle_timeout")
     async def on_idle(_worker):

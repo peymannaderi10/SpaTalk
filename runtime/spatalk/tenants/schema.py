@@ -160,6 +160,11 @@ class Scripts(BaseModel, frozen=True):
         "Caller mentioned a health matter; read the transcript before calling."
     )
     notes_label: str = "AI notes, drafted from the transcript"
+    # Spoken once when the model provider fails after its retries (founder calls
+    # 2026-09-03 21:03 and 21:05); asks for a repeat, claims nothing.
+    model_unavailable: str = (
+        "Sorry, I'm having a little trouble on my end. Could you say that once more?"
+    )
 
     # The one text a sender may get while the tenant's assistant is paused on SMS (plan F).
     # It names no reply time: nothing is generated until the local day rolls over.

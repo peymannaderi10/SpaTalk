@@ -36,6 +36,8 @@ class VoiceSession:
     started_at: datetime | None = None
     # The assistant's recent words, normalised, for the echo scrubber (spatalk.voice.echo).
     recent_bot_text: str = ""
+    # When the caller last heard the model_unavailable line (monotonic seconds).
+    last_apology_at: float | None = None
     # --- operations (operations plan, Task E5) ---
     # Every TTFB reading of the call, in ms, filed under the stage that produced it. The
     # turn number in `latencies_ms` says the caller waited; this says which vendor made
