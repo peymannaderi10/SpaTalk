@@ -7,7 +7,7 @@ import { routes } from "wasp/client/router";
 
 export const userMenuItems = [
   {
-    name: "Your front desk",
+    name: "Organisations",
     to: routes.AppRoute.to,
     icon: IconLayoutDashboard,
     isAdminOnly: false,

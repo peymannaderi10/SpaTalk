@@ -30,7 +30,7 @@ export function AppPage({ user }: { user: AuthUser }) {
   return (
     <main className="mx-auto flex max-w-3xl flex-col gap-6 px-6 py-16">
       <PageHeader
-        title="Your front desk"
+        title="Organisations"
         description={`Signed in as ${user.email ?? user.id}.`}
       />
 

@@ -1,6 +1,10 @@
 @import "tailwindcss";
 
-@plugin "@tailwindcss/forms";
+/* class strategy: the kit styles its own inputs; the base strategy put a border and padding on
+   every input, including the command palette's (founder, 2026-09-03 evening). No form-* class is used. */
+@plugin "@tailwindcss/forms" {
+  strategy: class;
+}
 @plugin "@tailwindcss/typography";
 @plugin "tailwindcss-animate";
 

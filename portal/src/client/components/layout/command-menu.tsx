@@ -69,7 +69,7 @@ export function CommandMenu({
   const actionGroups = [...new Set(actions.map((action) => action.group))];
 
   return (
-    <CommandDialog open={open} onOpenChange={onOpenChange}>
+    <CommandDialog open={open} onOpenChange={onOpenChange} showCloseButton={false}>
       <CommandInput placeholder="Type a command or search…" />
       <CommandList>
         <ScrollArea type="hover" className="h-72 pe-1">

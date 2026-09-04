@@ -8,11 +8,11 @@ import {
   ProfileDropdown,
   Search,
   SearchProvider,
-  ThemeSwitch,
   type CommandAction,
   type Crumb,
   type ProfileMenuItem,
 } from "../components/layout";
+import { DarkModeSwitcher } from "../components/DarkModeSwitcher";
 import { SidebarInset, SidebarProvider } from "../components/ui/sidebar";
 import { type NavContext, type NavSection } from "../nav";
 
@@ -106,7 +106,9 @@ export function AppLayout({
             <Breadcrumbs items={breadcrumbs} />
             <div className="ms-auto flex items-center gap-2 sm:gap-4">
               <Search />
-              <ThemeSwitch />
+              <span data-testid="theme-switch" className="flex items-center">
+                <DarkModeSwitcher />
+              </span>
               {profile && <ProfileDropdown {...profile} />}
             </div>
           </Header>
