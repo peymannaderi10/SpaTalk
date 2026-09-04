@@ -1,5 +1,7 @@
 # Demo day state, 2026-09-03 (late afternoon)
 
+> Note (2026-09-03, late evening): the commit hashes quoted in this document and in `docs/reports/tasks/*` predate a history rewrite that removed attribution trailers from every message before the first push to https://github.com/peymannaderi10/SpaTalk. The commits are the same, in the same order, with new hashes; find one by its message with `git log --oneline --grep`.
+
 Where everything stands after a day of live test calls on the founder's laptop. Written so a fresh session can pick up without the conversation. Newest facts first; the "How to" section at the end has the exact commands.
 
 ## In flight right now
