@@ -1,5 +1,5 @@
-import { IconDotsVertical } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
+import { InternalToggle } from "../client/components/internal-toggle";
 import { Button } from "../client/components/ui/button";
 import {
   Card,
@@ -18,7 +18,6 @@ import {
   TableRow,
 } from "../client/components/ui/table";
 import { formatCad } from "../client/formatting";
-import { cn } from "../client/utils";
 import { PLAN_MONTHLY_CAD, PLAN_PRICE_TEXT } from "../payment/plans";
 import {
   clampClients,
@@ -53,6 +52,8 @@ import {
  * else. Wasp-free on purpose: `AdminPricingPage` fetches the rates, this draws
  * them, and `QuoteBuilder.test.tsx` renders it from a rates file on disk.
  */
+export { InternalToggle };
+
 export function QuoteBuilder({
   rates,
   internal = false,
@@ -195,36 +196,6 @@ export function QuoteBuilder({
         />
       )}
     </div>
-  );
-}
-
-/**
- * The three dots at the top right of the page. Pressed, the page switches to
- * internal view; pressed again, it turns back towards the client. It is meant
- * to be passed over by anyone who does not know what it is for.
- */
-export function InternalToggle({
-  internal,
-  onToggle,
-}: {
-  internal: boolean;
-  onToggle: () => void;
-}) {
-  return (
-    <Button
-      variant="ghost"
-      size="icon-sm"
-      className={cn(
-        "text-muted-foreground",
-        internal && "bg-accent text-accent-foreground",
-      )}
-      aria-label={internal ? "Back to the client's view" : "Internal view"}
-      aria-pressed={internal}
-      data-testid="pricing-assumptions"
-      onClick={onToggle}
-    >
-      <IconDotsVertical className="size-4" />
-    </Button>
   );
 }
 

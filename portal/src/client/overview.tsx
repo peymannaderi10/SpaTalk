@@ -9,27 +9,24 @@ import {
   IconPhone,
   type TablerIcon,
 } from "@tabler/icons-react";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "./components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "./components/ui/card";
 import { formatCad, formatMinutes } from "./formatting";
 
 /**
  * The row of stat cards at the top of a clinic's overview, decided away from
  * the markup so who sees which card is a thing a test can read.
  *
- * One card is not for the clinic. "Estimated cost" is what the providers
+ * Two cards are not for the clinic. "Estimated cost" is what the providers
  * charged the *agency* to answer this phone — a cost of goods, not a bill, and
- * an order of magnitude below what the clinic pays. It is shown to an agency
- * admin only, and the decision is made from `viewerIsAgencyAdmin`, which the
- * server puts in `getTenantOverview`'s answer; a client-side guess about who is
- * looking would be a guess.
+ * an order of magnitude below what the clinic pays. "Reply time" is the
+ * agency's engineering figure. Both are on the page only in internal view —
+ * an agency admin has pressed the three dots — and never for a clinic, whose
+ * dashboard is often on a screen a client is looking at. Who is an admin is
+ * `viewerIsAgencyAdmin`, which the server puts in `getTenantOverview`'s answer;
+ * a client-side guess about who is looking would be a guess.
  *
  * Everything else on the row is the clinic's own: its calls, its minutes, its
- * open work, and how fast the front desk replies.
+ * open work.
  */
 
 export type OverviewTile = {
@@ -57,7 +54,10 @@ export type OverviewCards = {
   latency: { p95_ms: number }[];
 };
 
-export function overviewTiles(data: OverviewCards): OverviewTile[] {
+export function overviewTiles(
+  data: OverviewCards,
+  internal = false,
+): OverviewTile[] {
   const { totals } = data.month;
   const latest = data.latency[data.latency.length - 1];
 
@@ -104,23 +104,25 @@ export function overviewTiles(data: OverviewCards): OverviewTile[] {
       value: String(data.health.overdue_items),
       note: "past the promised time",
     },
-    {
-      id: "p95-latency",
-      label: "Reply time (p95)",
-      icon: IconBolt,
-      value: latest ? `${latest.p95_ms} ms` : "—",
-      note: "nineteen replies in twenty are faster",
-    },
   ];
 
-  if (data.viewerIsAgencyAdmin) {
-    tiles.push({
-      id: "est-cost",
-      label: "Estimated cost",
-      icon: IconCoin,
-      value: formatCad(totals.est_cost_cad),
-      note: "what the providers charged us",
-    });
+  if (internal && data.viewerIsAgencyAdmin) {
+    tiles.push(
+      {
+        id: "p95-latency",
+        label: "Reply time (p95)",
+        icon: IconBolt,
+        value: latest ? `${latest.p95_ms} ms` : "—",
+        note: "nineteen replies in twenty are faster",
+      },
+      {
+        id: "est-cost",
+        label: "Estimated cost",
+        icon: IconCoin,
+        value: formatCad(totals.est_cost_cad),
+        note: "what the providers charged us",
+      },
+    );
   }
 
   return tiles;

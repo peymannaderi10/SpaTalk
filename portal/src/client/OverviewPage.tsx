@@ -1,7 +1,10 @@
 import { IconAlertTriangle, IconClipboardList } from "@tabler/icons-react";
+import { useAuth } from "wasp/client/auth";
 import { getTenantOverview, useQuery } from "wasp/client/operations";
+import { useState } from "react";
 import { UsageChart, type UsagePoint } from "./charts/usage-chart";
 import { EmptyState } from "./components/empty-state";
+import { InternalToggle } from "./components/internal-toggle";
 import {
   Card,
   CardContent,
@@ -22,6 +25,19 @@ import { overviewTiles, OverviewTiles } from "./overview";
  * nothing about a tenant except which slice of the runtime's answer to show.
  */
 export function OverviewPage() {
+  const { data: user } = useAuth();
+  const [internal, setInternal] = useState(false);
+
+  // The three dots are offered to an agency admin only. They switch the page
+  // to internal view; the two cards that belong to the agency still take the
+  // server's word (`viewerIsAgencyAdmin`) before they appear.
+  const actions = user?.isAdmin ? (
+    <InternalToggle
+      internal={internal}
+      onToggle={() => setInternal((on) => !on)}
+    />
+  ) : undefined;
+
   // The overview stays open without a subscription: an owner deciding whether
   // to pay has to be able to see what they would be paying for (portal plan,
   // Task C6). The banner still appears above it.
@@ -30,13 +46,14 @@ export function OverviewPage() {
       title="Overview"
       description="What the front desk has done this month, and what is late."
       requiresSubscription={false}
+      actions={actions}
     >
-      {(org) => <Body org={org} />}
+      {(org) => <Body org={org} internal={internal} />}
     </OrgShell>
   );
 }
 
-function Body({ org }: { org: Org }) {
+function Body({ org, internal }: { org: Org; internal: boolean }) {
   const { data, isLoading, error } = useQuery(getTenantOverview, {
     slug: org.slug,
   });
@@ -55,13 +72,14 @@ function Body({ org }: { org: Org }) {
         {data.tenantId}.
       </p>
 
-      <OverviewTiles tiles={overviewTiles(data)} />
+      <OverviewTiles tiles={overviewTiles(data, internal)} />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-7">
         <Card className="col-span-1 lg:col-span-4">
           <CardHeader>
             <CardTitle>
-              Last <span data-testid="usage-chart-days">{data.days.length}</span>{" "}
+              Last{" "}
+              <span data-testid="usage-chart-days">{data.days.length}</span>{" "}
               days
             </CardTitle>
             <CardDescription>
