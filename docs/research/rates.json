@@ -156,6 +156,13 @@
       "cached_in": 0.1,
       "out": 5.0,
       "_ttft_s": 0.75
+    },
+    "gemini_31_flash_lite": {
+      "in": 0.25,
+      "cached_in": 0.025,
+      "out": 1.5,
+      "_ttft_s": 0.3,
+      "_note": "AI Studio model picker 2026-09-05, text prices; cached input assumed 10% of input like the other Gemini rows; audio input ($0.50) unused, STT is Soniox. Chosen 2026-09-05 as the production model once the slot engine lands: gemini-2.5-flash-lite is refused for this project ('no longer available to new users')."
     }
   },
   "sms": {
@@ -287,12 +294,12 @@
     }
   },
   "live_stack": {
-    "_note": "What actually runs in production as of 2026-09-05: Telnyx telephony, Soniox stt-rt-v5, Soniox tts-rt-v2, Gemini 3.5 Flash-Lite (priced here with the 2.5 Flash-Lite rate, the closest published price), Telnyx toll-free SMS. The quote builder prices this stack and nothing else; the candidate stacks above are the September 1 research.",
-    "label": "Telnyx + Soniox STT + Soniox TTS + Gemini Flash-Lite",
+    "_note": "What the quote prices, as of 2026-09-05: Telnyx telephony, Soniox stt-rt-v5, Soniox tts-rt-v2, Gemini 3.1 Flash-Lite (the production model once the runtime-owned slot engine lands; gemini-2.5-flash-lite is gated for this project), Telnyx toll-free SMS. Calls run on gemini-3.5-flash until then. The quote builder prices this stack and nothing else; the candidate stacks above are the September 1 research.",
+    "label": "Telnyx + Soniox STT + Soniox TTS + Gemini 3.1 Flash-Lite",
     "tel": "telnyx_ca_conservative",
     "stt": "soniox_rt",
     "tts": "soniox_tts",
-    "llm": "gemini_25_flash_lite",
+    "llm": "gemini_31_flash_lite",
     "sms": "telnyx_ca_tollfree"
   }
 }
