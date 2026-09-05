@@ -59,14 +59,18 @@ def test_the_detector_hears_a_short_quiet_word_and_the_watchdog_is_two_seconds()
     assert params.user_idle_timeout == IDLE_NUDGE_SECS == 10.0
 
 
-def test_soniox_finalizes_a_pause_on_its_own():
-    """A finalized transcript reaches the aggregator even when the detector missed the speech."""
+def test_soniox_is_left_to_end_turns_from_the_detector():
+    """2026-09-05 morning: Soniox refused the connection with 400 "endpoint_latency_adjustment_level
+    can only be set when enable_endpoint_detection is true" and every call opened with the
+    trouble line. The service keeps Pipecat's default (the detector ends turns); Soniox's own
+    endpointing is a decision to test on a call, not a default."""
     from spatalk.settings import Settings
-    from spatalk.voice.pipeline import SONIOX_ENDPOINT_DELAY_MS, make_stt
+    from spatalk.voice.pipeline import make_stt
 
     stt = make_stt(Settings(_env_file=None, secret_key="s", soniox_api_key="k", stt_provider="soniox"))
-    assert stt._settings.max_endpoint_delay_ms == SONIOX_ENDPOINT_DELAY_MS <= 1000
-    assert stt._settings.endpoint_latency_adjustment_level is not None
+    for field in ("max_endpoint_delay_ms", "endpoint_sensitivity", "endpoint_latency_adjustment_level"):
+        value = getattr(stt._settings, field)
+        assert value is None or type(value).__name__ == "NotGiven", field
 
 
 async def test_a_repeated_provisional_transcript_is_forwarded_once(fixed_clock):

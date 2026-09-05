@@ -107,9 +107,6 @@ TURN_STOP_WATCHDOG_SECS = 2.0
 # A caller who says nothing for this long after a question is asked once whether they
 # are still there (scripts.still_there); the next silence gets the goodbye.
 IDLE_NUDGE_SECS = 10.0
-# Soniox finalizes a pause on its own after at most this many milliseconds, so a final
-# transcript reaches the aggregator even when the detector heard nothing.
-SONIOX_ENDPOINT_DELAY_MS = 800
 
 
 def user_turn_params() -> LLMUserAggregatorParams:
@@ -144,11 +141,11 @@ def make_stt(settings):
 
     return SonioxSTTService(
         api_key=settings.soniox_api_key,
-        settings=SonioxSTTService.Settings(
-            model="stt-rt-v5",
-            max_endpoint_delay_ms=SONIOX_ENDPOINT_DELAY_MS,
-            endpoint_latency_adjustment_level=1,
-        ),
+        # No Soniox endpoint settings: Pipecat's Soniox service ends turns from the detector
+        # (vad_force_turn_endpoint=True) and Soniox rejects endpoint fields with a 400 unless
+        # that is switched off, which broke every call on 2026-09-05 morning. Letting Soniox
+        # end turns itself is a separate decision to test on a call, not a default.
+        settings=SonioxSTTService.Settings(model="stt-rt-v5"),
     )
 
 
