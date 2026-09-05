@@ -63,7 +63,7 @@ portal/src/client/RequestsPage.tsx, formatting.ts (+ tests), src/runtime/client.
 **Files:** `portal/src/client/RequestsPage.tsx`, `portal/src/client/formatting.ts` (+ `formatting.test.ts`), `portal/src/runtime/client.ts` (regenerated with `npm run gen:client`), `portal/e2e-tests/tests/client.spec.ts` (only if it pins the card layout).
 
 **Interfaces (produces):**
-- The request card's title is `summary` from the runtime. Below it, a compact fact list in words: Contact (name and number), Service (by name), Client (New, Returning or blank), Practitioner (name, "No preference", or blank), Concern, Preferred (`preferred_text`), Promised by, State. No raw ids, no `"any any"`, no field shown when empty.
+- The request card's title is `summary` from the runtime. Below it, a compact fact list in words: Contact (name and number), Service (by name), Client (New, Returning or blank), Practitioner (name, "No preference", or blank), Concern, Preferred (`preferred_text`), Follow up by (nothing is promised to the caller, so the card does not say "promised"), State. No raw ids, no `"any any"`, no field shown when empty.
 - `formatting.ts`: `clientLabel(returning: boolean | null | undefined) -> "New client" | "Returning client" | ""`, `practitionerLabel(value) -> name | "No preference" | ""`, with unit tests.
 - A transcript link on the card (the conversation id is on the item) so a follow-up starts from what was said.
 

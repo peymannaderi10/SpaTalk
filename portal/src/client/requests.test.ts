@@ -69,9 +69,9 @@ describe("requestContact", () => {
 });
 
 describe("requestFacts", () => {
-  test("always says when it was promised and where it stands", () => {
+  test("always says when to follow up and where it stands", () => {
     const labels = requestFacts(item()).map((fact) => fact.label);
-    expect(labels).toContain("Promised by");
+    expect(labels).toContain("Follow up by");
     expect(labels).toContain("State");
   });
 
@@ -143,19 +143,27 @@ describe("matchesRequest", () => {
 });
 
 describe("sortRequests", () => {
-  const older = item({ id: 1, created_at: "2026-09-01T09:00:00Z", due_at: "2026-09-05T09:00:00Z" });
-  const newer = item({ id: 2, created_at: "2026-09-02T09:00:00Z", due_at: "2026-09-04T09:00:00Z" });
+  const older = item({
+    id: 1,
+    created_at: "2026-09-01T09:00:00Z",
+    due_at: "2026-09-05T09:00:00Z",
+  });
+  const newer = item({
+    id: 2,
+    created_at: "2026-09-02T09:00:00Z",
+    due_at: "2026-09-04T09:00:00Z",
+  });
 
   test("newest first is the default reading order", () => {
-    expect(sortRequests([older, newer], "newest").map((row) => row.id)).toEqual([
-      2, 1,
-    ]);
+    expect(sortRequests([older, newer], "newest").map((row) => row.id)).toEqual(
+      [2, 1],
+    );
   });
 
   test("oldest first turns it around", () => {
-    expect(sortRequests([older, newer], "oldest").map((row) => row.id)).toEqual([
-      1, 2,
-    ]);
+    expect(sortRequests([older, newer], "oldest").map((row) => row.id)).toEqual(
+      [1, 2],
+    );
   });
 
   test("by promise puts the soonest deadline at the top", () => {

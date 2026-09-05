@@ -103,7 +103,7 @@ export function requestFacts(item: RequestLike): RequestFact[] {
   if (askedForATime(item)) {
     push("Preferred", item.preferred_text ?? "");
   }
-  facts.push({ label: "Promised by", value: formatDateTime(item.due_at) });
+  facts.push({ label: "Follow up by", value: formatDateTime(item.due_at) });
   facts.push({ label: "State", value: requestStateLabel(item) });
 
   return facts;
@@ -137,7 +137,7 @@ export type RequestSort = "newest" | "oldest" | "due";
 export const REQUEST_SORTS: { value: RequestSort; label: string }[] = [
   { value: "newest", label: "Newest first" },
   { value: "oldest", label: "Oldest first" },
-  { value: "due", label: "Promised soonest" },
+  { value: "due", label: "Follow up soonest" },
 ];
 
 /** A copy, sorted; the caller's array is never reordered under it. */
