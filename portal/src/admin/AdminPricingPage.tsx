@@ -1,5 +1,6 @@
 import { type AuthUser } from "wasp/auth";
 import { getRates, useQuery } from "wasp/client/operations";
+import { useState } from "react";
 import { PageHeader } from "../client/components/page-header";
 import {
   Alert,
@@ -7,7 +8,7 @@ import {
   AlertTitle,
 } from "../client/components/ui/alert";
 import { DefaultLayout } from "./layout/DefaultLayout";
-import { QuoteBuilder } from "./QuoteBuilder";
+import { InternalToggle, QuoteBuilder } from "./QuoteBuilder";
 
 /**
  * What a clinic would pay, worked out from what its front desk has to handle.
@@ -19,24 +20,32 @@ import { QuoteBuilder } from "./QuoteBuilder";
  * kept in the portal.
  *
  * The page is meant to be turned towards the person being quoted, so nothing
- * about the agency's side of the deal is on it until the admin opens the
- * Internal disclosure.
+ * about the agency's side of the deal is on it until the admin presses the
+ * three dots at the top right, which switch the page to internal view.
  */
 export function AdminPricingPage({ user }: { user: AuthUser }) {
+  const [internal, setInternal] = useState(false);
+
   return (
     <DefaultLayout user={user}>
       <div className="flex flex-1 flex-col gap-4 sm:gap-6">
         <PageHeader
           title="Pricing"
           description="What a clinic would pay a month, from what its front desk has to handle."
+          actions={
+            <InternalToggle
+              internal={internal}
+              onToggle={() => setInternal((on) => !on)}
+            />
+          }
         />
-        <Body />
+        <Body internal={internal} />
       </div>
     </DefaultLayout>
   );
 }
 
-function Body() {
+function Body({ internal }: { internal: boolean }) {
   const { data, isLoading, error } = useQuery(getRates);
 
   if (isLoading) {
@@ -54,5 +63,5 @@ function Body() {
     );
   }
 
-  return <QuoteBuilder rates={data} />;
+  return <QuoteBuilder rates={data} internal={internal} />;
 }

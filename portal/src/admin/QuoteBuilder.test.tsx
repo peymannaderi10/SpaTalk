@@ -1,8 +1,9 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { existsSync, readFileSync } from "fs";
 import { dirname, join } from "path";
+import { useState } from "react";
 import { beforeEach, describe, expect, it } from "vitest";
-import { QuoteBuilder } from "./QuoteBuilder";
+import { InternalToggle, QuoteBuilder } from "./QuoteBuilder";
 import { ASSUMPTIONS_STORAGE_KEY, type RatesFile } from "./pricing";
 
 /**
@@ -10,9 +11,9 @@ import { ASSUMPTIONS_STORAGE_KEY, type RatesFile } from "./pricing";
  *
  * The face of this page is a price. What it costs us, what margin is on it and
  * how many clinics are sharing the servers are the agency's business, and none
- * of it is in the document at all until the admin opens the Internal
- * disclosure — Radix keeps a closed `CollapsibleContent` unmounted, so "hidden"
- * here means absent, not merely invisible.
+ * of it is in the document at all until the admin presses the three dots that
+ * switch the page to internal view — "hidden" here means absent, not merely
+ * invisible.
  */
 
 function findPortalRoot(): string {
@@ -47,6 +48,20 @@ const COST_LINES = [
 /** Anything on this list in the visible page would be telling on ourselves. */
 const INTERNAL_WORDS = /margin|cost of goods|CAD\/min/i;
 
+/** The page as `AdminPricingPage` wires it: the three dots above the quote. */
+function Page() {
+  const [internal, setInternal] = useState(false);
+  return (
+    <>
+      <InternalToggle
+        internal={internal}
+        onToggle={() => setInternal((on) => !on)}
+      />
+      <QuoteBuilder rates={RATES} internal={internal} />
+    </>
+  );
+}
+
 beforeEach(() => {
   window.localStorage.removeItem(ASSUMPTIONS_STORAGE_KEY);
 });
@@ -69,7 +84,6 @@ describe("the quote page a client may be looking at", () => {
     expect(screen.getByTestId("pricing-price-per-chat")).toHaveTextContent(
       "0.0027",
     );
-    expect(screen.getByTestId("pricing-list-price")).toHaveTextContent("999");
   });
 
   it("asks only what the client needs", () => {
@@ -89,13 +103,18 @@ describe("the quote page a client may be looking at", () => {
     expect(screen.queryByTestId("pricing-text-stack")).toBeNull();
     // And nothing about one tenant's measured month.
     expect(screen.queryByTestId("pricing-tenant")).toBeNull();
+    // And no list price: the client sees only their own.
+    expect(screen.queryByTestId("pricing-list-price")).toBeNull();
   });
 
-  it("keeps every cost line out of the document while the disclosure is shut", () => {
+  it("keeps every cost line out of the document while internal view is off", () => {
     render(<QuoteBuilder rates={RATES} />);
 
     for (const testId of COST_LINES) {
-      expect(screen.queryByTestId(testId), `${testId} is on the page`).toBeNull();
+      expect(
+        screen.queryByTestId(testId),
+        `${testId} is on the page`,
+      ).toBeNull();
     }
     for (const testId of [
       "pricing-margin",
@@ -106,21 +125,24 @@ describe("the quote page a client may be looking at", () => {
       "pricing-per-call",
       "pricing-per-minute",
     ]) {
-      expect(screen.queryByTestId(testId), `${testId} is on the page`).toBeNull();
+      expect(
+        screen.queryByTestId(testId),
+        `${testId} is on the page`,
+      ).toBeNull();
     }
   });
 
   it("says nothing about margin, cost of goods or a rate a minute", () => {
-    const { container } = render(<QuoteBuilder rates={RATES} />);
+    const { container } = render(<Page />);
     const words = container.textContent ?? "";
     expect(words).not.toMatch(INTERNAL_WORDS);
-    // A guard on the guard: the words do exist once the disclosure is open.
+    // A guard on the guard: the words do exist once internal view is on.
     fireEvent.click(screen.getByTestId("pricing-assumptions"));
     expect(container.textContent ?? "").toMatch(INTERNAL_WORDS);
   });
 
-  it("opens on Internal and shows the agency its own side", () => {
-    render(<QuoteBuilder rates={RATES} />);
+  it("switches to internal view on the three dots, and back again", () => {
+    render(<Page />);
     fireEvent.click(screen.getByTestId("pricing-assumptions"));
 
     for (const testId of COST_LINES) {
@@ -134,6 +156,10 @@ describe("the quote page a client may be looking at", () => {
     expect(screen.getByTestId("pricing-fx")).toHaveTextContent(
       RATES.live_stack.label,
     );
+
+    // A second press turns the page back towards the client.
+    fireEvent.click(screen.getByTestId("pricing-assumptions"));
+    expect(screen.queryByTestId("pricing-cogs")).toBeNull();
   });
 
   it("re-prices when the client's volumes change", () => {

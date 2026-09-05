@@ -1,4 +1,4 @@
-import { IconChevronRight } from "@tabler/icons-react";
+import { IconDotsVertical } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import { Button } from "../client/components/ui/button";
 import {
@@ -8,11 +8,6 @@ import {
   CardHeader,
   CardTitle,
 } from "../client/components/ui/card";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "../client/components/ui/collapsible";
 import { Input } from "../client/components/ui/input";
 import { Label } from "../client/components/ui/label";
 import { Separator } from "../client/components/ui/separator";
@@ -49,16 +44,23 @@ import {
  * quoting: the volumes, the monthly price, and what that works out at per call,
  * per minute and per conversation. Everything about our own side of the deal —
  * what the providers charge, the margin on top, how many clinics are sharing
- * the servers, which vendors are behind it — lives inside the **Internal**
- * disclosure, which is shut until the admin opens it. Radix leaves a closed
- * `CollapsibleContent` unmounted, so none of it is in the page at all.
+ * the servers, which vendors are behind it — is on the page only while
+ * `internal` is set, which the three dots in the page header
+ * (`InternalToggle`) switch on and off. Off, none of it is in the page at all.
  *
  * The arithmetic is `pricing.ts`, a port of `docs/research/costmodel.py`, and
  * it prices `rates.live_stack` — what production actually runs on — and nothing
  * else. Wasp-free on purpose: `AdminPricingPage` fetches the rates, this draws
  * them, and `QuoteBuilder.test.tsx` renders it from a rates file on disk.
  */
-export function QuoteBuilder({ rates }: { rates: RatesFile }) {
+export function QuoteBuilder({
+  rates,
+  internal = false,
+}: {
+  rates: RatesFile;
+  /** True while the admin has switched the page to internal view. */
+  internal?: boolean;
+}) {
   const [inputs, setInputs] = useState<QuoteInputs>(() =>
     defaultInputs(rates, loadAssumptions(browserStorage())),
   );
@@ -93,6 +95,7 @@ export function QuoteBuilder({ rates }: { rates: RatesFile }) {
             <NumberField
               id="pricing-calls"
               label="Calls a month"
+              hint="Calls the front desk answers. Each one is priced on the average length below."
               value={inputs.callsPerMonth}
               min={0}
               onChange={(value) => set("callsPerMonth", value)}
@@ -100,6 +103,7 @@ export function QuoteBuilder({ rates }: { rates: RatesFile }) {
             <NumberField
               id="pricing-avg-minutes"
               label="Average call, minutes"
+              hint="From pick-up to goodbye, for a typical call. The model assumes about three exchanges a minute."
               value={inputs.avgCallMinutes}
               min={0}
               step={0.5}
@@ -108,6 +112,7 @@ export function QuoteBuilder({ rates }: { rates: RatesFile }) {
             <NumberField
               id="pricing-sms-convs"
               label="SMS conversations a month"
+              hint="One texting back-and-forth with a client about one thing — a booking, a question, a reschedule — not a single reply. Priced as about four texts each way."
               value={inputs.smsConvsPerMonth}
               min={0}
               onChange={(value) => set("smsConvsPerMonth", value)}
@@ -115,6 +120,7 @@ export function QuoteBuilder({ rates }: { rates: RatesFile }) {
             <NumberField
               id="pricing-chat-convs"
               label="Chat conversations a month"
+              hint="The same back-and-forth over web chat, Instagram or Facebook Messenger. There is no carrier in it, so it costs only the assistant's replies."
               value={inputs.chatConvsPerMonth}
               min={0}
               onChange={(value) => set("chatConvsPerMonth", value)}
@@ -122,6 +128,7 @@ export function QuoteBuilder({ rates }: { rates: RatesFile }) {
             <NumberField
               id="pricing-outbound"
               label="Outbound messages a month"
+              hint="Texts the clinic sends outside a conversation: the alert to the team when a request is filed, the booking link texted to a caller, the morning digest. One text each."
               value={inputs.outboundMsgsPerMonth}
               min={0}
               onChange={(value) => set("outboundMsgsPerMonth", value)}
@@ -174,35 +181,59 @@ export function QuoteBuilder({ rates }: { rates: RatesFile }) {
             <p className="text-muted-foreground text-xs">
               What the monthly price works out at, at these volumes.
             </p>
-
-            <Separator />
-
-            <p className="text-muted-foreground text-sm">
-              The standard plan is{" "}
-              <span data-testid="pricing-list-price">{PLAN_PRICE_TEXT}</span> a
-              month, whatever the volumes.
-            </p>
           </CardContent>
         </Card>
       </div>
 
-      <Internal
-        result={result}
-        rates={rates}
-        margin={inputs.margin}
-        clients={inputs.clients}
-        onChange={remember}
-      />
+      {internal && (
+        <Internal
+          result={result}
+          rates={rates}
+          margin={inputs.margin}
+          clients={inputs.clients}
+          onChange={remember}
+        />
+      )}
     </div>
   );
 }
 
 /**
- * The agency's own side of the quote, shut by default.
+ * The three dots at the top right of the page. Pressed, the page switches to
+ * internal view; pressed again, it turns back towards the client. It is meant
+ * to be passed over by anyone who does not know what it is for.
+ */
+export function InternalToggle({
+  internal,
+  onToggle,
+}: {
+  internal: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <Button
+      variant="ghost"
+      size="icon-sm"
+      className={cn(
+        "text-muted-foreground",
+        internal && "bg-accent text-accent-foreground",
+      )}
+      aria-label={internal ? "Back to the client's view" : "Internal view"}
+      aria-pressed={internal}
+      data-testid="pricing-assumptions"
+      onClick={onToggle}
+    >
+      <IconDotsVertical className="size-4" />
+    </Button>
+  );
+}
+
+/**
+ * The agency's own side of the quote, on the page only in internal view.
  *
  * What the providers charge, the margin the price carries, how many clinics are
  * splitting the servers and which vendors are behind the figures. None of it is
- * in the document while this is closed, which is what makes the page safe to
+ * in the document while the view is off, which is what makes the page safe to
  * turn towards the person being quoted.
  */
 function Internal({
@@ -218,7 +249,6 @@ function Internal({
   clients: number;
   onChange: (assumptions: StoredAssumptions) => void;
 }) {
-  const [open, setOpen] = useState(false);
   const isDefault = margin === DEFAULT_MARGIN && clients === DEFAULT_CLIENTS;
   const listMargin = marginOf(result.cogsCad, PLAN_MONTHLY_CAD);
 
@@ -227,142 +257,123 @@ function Internal({
   } on the platform`;
 
   return (
-    <Collapsible open={open} onOpenChange={setOpen}>
-      <CollapsibleTrigger asChild>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="-ms-2"
-          data-testid="pricing-assumptions"
-        >
-          <IconChevronRight
-            className={cn("size-4 transition-transform", open && "rotate-90")}
-          />
-          Internal
-        </Button>
-      </CollapsibleTrigger>
-      <CollapsibleContent>
-        <Card className="mt-2">
-          <CardHeader>
-            <CardTitle>What the month costs us</CardTitle>
-            <CardDescription data-testid="pricing-at">{atLine}</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <Table>
-              <TableBody>
-                {result.breakdown.map((line) => (
-                  <TableRow key={line.id}>
-                    <TableCell className="ps-0">{line.label}</TableCell>
-                    <TableCell
-                      className="pe-0 text-right tabular-nums"
-                      data-testid={`pricing-line-${line.id}`}
-                    >
-                      {formatCad(line.cad)}
-                    </TableCell>
-                  </TableRow>
-                ))}
-                <TableRow>
-                  <TableCell className="ps-0 font-medium">
-                    Cost of goods, a month
-                  </TableCell>
-                  <TableCell
-                    className="pe-0 text-right font-medium tabular-nums"
-                    data-testid="pricing-cogs"
-                  >
-                    {formatCad(result.cogsCad)}
-                  </TableCell>
-                </TableRow>
-              </TableBody>
-            </Table>
-
-            <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
-              <Unit id="pricing-per-call" label="a call" value={result.perCall} />
-              <Unit
-                id="pricing-per-minute"
-                label="a call minute"
-                value={result.perMinute}
-              />
-              <Unit
-                id="pricing-per-text"
-                label="an SMS conversation"
-                value={result.perTextConv}
-              />
-              <Unit
-                id="pricing-per-chat"
-                label="a chat conversation"
-                value={result.perChatConv}
-              />
-            </div>
-            <p className="text-muted-foreground text-xs">
-              What one of each costs us, before the margin.
-            </p>
-
-            <Separator />
-
-            <div className="grid gap-4 sm:grid-cols-2">
-              <NumberField
-                id="pricing-margin"
-                label="Margin, %"
-                value={Math.round(margin * 1000) / 10}
-                min={0}
-                max={99}
-                step={1}
-                onChange={(value) =>
-                  onChange({ margin: clampMargin(value / 100), clients })
-                }
-              />
-              <NumberField
-                id="pricing-clients"
-                label="Clients on the platform"
-                value={clients}
-                min={1}
-                step={1}
-                onChange={(value) =>
-                  onChange({ margin, clients: clampClients(value) })
-                }
-              />
-            </div>
-            <p className="text-muted-foreground text-sm">
-              Margin, not markup: 65% margin means the cost is 35% of the price,
-              so a cost of CA$100 is quoted at CA$285.71. The client count is
-              how many clinics share the platform's fixed cost — more of them
-              means a smaller share each. Both are remembered in this browser
-              only.
-            </p>
-            {!isDefault && (
-              <Button
-                variant="link"
-                size="sm"
-                className="-ms-1 h-auto p-0"
-                data-testid="pricing-reset"
-                onClick={() =>
-                  onChange({ margin: DEFAULT_MARGIN, clients: DEFAULT_CLIENTS })
-                }
+    <Card>
+      <CardHeader>
+        <CardTitle>What the month costs us</CardTitle>
+        <CardDescription data-testid="pricing-at">{atLine}</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <Table>
+          <TableBody>
+            {result.breakdown.map((line) => (
+              <TableRow key={line.id}>
+                <TableCell className="ps-0">{line.label}</TableCell>
+                <TableCell
+                  className="pe-0 text-right tabular-nums"
+                  data-testid={`pricing-line-${line.id}`}
+                >
+                  {formatCad(line.cad)}
+                </TableCell>
+              </TableRow>
+            ))}
+            <TableRow>
+              <TableCell className="ps-0 font-medium">
+                Cost of goods, a month
+              </TableCell>
+              <TableCell
+                className="pe-0 text-right font-medium tabular-nums"
+                data-testid="pricing-cogs"
               >
-                Reset to 65% and one client
-              </Button>
-            )}
+                {formatCad(result.cogsCad)}
+              </TableCell>
+            </TableRow>
+          </TableBody>
+        </Table>
 
-            <Separator />
+        <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+          <Unit id="pricing-per-call" label="a call" value={result.perCall} />
+          <Unit
+            id="pricing-per-minute"
+            label="a call minute"
+            value={result.perMinute}
+          />
+          <Unit
+            id="pricing-per-text"
+            label="an SMS conversation"
+            value={result.perTextConv}
+          />
+          <Unit
+            id="pricing-per-chat"
+            label="a chat conversation"
+            value={result.perChatConv}
+          />
+        </div>
+        <p className="text-muted-foreground text-xs">
+          What one of each costs us, before the margin.
+        </p>
 
-            <p className="text-muted-foreground text-sm">
-              The standard plan at {PLAN_PRICE_TEXT} a month would carry a
-              margin of{" "}
-              <span data-testid="pricing-list-margin">
-                {listMargin === null ? "—" : percent(listMargin)}
-              </span>{" "}
-              at these volumes. Stripe holds the price of record.
-            </p>
+        <Separator />
 
-            <p className="text-muted-foreground text-xs" data-testid="pricing-fx">
-              Priced on {result.stackLabel}, at the front desk service's own
-              rates in US dollars, converted at 1 USD = CA${rates.usd_to_cad}
-              {rates._fx_source ? ` (${rates._fx_source})` : ""}.
-            </p>
-          </CardContent>
-        </Card>
-      </CollapsibleContent>
-    </Collapsible>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <NumberField
+            id="pricing-margin"
+            label="Margin, %"
+            value={Math.round(margin * 1000) / 10}
+            min={0}
+            max={99}
+            step={1}
+            onChange={(value) =>
+              onChange({ margin: clampMargin(value / 100), clients })
+            }
+          />
+          <NumberField
+            id="pricing-clients"
+            label="Clients on the platform"
+            value={clients}
+            min={1}
+            step={1}
+            onChange={(value) =>
+              onChange({ margin, clients: clampClients(value) })
+            }
+          />
+        </div>
+        <p className="text-muted-foreground text-sm">
+          Margin, not markup: 65% margin means the cost is 35% of the price, so
+          a cost of CA$100 is quoted at CA$285.71. The client count is how many
+          clinics share the platform's fixed cost — more of them means a smaller
+          share each. Both are remembered in this browser only.
+        </p>
+        {!isDefault && (
+          <Button
+            variant="link"
+            size="sm"
+            className="-ms-1 h-auto p-0"
+            data-testid="pricing-reset"
+            onClick={() =>
+              onChange({ margin: DEFAULT_MARGIN, clients: DEFAULT_CLIENTS })
+            }
+          >
+            Reset to 65% and one client
+          </Button>
+        )}
+
+        <Separator />
+
+        <p className="text-muted-foreground text-sm">
+          The standard plan at {PLAN_PRICE_TEXT} a month would carry a margin of{" "}
+          <span data-testid="pricing-list-margin">
+            {listMargin === null ? "—" : percent(listMargin)}
+          </span>{" "}
+          at these volumes. Stripe holds the price of record.
+        </p>
+
+        <p className="text-muted-foreground text-xs" data-testid="pricing-fx">
+          Priced on {result.stackLabel}, at the front desk service's own rates
+          in US dollars, converted at 1 USD = CA${rates.usd_to_cad}
+          {rates._fx_source ? ` (${rates._fx_source})` : ""}.
+        </p>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -405,6 +416,7 @@ function NumberField({
   min,
   max,
   step,
+  hint,
   onChange,
 }: {
   id: string;
@@ -413,6 +425,8 @@ function NumberField({
   min?: number;
   max?: number;
   step?: number;
+  /** A line under the field saying what is being counted. */
+  hint?: string;
   onChange: (value: number) => void;
 }) {
   const [text, setText] = useState(String(value));
@@ -445,6 +459,7 @@ function NumberField({
           }
         }}
       />
+      {hint && <p className="text-muted-foreground text-xs">{hint}</p>}
     </div>
   );
 }
