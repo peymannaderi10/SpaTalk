@@ -506,7 +506,7 @@ async def test_the_judge_is_flash_with_thinking_enabled_and_is_none_without_a_ke
 
     judge = make_judge(_settings(google_api_key="k"))
     assert judge is not None
-    assert judge._model == "gemini-2.5-flash"
+    assert judge._model == "gemini-3.5-flash-lite"
     # Unlike the conversational client, which sets 0 for latency: a band judgement is an
     # offline call where reasoning time is free.
     assert JUDGE_THINKING_BUDGET == -1
