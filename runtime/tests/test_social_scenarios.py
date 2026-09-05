@@ -270,7 +270,7 @@ async def test_a_clinical_dm_is_gated_and_files_an_urgent_item_without_a_phone_n
     assert llm.calls == [], "a clinical DM reached the model"
     assert a.band3_gate(out, {"vars": vars_}) is True
     assert out["items"][0]["type"] == "escalation_clinical"
-    assert "911" in out["text"]
+    assert "911" not in out["text"] and "clinical team" in out["text"]
 
 
 # --- the comment path, deterministic (the plan says this one is not a promptfoo case) ---

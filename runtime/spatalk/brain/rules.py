@@ -23,12 +23,22 @@ if TYPE_CHECKING:  # pragma: no cover - the reason vocabulary is owned by reques
     from spatalk.brain.requests import EscalateReason
 
 DEFAULT_LEXICONS: dict[str, list[str]] = {
+    # Life-threatening, or the caller says it is: the one gate whose script says 911 (founder
+    # decision 2026-09-05). Checked before every other lexicon, so "I can't breathe, get me a
+    # person" is answered with the 911 line and not the callback promise.
+    "emergency": ["can't breathe", "cannot breathe", "can not breathe", "not breathing", "trouble breathing",
+                  "difficulty breathing", "anaphylaxis", "anaphylactic", "allergic reaction", "chest pain",
+                  "severe swelling", "throat closing", "throat is closing", "throat's closing", "passed out",
+                  "fainted", "fainting", "unconscious", "bleeding heavily", "heavy bleeding",
+                  "won't stop bleeding", "seizure", "heart attack", "call 911"],
     "human_request": ["speak to a person", "talk to a person", "real person", "a human", "an actual person",
                       "speak to someone", "talk to someone", "speak with someone", "receptionist",
                       "front desk", "staff member", "operator", "transfer me", "call me back please"],
     # Concerns and questions: something is wrong now, or the caller is asking whether something is safe.
-    "clinical": ["rash", "burn", "burning", "blister", "swelling", "swollen", "pain", "painful", "hurts",
-                 "bleeding", "infection", "infected", "reaction", "allergic reaction", "side effect", "side effects",
+    # No pain words: "does the laser hurt?" is a question about the treatment, not a symptom
+    # (founder call 2026-09-05 12:20, where "painful" sent a booking question to the clinical script).
+    "clinical": ["rash", "burn", "burning", "blister", "swelling", "swollen",
+                 "bleeding", "infection", "infected", "reaction", "side effect", "side effects",
                  "bruise", "bruising", "numb", "is it safe", "is that safe", "is this safe", "is it normal",
                  "is that normal", "should i be worried", "after my treatment", "after my session", "post treatment",
                  "after the treatment", "fever", "dizzy", "scar", "scarring", "peeling"],
@@ -43,7 +53,7 @@ HEALTH_CONTEXT_DEFAULT: list[str] = [
     "eczema", "psoriasis", "rosacea", "allergy", "allergies", "allergic to", "botox", "filler", "fillers", "accutane",
     "retinol", "blood thinner", "blood thinners", "diagnosed", "surgery", "condition", "sensitive skin", "keloid",
 ]
-ORDER: list[EscalateReason] = ["human_request", "clinical", "complaint", "payment"]
+ORDER: list[EscalateReason] = ["emergency", "human_request", "clinical", "complaint", "payment"]
 
 # "Am I talking to a real person?" is a question about the assistant, not a request for a
 # person. The words overlap with the human-request lexicon ("real person", "a human"), so

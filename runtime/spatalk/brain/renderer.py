@@ -21,6 +21,7 @@ TEXT_CHANNELS = ("chat", "instagram", "messenger")
 
 # escalation_<reason> item types to the fixed script that answers them.
 _ESCALATION_SCRIPTS = {
+    "emergency": "emergency",
     "clinical": "clinical",
     "complaint": "complaint",
     "payment": "payment",
@@ -71,8 +72,9 @@ def _render(outcome: Outcome, cfg: TenantConfig, now: datetime, channel: str) ->
             return s.link_captured.format(confirm_by=confirm, service="the treatment")
         if outcome.item_type.startswith("escalation_"):
             reason = outcome.item_type.removeprefix("escalation_")
-            if reason == "clinical" and channel != "voice":
-                return s.clinical_text.format(confirm_by=confirm)
+            if reason in ("clinical", "emergency") and channel != "voice":
+                # "Hang up" and "at this number" make no sense in a chat window.
+                return getattr(s, f"{reason}_text").format(confirm_by=confirm)
             template = getattr(s, _ESCALATION_SCRIPTS.get(reason, "human_request"))
             return template.format(confirm_by=confirm)
         return s.captured.format(confirm_by=confirm)

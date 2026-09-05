@@ -31,6 +31,7 @@ describe("bandLabel", () => {
 describe("itemTypeLabel", () => {
   test("puts every tracked item type into words", () => {
     expect(itemTypeLabel("escalation_clinical")).toBe("Clinical");
+    expect(itemTypeLabel("escalation_emergency")).toBe("Emergency");
     expect(itemTypeLabel("new_booking")).toBe("New booking");
   });
 
@@ -97,7 +98,9 @@ describe("blockStateLabel", () => {
   });
 
   test("a live flood mute says when it ends", () => {
-    expect(blockStateLabel("2026-09-03T12:00:00Z", now)).toMatch(/^Muted until /);
+    expect(blockStateLabel("2026-09-03T12:00:00Z", now)).toMatch(
+      /^Muted until /,
+    );
   });
 
   test("a mute that has passed says so", () => {
@@ -122,7 +125,7 @@ describe("practitionerLabel", () => {
     expect(practitionerLabel("Amanda Coutts")).toBe("Amanda Coutts");
   });
 
-  test("reads the runtime's \"any\" as a preference that was asked for", () => {
+  test('reads the runtime\'s "any" as a preference that was asked for', () => {
     expect(practitionerLabel("any")).toBe("No preference");
     expect(practitionerLabel("Any")).toBe("No preference");
   });

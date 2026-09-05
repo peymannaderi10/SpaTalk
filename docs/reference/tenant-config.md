@@ -66,7 +66,7 @@ A tenant's new-client offers belong here, never in the prompt or in code: the pr
 
 ## guard.yaml
 
-Lists of lowercase phrases added to the built-in lexicons: `human_request`, `clinical`, `health_context`, `complaint`, `payment`, `completion`. Word-bounded, case-insensitive. Built-ins live in `spatalk/brain/rules.py` and `guard.py`.
+Lists of lowercase phrases added to the built-in lexicons: `human_request`, `emergency`, `clinical`, `health_context`, `complaint`, `payment`, `completion`. `emergency` is checked first and is the only gate answered with the 911 script; `clinical` holds symptoms and safety questions and no pain words, because "does it hurt?" is a question about a treatment [founder decision 2026-09-05]. Word-bounded, case-insensitive. Built-ins live in `spatalk/brain/rules.py` and `guard.py`.
 
 ## scripts.yaml, complete, with the authored defaults
 
@@ -75,8 +75,10 @@ Placeholders: `{name}` business name, `{confirm_by}` rendered due wording, `{ser
 ```yaml
 # Required: the disclosure and the band-3 scripts. These are the ones that end the business if wrong.
 disclosure: "Hi, thanks for calling {name}. I'm {name}'s AI assistant. I can answer questions about services, pricing and hours, and take a message for the team. How can I help?"
-clinical: "That's a question for our clinical team, and I don't want to guess. I'm sending them an urgent request right now, and someone will call you back at this number as soon as possible. If this is an emergency, please hang up and call 911."
-clinical_text: "That's a question for our clinical team, and I don't want to guess. I've sent them an urgent request, and someone will contact you as soon as possible. If this is an emergency, please call 911 now."   # text channels; default exists
+clinical: "That's one for our clinical team rather than me, so I won't guess. I've passed it to them as an urgent request and someone will call you back at this number as soon as possible. Is there anything else I can help with?"
+clinical_text: "That's one for our clinical team rather than me, so I won't guess. I've passed it to them as an urgent request and someone will contact you as soon as possible. Is there anything else I can help with?"   # text channels; default exists
+emergency: "If this is an emergency, please hang up and call 911 right now. Otherwise I've sent an urgent request to our clinical team and someone will call you back at this number as soon as possible."   # the emergency lexicon only; the one script that says 911; default exists
+emergency_text: "If this is an emergency, please call 911 right now. Otherwise I've sent an urgent request to our clinical team and someone will contact you as soon as possible."   # text channels; default exists
 human_request: "Of course. I'm sending a request to the team now, and someone will call you back at this number as soon as they're free."
 complaint: "I'm sorry to hear that. This needs a person, not an assistant. I'm flagging it to the team as urgent, and someone will call you back at this number as soon as possible."
 payment: "I can't take or discuss payment details on this line. The team can help with that when they call you back, as soon as they're free."
@@ -113,13 +115,13 @@ sms_paused: "Thanks for texting {name}. The assistant is paused right now. A mem
 
 # Staff-only wording for the call notes [N1]. Never spoken, never sent to a customer.
 notes_label: "AI notes, drafted from the transcript"                                        # heads the notes block on the portal card, the staff email and the Slack post
-notes_health_line: "Caller mentioned a health matter; read the transcript before calling."  # replaces any drafted sentence the health-context or clinical lexicon matches
+notes_health_line: "Caller mentioned a health matter; read the transcript before calling."  # replaces any drafted sentence the health-context, clinical or emergency lexicon matches
 still_there: "Are you still there? Take your time, I'm listening."   # once, after ten seconds of silence following the assistant's turn; the next silence gets the goodbye
 model_unavailable: "Sorry, I'm having a little trouble on my end. Could you say that once more?"   # spoken once per ten seconds when the model provider fails after the SDK's retries; the repeat is a new turn
 model_down: "I'm sorry, I'm not able to help on this line right now. Please call the clinic directly at {phone}."   # spoken once, and the call then ends, when a second turn in a row failed at every configured vendor (LLM_MODEL and LLM_MODEL_FALLBACK)
 ```
 
-Rules for editing: every script that mentions the team must say when to expect contact, either `{confirm_by}` for a clock time or "as soon as they're free" / "as soon as possible" (founder decision 2026-09-03: Skincentrix speaks no clock time to the caller, because "by 7:29 p.m." sounds like a deadline the clinic may miss; the due time is still set on the item, shown in the portal and sent in the team's alert); no script may contain "booked", "confirmed" or "scheduled"; `clinical` must keep the emergency sentence; `disclosure` must say it is an AI in the first two sentences.
+Rules for editing: every script that mentions the team must say when to expect contact, either `{confirm_by}` for a clock time or "as soon as they're free" / "as soon as possible" (founder decision 2026-09-03: Skincentrix speaks no clock time to the caller, because "by 7:29 p.m." sounds like a deadline the clinic may miss; the due time is still set on the item, shown in the portal and sent in the team's alert); no script may contain "booked", "confirmed" or "scheduled"; `emergency` and `emergency_text` must keep the 911 sentence and are the only scripts that may say it (founder decision 2026-09-05: a caller with a rash, or asking whether a facial hurts, is not told to hang up and call 911); `disclosure` must say it is an AI in the first two sentences.
 
 ## Schema location
 

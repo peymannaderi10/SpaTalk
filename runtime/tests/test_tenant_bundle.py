@@ -17,7 +17,7 @@ def test_skincentrix_bundle_loads():
     assert cfg.hours["tue"] == [("10:00", "18:00")]
     assert cfg.recording_enabled is False
     assert cfg.retention_days == 30
-    assert "911" in cfg.scripts.clinical
+    assert "911" in cfg.scripts.emergency and "911" not in cfg.scripts.clinical
     assert cfg.scripts.refuse_unavailable and cfg.scripts.failover and cfg.scripts.loop_guard
     assert cfg.social.comment_mode == "keyword" and cfg.transfer_number is None
 
@@ -29,7 +29,19 @@ def test_scripts_reject_completion_wording():
     with pytest.raises(ValueError):
         Scripts.model_validate({**cfg.scripts.model_dump(), "captured": "Great, you're booked for {confirm_by}."})
     with pytest.raises(ValueError):
-        Scripts.model_validate({**cfg.scripts.model_dump(), "clinical": "Someone will call you back {confirm_by}."})
+        Scripts.model_validate({**cfg.scripts.model_dump(), "emergency": "Someone will call you back {confirm_by}."})
+
+
+def test_only_the_emergency_scripts_say_911():
+    """Founder decision 2026-09-05: the 911 line belongs to the emergency script alone, so a rash
+    or an aftercare question is never answered with it. Checked on the bundle and on the defaults."""
+    from spatalk.tenants.bundle import load_bundle
+    from spatalk.tenants.schema import Scripts
+    bundle = load_bundle(BUNDLE).scripts.model_dump()
+    defaults = {k: f.default for k, f in Scripts.model_fields.items() if isinstance(f.default, str)}
+    for source in (bundle, defaults):
+        with_911 = {k for k, v in source.items() if "911" in str(v)}
+        assert with_911 == {"emergency", "emergency_text"}, with_911
 
 
 def test_bundle_rejects_invalid_hours(tmp_path):

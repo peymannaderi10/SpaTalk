@@ -27,8 +27,17 @@ async def test_rules_gate_short_circuits_without_llm(fixed_clock):
     from spatalk.brain.driver import LLMResponse
     brain, ref, ledger, sms, llm = _world(fixed_clock, [LLMResponse(text="should not be used", tool_calls=[])])
     r = await brain.turn(ref, [], "I have a rash after my laser treatment")
-    assert r.band == 3 and r.gate_reason == "clinical" and "911" in r.reply and r.ended
+    assert r.band == 3 and r.gate_reason == "clinical" and "911" not in r.reply and r.ended
     assert llm.calls == [] and ledger.items[0].type == "escalation_clinical"
+
+
+async def test_an_emergency_is_gated_to_the_911_script_without_llm(fixed_clock):
+    from spatalk.brain.driver import LLMResponse
+    brain, ref, ledger, _, llm = _world(fixed_clock, [LLMResponse(text="should not be used", tool_calls=[])])
+    r = await brain.turn(ref, [], "I think I'm having an allergic reaction and my throat is closing")
+    assert r.band == 3 and r.gate_reason == "emergency" and "911" in r.reply and r.ended
+    assert llm.calls == [] and ledger.items[0].type == "escalation_emergency"
+    assert ledger.items[0].urgency == "urgent"
 
 
 async def test_plain_answer_passes_through_guard(fixed_clock):

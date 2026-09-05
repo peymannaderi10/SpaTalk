@@ -149,12 +149,18 @@ def build_tools(cfg: TenantConfig, transfer_enabled: bool = False) -> list[Funct
             description=(
                 "Hand the conversation to a person. Use for clinical or medical questions, "
                 "anything about a reaction or symptom, complaints, payment or legal questions, "
-                "an explicit request for a human, or whenever you are unsure."
+                "an explicit request for a human, or whenever you are unsure. The reason "
+                "'emergency' is for a life-threatening situation only (trouble breathing, a "
+                "severe allergic reaction, chest pain, fainting): the caller is then told to "
+                "call 911."
             ),
             properties={
                 "reason": {
                     "type": "string",
-                    "enum": ["human_request", "clinical", "complaint", "payment", "legal", "unsure"],
+                    "enum": [
+                        "emergency", "human_request", "clinical", "complaint", "payment",
+                        "legal", "unsure",
+                    ],
                 }
             },
             required=["reason"],

@@ -84,8 +84,22 @@ async def test_rules_gate_speaks_script_and_swallows_transcription(fixed_clock):
     down, _ = await run_test(RulesGateProcessor(session),
                              frames_to_send=[TranscriptionFrame(text="I have a rash after my laser", user_id="u", timestamp="t")],
                              expected_down_frames=[TTSSpeakFrame], start_timeout=10.0)
-    assert "911" in down[0].text and session.band == 3 and ledger.items[0].type == "escalation_clinical"
+    assert "911" not in down[0].text and "clinical team" in down[0].text
+    assert session.band == 3 and ledger.items[0].type == "escalation_clinical"
     assert ended == ["EndFrame"]
+
+
+async def test_rules_gate_speaks_the_911_script_only_for_an_emergency(fixed_clock):
+    from spatalk.voice.processors import RulesGateProcessor
+    session, ledger = _session(fixed_clock)
+    class FakeWorker:
+        async def queue_frames(self, frames): pass
+    session.worker = FakeWorker()
+    down, _ = await run_test(RulesGateProcessor(session),
+                             frames_to_send=[TranscriptionFrame(text="I can't breathe", user_id="u", timestamp="t")],
+                             expected_down_frames=[TTSSpeakFrame], start_timeout=10.0)
+    assert "911" in down[0].text and session.band == 3
+    assert ledger.items[0].type == "escalation_emergency" and ledger.items[0].urgency == "urgent"
 
 
 async def test_rules_gate_forwards_ordinary_transcription(fixed_clock):

@@ -29,6 +29,7 @@ TYPE_LABELS: dict[str, str] = {
     "cancel": "Cancellation request",
     "send_link": "Send booking link",
     "escalation_human_request": "Asked for a person",
+    "escalation_emergency": "EMERGENCY",
     "escalation_clinical": "CLINICAL question",
     "escalation_complaint": "COMPLAINT",
     "escalation_payment": "Payment question",

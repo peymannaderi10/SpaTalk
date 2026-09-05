@@ -59,3 +59,25 @@ def test_asking_whether_this_is_a_real_person_is_not_a_request_for_one():
     assert rules_gate("I'd rather talk to a real person", cfg).reason == "human_request"
     # The other gates are untouched by the identity clause.
     assert rules_gate("Are you a real person? I have a rash after my peel", cfg).reason == "clinical"
+
+
+def test_asking_whether_a_treatment_hurts_is_a_booking_question():
+    """Founder decision 2026-09-05: a caller asking whether a facial hurts is asking about the
+    treatment, not reporting a symptom, so the pain words gate nothing."""
+    from spatalk.brain.rules import rules_gate
+    cfg = _cfg()
+    assert rules_gate("Does the laser hurt?", cfg) is None
+    assert rules_gate("Is the microneedling painful?", cfg) is None
+    assert rules_gate("does it hurt, and is there much pain afterwards?", cfg) is None
+
+
+def test_an_emergency_gates_to_its_own_reason_ahead_of_everything():
+    from spatalk.brain.rules import rules_gate
+    cfg = _cfg()
+    assert rules_gate("I can't breathe", cfg).reason == "emergency"
+    assert rules_gate("My throat is closing after the injections", cfg).reason == "emergency"
+    assert rules_gate("I think I'm having an allergic reaction", cfg).reason == "emergency"
+    # Even next to a request for a person, the 911 line comes first.
+    assert rules_gate("I can't breathe, get me a real person", cfg).reason == "emergency"
+    # A rash is a clinical question, not an emergency.
+    assert rules_gate("I have a rash after my peel", cfg).reason == "clinical"

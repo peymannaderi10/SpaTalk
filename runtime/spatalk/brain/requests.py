@@ -58,7 +58,9 @@ class PreferredWindow(BaseModel, frozen=True):
 
 CaptureKind = Literal["new_booking", "callback", "question", "training_enquiry"]
 ChangeKind = Literal["reschedule", "cancel"]
-EscalateReason = Literal["human_request", "clinical", "complaint", "payment", "legal", "unsure"]
+EscalateReason = Literal[
+    "emergency", "human_request", "clinical", "complaint", "payment", "legal", "unsure"
+]
 
 
 class LeadContext(BaseModel, frozen=True):

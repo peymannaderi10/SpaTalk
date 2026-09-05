@@ -191,13 +191,18 @@ async def _transcripts(ctx, conversation_ids: list) -> dict:
 
 
 def _clinical_pattern(cfg):
-    """The gate's own clinical lexicon, tenant additions included.
+    """The gate's own medical lexicons, clinical and emergency, tenant additions included.
 
     `rules._pattern` is reused rather than re-implemented on purpose: the whole value of
     this scan is that it matches exactly what the gate matches, so a drift between the two
     is impossible.
     """
-    return _pattern(DEFAULT_LEXICONS["clinical"] + list(cfg.lexicons.clinical))
+    return _pattern(
+        DEFAULT_LEXICONS["clinical"]
+        + DEFAULT_LEXICONS["emergency"]
+        + list(cfg.lexicons.clinical)
+        + list(cfg.lexicons.emergency)
+    )
 
 
 async def lexicon_scan(ctx, day: date, tenant_id: str | None = None) -> dict:

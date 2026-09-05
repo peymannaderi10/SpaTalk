@@ -145,12 +145,26 @@ class Scripts(BaseModel, frozen=True):
     )
     transferring: str = "One moment, I'll connect you to the team."
 
-    # The clinical script for text channels. The voice wording says "hang up and call 911",
-    # which makes no sense in a chat window (QA gate C). Same promise, same emergency sentence.
+    # The clinical script for text channels: "call you back at this number" makes no sense in
+    # a chat window (QA gate C). Same promise, no 911 line: that belongs to `emergency`.
     clinical_text: str = (
-        "That's a question for our clinical team, and I don't want to guess. I've sent them "
-        "an urgent request, and someone will contact you as soon as possible. If this is an "
-        "emergency, please call 911 now."
+        "That's one for our clinical team rather than me, so I won't guess. I've passed it to "
+        "them as an urgent request and someone will contact you as soon as possible. Is there "
+        "anything else I can help with?"
+    )
+
+    # The only scripts that say 911 (founder decision 2026-09-05). A rash or an aftercare
+    # question is a clinical question and gets `clinical`; the `emergency` lexicon (trouble
+    # breathing, anaphylaxis, chest pain, fainting) gets this. Defaults exist so a config
+    # stored before the split still loads; a bundle supplies its own wording.
+    emergency: str = (
+        "If this is an emergency, please hang up and call 911 right now. Otherwise I've sent "
+        "an urgent request to our clinical team and someone will call you back at this number "
+        "as soon as possible."
+    )
+    emergency_text: str = (
+        "If this is an emergency, please call 911 right now. Otherwise I've sent an urgent "
+        "request to our clinical team and someone will contact you as soon as possible."
     )
 
     # --- call notes (call-notes plan, Task N1) ---
@@ -199,8 +213,8 @@ class Scripts(BaseModel, frozen=True):
             hits = [b for b in BANNED_SCRIPT_WORDS if b in low]
             if hits:
                 raise ValueError(f"scripts.{key} contains completion wording ({hits})")
-        if "911" not in self.clinical or "911" not in self.clinical_text:
-            raise ValueError("scripts.clinical must keep the emergency sentence")
+        if "911" not in self.emergency or "911" not in self.emergency_text:
+            raise ValueError("scripts.emergency must keep the 911 sentence")
         return self
 
 
@@ -228,6 +242,7 @@ class SmsGuard(BaseModel, frozen=True):
 
 class Lexicons(BaseModel, frozen=True):
     human_request: list[str] = Field(default_factory=list)
+    emergency: list[str] = Field(default_factory=list)       # life-threatening -> band 3, the 911 script
     clinical: list[str] = Field(default_factory=list)        # symptoms, reactions -> band 3
     health_context: list[str] = Field(default_factory=list)  # conditions, meds -> flag only
     complaint: list[str] = Field(default_factory=list)
@@ -350,7 +365,12 @@ class TenantConfig(BaseModel, frozen=True):
         """
         from spatalk.brain.rules import DEFAULT_LEXICONS, HEALTH_CONTEXT_DEFAULT
 
-        medical = {w.lower() for w in DEFAULT_LEXICONS["clinical"] + HEALTH_CONTEXT_DEFAULT}
+        medical = {
+            w.lower()
+            for w in DEFAULT_LEXICONS["clinical"]
+            + DEFAULT_LEXICONS["emergency"]
+            + HEALTH_CONTEXT_DEFAULT
+        }
         for concern in self.concerns:
             lowered = concern.lower()
             offending = {lowered, *lowered.split()} & medical

@@ -46,7 +46,13 @@ def test_render_completed_only_from_completed_outcome():
 def test_render_script_clinical_urgent():
     from spatalk.brain.renderer import render_script
     text = render_script("clinical", _cfg(), NOW, urgent=True)
-    assert "as soon as possible" in text and "911" in text
+    assert "as soon as possible" in text and "911" not in text
+
+
+def test_render_script_emergency_is_the_script_that_says_911():
+    from spatalk.brain.renderer import render_script
+    text = render_script("emergency", _cfg(), NOW, urgent=True)
+    assert "911" in text and "as soon as possible" in text
 
 
 def test_refusals_never_claim_anything_was_filed():
@@ -65,6 +71,17 @@ def test_clinical_escalation_on_a_text_channel_drops_the_phone_wording():
     out = Captured(item_id=9, urgency="urgent", confirm_by=NOW + timedelta(minutes=15), item_type="escalation_clinical")
     voice = render(out, _cfg(), NOW)
     text = render(out, _cfg(), NOW, channel="sms")
-    assert "hang up" in voice and "911" in voice
+    assert "at this number" in voice and "911" not in voice
+    assert "hang up" not in text and "at this number" not in text
+    assert "911" not in text and "urgent request" in text
+
+
+def test_emergency_escalation_says_911_on_every_channel_and_hang_up_only_on_the_phone():
+    from spatalk.brain.outcomes import Captured
+    from spatalk.brain.renderer import render
+    out = Captured(item_id=9, urgency="urgent", confirm_by=NOW + timedelta(minutes=15), item_type="escalation_emergency")
+    voice = render(out, _cfg(), NOW)
+    text = render(out, _cfg(), NOW, channel="sms")
+    assert "hang up" in voice and "911" in voice and "urgent request" in voice
     assert "hang up" not in text and "at this number" not in text
     assert "911" in text and "urgent request" in text

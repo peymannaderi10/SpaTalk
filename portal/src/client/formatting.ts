@@ -29,6 +29,7 @@ const ITEM_TYPES: Record<string, string> = {
   cancel: "Cancellation",
   send_link: "Send a link",
   escalation_human_request: "Asked for a person",
+  escalation_emergency: "Emergency",
   escalation_clinical: "Clinical",
   escalation_complaint: "Complaint",
   escalation_payment: "Payment",
@@ -92,9 +93,7 @@ const CONTROLLERS: Record<string, string> = {
  * assistant has stopped replying — which is what the list's filter is for.
  * An unfamiliar value is shown as it came, never guessed at.
  */
-export function controllerLabel(
-  controller: string | null | undefined,
-): string {
+export function controllerLabel(controller: string | null | undefined): string {
   const value = (controller ?? "").trim();
   if (value === "") {
     return "—";

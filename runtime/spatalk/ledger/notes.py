@@ -150,7 +150,13 @@ def ground(notes: str, user_turns: list[str]) -> str | None:
 
 
 def _clinical_pattern(cfg: TenantConfig):
-    return _pattern(DEFAULT_LEXICONS["clinical"] + list(cfg.lexicons.clinical))
+    # Both medical gates: a sentence about not breathing is as much a health matter as a rash.
+    return _pattern(
+        DEFAULT_LEXICONS["clinical"]
+        + DEFAULT_LEXICONS["emergency"]
+        + list(cfg.lexicons.clinical)
+        + list(cfg.lexicons.emergency)
+    )
 
 
 def scrub_health(notes: str, cfg: TenantConfig) -> str:

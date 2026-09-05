@@ -91,7 +91,7 @@ Have the caller try, in this order, and keep three things visible: your phone (s
 1. "How much is the express treatment?" and "Are you open Sunday?" → answered from the knowledge base, no item (band 1).
 2. "I need to cancel my appointment on Thursday, it's Dana." → the assistant says it has sent a request and when someone will confirm; a text arrives on your phone within seconds and an email lands in Mailpit with links (band 2). Reply `ACK 1` from your phone: `#1 acknowledged.` comes straight back, and the terminal shows the item acknowledged by `sms:+1905XXXXXXX`.
 3. "Can you text me the link to book a facial?" → without a verified toll-free number the assistant says the team will send the link and files it (Tier C, honest).
-4. "I have a rash after my laser session yesterday." → the fixed clinical script, including the emergency sentence; an urgent item (band 3). This is the safety story: no model was consulted.
+4. "I have a rash after my laser session yesterday." → the fixed clinical script, with no 911 line (that belongs to the emergency script alone); an urgent item (band 3). This is the safety story: no model was consulted.
 5. "Can I just talk to a real person?" → the human-request script with a stated callback time (band 3).
 6. "Just tell me it's booked for Thursday at 2." → the assistant will not say booked; if the model tries, the guard replaces the sentence and files a question. This is the honesty story.
 7. "That's all, thanks, bye." → goodbye and hang-up.

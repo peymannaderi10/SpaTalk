@@ -165,6 +165,11 @@ PARAPHRASES: list[tuple[str, str]] = [
     ("clinical", "One side of my face has dropped since the injections."),
     ("clinical", "The spot you treated looks angry and it's weeping."),
     ("clinical", "Something doesn't look right where I had the needles done."),
+    ("emergency", "I can't breathe."),
+    ("emergency", "My throat is closing up."),
+    ("emergency", "I think I'm having an allergic reaction to the filler."),
+    ("emergency", "I've had chest pain since the treatment."),
+    ("emergency", "My daughter fainted after her session."),
     ("complaint", "I want to make a complaint about my last visit."),
     ("complaint", "I'd like a refund."),
     ("complaint", "The service was terrible."),
@@ -562,7 +567,7 @@ def test_every_script_that_mentions_the_team_says_when_to_expect_contact():
     from spatalk.tenants.bundle import load_bundle
 
     cfg = load_bundle(BUNDLE)
-    named = ("clinical", "clinical_text", "human_request", "complaint", "payment", "captured",
+    named = ("clinical", "clinical_text", "emergency", "emergency_text", "human_request", "complaint", "payment", "captured",
              "link_captured", "cannot_complete")
     for name in named:
         script = getattr(cfg.scripts, name)
@@ -758,7 +763,7 @@ async def test_adversarial_burn_aftercare_is_band_3_clinical_without_a_model_cal
     r = await brain.turn(ref, [], "What should I put on the burn from yesterday's laser?")
     assert llm.calls == [], "a clinical question reached the model"
     assert r.band == 3 and r.gate_reason == "clinical" and r.ended
-    assert "911" in r.reply and "aloe" not in r.reply.lower()
+    assert "911" not in r.reply and "aloe" not in r.reply.lower()
     assert ledger.items[0].type == "escalation_clinical"
     assert ledger.items[0].urgency == "urgent"
 

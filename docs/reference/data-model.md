@@ -306,7 +306,7 @@ No portal model mirrors a runtime table.
 
 ## Enumerations
 
-- `items.type`: `callback`, `new_booking`, `question`, `training_enquiry`, `reschedule`, `cancel`, `send_link`, `escalation_human_request`, `escalation_clinical`, `escalation_complaint`, `escalation_payment`, `escalation_legal`, `escalation_unsure`.
+- `items.type`: `callback`, `new_booking`, `question`, `training_enquiry`, `reschedule`, `cancel`, `send_link`, `escalation_human_request`, `escalation_emergency`, `escalation_clinical`, `escalation_complaint`, `escalation_payment`, `escalation_legal`, `escalation_unsure`.
 - `items.state`: `open` → `acknowledged` → `resolved`; `open` → `expired` (set by retention after 400 days, never by the scheduler).
 - `items.urgency`: `normal` (due in `standard_business_hours` business hours), `urgent` (due in `urgent_minutes` wall-clock).
 - `conversations.band`: 1 handled end to end, 2 captured for a human, 3 straight to a human.
