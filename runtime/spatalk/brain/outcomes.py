@@ -24,7 +24,9 @@ class LinkSent(BaseModel, frozen=True):
 
 class Refused(BaseModel, frozen=True):
     kind: Literal["refused"] = "refused"
-    reason: Literal["out_of_scope", "payment", "no_contact", "unknown_service", "unavailable"]
+    reason: Literal[
+        "out_of_scope", "payment", "no_contact", "no_name", "unknown_service", "unavailable"
+    ]
 
 
 class Transferred(BaseModel, frozen=True):

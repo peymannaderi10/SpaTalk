@@ -80,7 +80,10 @@ def _contact() -> dict:
             "Contact details the caller gave. Leave phone empty on voice; the caller id is used."
         ),
         "properties": {
-            "name": {"type": "string"},
+            "name": {
+                "type": "string",
+                "description": "The caller's first name. A booking, callback or appointment change is refused without one.",
+            },
             "phone": {"type": "string"},
             "email": {"type": "string"},
         },

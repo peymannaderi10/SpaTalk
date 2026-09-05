@@ -71,3 +71,27 @@ async def test_escalate_is_urgent(world):
     from spatalk.brain.requests import EscalateRequest, ContactInfo
     out = await caps.escalate(_ref(cfg), EscalateRequest(reason="clinical", contact=ContactInfo()))
     assert out.urgency == "urgent" and ledger.items[0].type == "escalation_clinical"
+
+
+async def test_booking_or_callback_without_a_first_name_is_refused_before_anything_is_written(world):
+    cfg, ledger, sms, caps = world
+    from spatalk.brain.requests import CaptureRequest, ContactInfo, PreferredWindow
+    for contact in (ContactInfo(), ContactInfo(name="  ")):
+        for kind in ("new_booking", "callback"):
+            out = await caps.capture(_ref(cfg), CaptureRequest(kind=kind, service_id="facial",
+                                      contact=contact, preferred_window=PreferredWindow()))
+            assert out.kind == "refused" and out.reason == "no_name"
+    assert ledger.items == []
+    # A question needs no name: the team can answer it either way.
+    out = await caps.capture(_ref(cfg), CaptureRequest(kind="question", service_id="facial",
+                              contact=ContactInfo(), preferred_window=PreferredWindow()))
+    assert out.kind == "captured"
+
+
+async def test_appointment_change_without_a_first_name_is_refused(world):
+    cfg, ledger, sms, caps = world
+    from spatalk.brain.requests import AppointmentChangeRequest, ContactInfo, PreferredWindow
+    out = await caps.request_appointment_change(_ref(cfg), AppointmentChangeRequest(
+        kind="reschedule", contact=ContactInfo(), preferred_window=PreferredWindow()))
+    assert out.kind == "refused" and out.reason == "no_name"
+    assert ledger.items == []

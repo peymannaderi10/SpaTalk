@@ -92,6 +92,7 @@ goodbye: "Thanks for calling {name}. Have a great day."
 after_hours_note: "The clinic is closed right now."
 link_shown: "Here is the booking link for {service}: {url}"                                  # chat, Instagram, Messenger
 refuse_no_contact: "I'd need a phone number or email to send that. Could you give me one?"
+refuse_no_name: "Before I pass that to the team, could I get your first name?"
 refuse_unknown_service: "I don't have that treatment on the list. Could you tell me a bit more about what you're looking for?"
 refuse_out_of_scope: "That's not something I can help with from here. The clinic can, at {phone} during opening hours."
 refuse_unavailable: "I'm having trouble saving that right now, so please don't count on me for it. Please call the clinic directly at {phone}."

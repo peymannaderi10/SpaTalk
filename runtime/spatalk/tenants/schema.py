@@ -95,6 +95,9 @@ class Scripts(BaseModel, frozen=True):
     refuse_no_contact: str = (
         "I'd need a phone number or email to send that. Could you give me one?"
     )
+    refuse_no_name: str = (
+        "Before I pass that to the team, could I get your first name?"
+    )
     refuse_unknown_service: str = (
         "I don't have that treatment on the list. "
         "Could you tell me a bit more about what you're looking for?"

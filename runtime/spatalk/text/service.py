@@ -31,6 +31,7 @@ from spatalk.brain.driver import Brain, LLMClient, TurnResult
 from spatalk.brain.hours import BusinessCalendar
 from spatalk.brain.renderer import render_script
 from spatalk.brain.requests import ConversationRef
+from spatalk.brain.outcomes import Captured
 from spatalk.conversations import append_message, queue_call_notes, record_usage
 from spatalk.models import Conversation, InboundMessage, Item, Job, Message, SmsOptout
 from spatalk.text import takeover
@@ -292,7 +293,10 @@ class TextConversationService:
         # Call-notes plan, Task N1: the close is where a text conversation gets its notes,
         # for the same reason the end of a call is. The handler is idempotent per
         # conversation, so a second close cannot draft twice.
-        if turn.ended and cfg.call_notes:
+        # A text thread can stay open for a day, so the notes are also drafted the moment a
+        # request is filed: that is when the team reads them.
+        filed = any(isinstance(o, Captured) for o in turn.outcomes)
+        if cfg.call_notes and (turn.ended or filed):
             await queue_call_notes(self._ctx.sf, conv.id)
 
     async def _touch(self, conversation_id: uuid.UUID) -> None:

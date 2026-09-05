@@ -19,7 +19,7 @@ from spatalk.tenants.schema import TenantConfig
 class Capabilities(Protocol):
     """What the assistant may attempt. The tier decides what each one can actually achieve."""
 
-    async def capture(self, ref: ConversationRef, req: CaptureRequest) -> Captured: ...
+    async def capture(self, ref: ConversationRef, req: CaptureRequest) -> Outcome: ...
 
     async def request_appointment_change(
         self, ref: ConversationRef, req: AppointmentChangeRequest

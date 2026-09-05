@@ -102,3 +102,24 @@ def test_every_booking_link_is_the_plain_jane_address():
     assert cfg.booking_url_default == "https://skincentrix.janeapp.com/"
     for service in cfg.services:
         assert service.booking_url == "https://skincentrix.janeapp.com/", service.id
+
+
+def test_the_name_is_asked_the_way_the_channel_needs():
+    from spatalk.brain.prompt import build_system_prompt
+    voice = build_system_prompt(_cfg(), "voice", NOW).lower()
+    sms = build_system_prompt(_cfg(), "sms", NOW).lower()
+    chat = build_system_prompt(_cfg(), "chat", NOW).lower()
+    assert "number they are calling from is the best one" in voice
+    assert "number they are texting from is already known" in sms and "calling from" not in sms
+    assert "best number to reach them" in chat
+    # The refusal is structural; the prompt tells the model what to do when it hits it.
+    for p in (voice, sms, chat):
+        assert "the system refuses one and asks for the name itself" in p
+
+
+def test_a_kind_of_treatment_or_an_unsure_caller_gets_two_ways_forward():
+    from spatalk.brain.prompt import build_system_prompt
+    for channel in ("voice", "sms", "chat"):
+        p = build_system_prompt(_cfg(), channel, NOW).lower()
+        assert "a kind of treatment rather than one in particular" in p
+        assert "recommend that visit and file it" in p

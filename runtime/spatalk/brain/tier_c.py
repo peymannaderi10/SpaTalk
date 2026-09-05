@@ -19,6 +19,14 @@ from spatalk.clock import Clock
 INLINE_LINK_CHANNELS = ("chat", "instagram", "messenger")
 
 
+# The request types that are about a named person coming in: filed only with a first name.
+NAME_REQUIRED = frozenset({"new_booking", "callback"})
+
+
+def _named(contact: ContactInfo) -> bool:
+    return bool((contact.name or "").strip())
+
+
 def _with_caller(ref: ConversationRef, contact: ContactInfo) -> ContactInfo:
     if contact.phone is None and ref.caller_phone:
         return contact.model_copy(update={"phone": ref.caller_phone})
@@ -39,7 +47,11 @@ class TierCCapabilities:
             item_id=rec.id, urgency=rec.urgency, confirm_by=rec.due_at, item_type=rec.type
         )
 
-    async def capture(self, ref: ConversationRef, req: CaptureRequest) -> Captured:
+    async def capture(self, ref: ConversationRef, req: CaptureRequest) -> Captured | Refused:
+        # A booking or callback without a first name is a request the team cannot act on, so
+        # it is refused before anything is written, and the fixed script asks for the name.
+        if req.kind in NAME_REQUIRED and not _named(req.contact):
+            return Refused(reason="no_name")
         return await self._capture(
             ref,
             ItemDraft(
@@ -56,7 +68,9 @@ class TierCCapabilities:
 
     async def request_appointment_change(
         self, ref: ConversationRef, req: AppointmentChangeRequest
-    ) -> Captured:
+    ) -> Captured | Refused:
+        if not _named(req.contact):
+            return Refused(reason="no_name")
         return await self._capture(
             ref,
             ItemDraft(
