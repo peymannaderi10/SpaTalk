@@ -95,7 +95,7 @@ export function QuoteBuilder({
             <NumberField
               id="pricing-calls"
               label="Calls a month"
-              hint="Calls the front desk answers. Each one is priced on the average length below."
+              hint="Calls the front desk answers. Each one is priced on the average call length."
               value={inputs.callsPerMonth}
               min={0}
               onChange={(value) => set("callsPerMonth", value)}
