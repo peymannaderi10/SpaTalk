@@ -97,3 +97,86 @@ So with the SDK pointed at the live sources, the only thing tsc has to say about
 - **The quote is a model and the page says so.** The measured column exists because on 2026-09-03 the runtime was using about 190,000 input tokens a call, against the roughly 50,400 the rate file's assumptions imply for a three-minute call. If the founder wants the model to match the runtime, the fix is `input_tokens_cached_per_turn` in `docs/research/rates.json` and `runtime/spatalk/rates.json` together — a runtime change, and not this task's.
 - **A new page under `/admin` still has to choose a shell**; `nav.test.ts` fails with the route named until it is in `PLATFORM_SECTIONS`, `NAV_SECTIONS` or `ROUTES_OFF_THE_SIDEBAR`.
 - **Not committed, and not this task's:** the two runtime files above. Everything else was staged by explicit pathspec.
+
+---
+
+# Follow-up, 2026-09-05: the page prices the production stack and shows a customer only the price
+Status: done
+Commit: the one this section arrived in, `feat(portal): quote page prices the production stack and shows customers only the price`
+
+Tests: `npx vitest run` → **184/184 in 18 files** (from 177/177 in 17); `pricing.test.ts` 23 → 26, `QuoteBuilder.test.tsx` 6 new. `npx vitest run -c vitest.server.config.ts` → 108/108, unchanged. `npx tsc -p tsconfig.src.json --noEmit` → **exit 2, one error, again the stale compiled SDK snapshot** (details below). Playwright not run; no spec touched.
+
+Three founder decisions, one commit.
+
+## 1. One stack: the one that is running
+
+`docs/research/rates.json` and `runtime/spatalk/rates.json` now carry `live_stack` — Telnyx telephony, Soniox STT, Soniox TTS, Gemini Flash-Lite at the 2.5 Flash-Lite rate, Telnyx toll-free SMS. `quote()` prices that and nothing else:
+
+- `pricing.ts` gains `LiveStackRef` (the five keys and a label), `LiveStack` (the same with the rates read out) and `liveStack(rates)`, which **throws naming the field** when the file points at a vendor it does not hold, rather than pricing a missing vendor at nothing.
+- `QuoteInputs` loses `voiceStack` and `textStack`; `recommendedVoiceStack` and `recommendedTextStack` are gone, and so are the two selects.
+- `voice_stacks` and `text_stacks` stay on the `RatesFile` type and stay pinned in the test. They are the **calibration**: `costmodel.py` prints those seven per-minute figures and those six text figures, and asserting them is what proves `voicePerMinute` and `textConversation` are a faithful port. The live stack is not one of them, so its figures were computed with the Python's own formulas over the same file and asserted to the same four places.
+- `Quote` gains `unitPrices` (each unit cost divided by `1 - margin`) and `stackLabel`.
+
+**The new pinned figures**, live stack, `usd_to_cad` 1.3896:
+
+| | |
+| --- | --- |
+| USD per call-minute | tel 0.0130, stt 0.0020, tts 0.0058, llm 0.0004 |
+| Voice, CAD per call-minute | **0.0295** |
+| SMS conversation / web-chat conversation / outbound message, CAD | **0.1399 / 0.0009 / 0.0174** |
+| Cost of goods at the default volumes, one client | **77.4114** |
+| Price at 65% margin | **221.1755** |
+| Margin the CA$999 plan would carry | **0.9225111** |
+| Breakdown | voice 22.1137, sms 20.9837, chat 0.0931, outbound 5.2110, per-tenant fixed 4.5000, platform share 24.5100 |
+| Unit costs | per call 0.0885, per minute 0.0295, per SMS conversation 0.1399, per chat conversation 0.0009 |
+| Unit prices at 65% | per call **0.2527**, per minute **0.0842**, per SMS conversation **0.3997**, per chat conversation **0.0027** |
+
+Cheaper than the September recommendation on every line but one: Soniox TTS and Flash-Lite take the call-minute from 0.0314 to 0.0295 and the chat conversation from 0.0033 to 0.0009, and the month from CA$79.48 to CA$77.41.
+
+## 2. The measured section is gone
+
+The "Measured, this month" card, the `getAgencyTenants` query on this page, and `measured` / `MeasuredTenant` / `MeasuredCost` with their two tests, all removed. Nothing on the page reads a tenant's row now, and the page asks the runtime for one thing: its rates.
+
+## 3. A page an admin can turn around
+
+`AdminPricingPage.tsx` is now the Wasp shell alone — fetch the rates, hand them to `QuoteBuilder`. **`src/admin/QuoteBuilder.tsx` is Wasp-free**, which is what lets `QuoteBuilder.test.tsx` render the whole page from a rates file on disk.
+
+| Visible | Inside **Internal** (`pricing-assumptions`, shut by default) |
+| --- | --- |
+| The five needs inputs: `pricing-calls`, `pricing-avg-minutes`, `pricing-sms-convs`, `pricing-chat-convs`, `pricing-outbound` | The cost-of-goods breakdown: six `pricing-line-*` and `pricing-cogs` |
+| The monthly price, large: `pricing-price` | The margin and client read-out: `pricing-at` |
+| Four unit **prices**, labelled as prices: `pricing-price-per-call`, `-per-minute`, `-per-text`, `-per-chat` | Four unit **costs**: `pricing-per-call`, `-per-minute`, `-per-text`, `-per-chat` |
+| The standard plan for comparison: `pricing-list-price` | The controls, the margin-not-markup sentence and `pricing-reset`: `pricing-margin`, `pricing-clients` |
+| | What the CA$999 plan would carry: `pricing-list-margin` |
+| | The rates footnote with the exchange rate, its source and the stack label: `pricing-fx` |
+
+Radix leaves a closed `CollapsibleContent` **unmounted**, so none of the right-hand column is in the document at all — not hidden, absent. `QuoteBuilder.test.tsx` asserts exactly that: every cost testid is `null` while the disclosure is shut, and `container.textContent` does not match `/margin|cost of goods|CAD\/min/i`; then it clicks the trigger and asserts the same words and testids appear, so the guard cannot pass vacuously.
+
+The page header's description changed with it, from "What a month of SpaTalk costs the agency…" to "What a clinic would pay a month, from what its front desk has to handle."
+
+## The type-check, again
+
+One error:
+
+```
+src/admin/AdminPricingPage.tsx(57,24): Property 'live_stack' is missing in type
+  '.wasp/out/sdk/wasp/dist/src/admin/pricing'.RatesFile
+  but required in type 'src/admin/pricing'.RatesFile
+```
+
+The five `getRates` errors reported in the first half of this report are **gone**: the orchestrator restarted the portal at about 10:45 and Wasp regenerated the SDK, which is exactly what that section predicted. What is left is the same stale-snapshot mechanism one level down — `.wasp/out/sdk/wasp/dist/src/admin/pricing.d.ts`, compiled at 10:45 from the previous commit, has no `live_stack` — and it clears on the next restart. Proof, run and then deleted:
+
+```
+# tsconfig.pathcheck.json: extends ./tsconfig.src.json,
+#   "paths": { "wasp/src/*": ["./src/*"] }
+npx tsc -p tsconfig.pathcheck.json --noEmit
+→ exit 0, no output.
+```
+
+## Deviations
+
+- **The per-stack figures stayed in the test.** "Remove the stack inputs and their tests" was read as the selectors and the tests *of* them (`recommendedVoiceStack`/`recommendedTextStack`, "refuses a stack the rates file does not have" — both gone). The seven voice stacks and two text stacks that `costmodel.py` actually prints are the only place the port is checked against the Python's own output, and the live stack is not among them; dropping those assertions would have left the port unverified.
+- **`measured()` went with its section.** Decision 2 names the card and the query; the helper existed only for that card, so it and its tests were removed rather than left as an export nothing calls.
+- **`pricing-at` moved rather than disappeared.** The 2026-09-04 addendum wanted the margin and client count visible beside the results so a quote is never ambiguous; decision 3 puts everything about our side behind the disclosure. It is now the first line inside Internal, keeping its testid.
+- **Prettier was not run**, and no `wasp` command was run; nothing was written under `.wasp/`.
+- **Nothing under `runtime/` was touched.** The `live_stack` key was already in both rates files when this follow-up started.

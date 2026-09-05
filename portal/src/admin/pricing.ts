@@ -73,6 +73,32 @@ export type VoiceStack = {
 
 export type TextStack = { sms: string; llm: string; recommended?: boolean };
 
+/**
+ * What actually runs in production, named in the rates file itself.
+ *
+ * The candidate stacks above are the September research; this is the one the
+ * clinics are being answered on, and it is the only one the quote prices. Each
+ * field is a key into the section of the same name.
+ */
+export type LiveStackRef = {
+  label: string;
+  tel: string;
+  stt: string;
+  tts: string;
+  llm: string;
+  sms: string;
+};
+
+/** The same stack with its rates read out of the file. */
+export type LiveStack = {
+  label: string;
+  tel: Telephony;
+  stt: Stt;
+  tts: Tts;
+  llm: Llm;
+  sms: Sms;
+};
+
 export type RatesFile = {
   usd_to_cad: number;
   /** Where the exchange rate came from, printed in the page's footnote. */
@@ -86,6 +112,8 @@ export type RatesFile = {
   tts: Record<string, Tts>;
   llm: Record<string, Llm>;
   sms: Record<string, Sms>;
+  live_stack: LiveStackRef;
+  /** The September research, kept in the file; nothing prices against them. */
   voice_stacks: Record<string, VoiceStack>;
   text_stacks: Record<string, TextStack>;
   /** Bills of materials for the platform, keyed by a client count: "1", "10", "25". */
@@ -270,10 +298,6 @@ export type QuoteInputs = {
   smsConvsPerMonth: number;
   chatConvsPerMonth: number;
   outboundMsgsPerMonth: number;
-  /** A key of `rates.voice_stacks`. */
-  voiceStack: string;
-  /** A key of `rates.text_stacks`. */
-  textStack: string;
 };
 
 /** One line of the monthly cost of goods, in CAD. */
@@ -290,26 +314,54 @@ export type Quote = {
   perTextConv: number;
   perChatConv: number;
   perOutboundMsg: number;
+  /** The same four units at the chosen margin: what one of each is worth. */
+  unitPrices: {
+    perCall: number;
+    perMinute: number;
+    perTextConv: number;
+    perChatConv: number;
+  };
+  /** The stack these figures priced, for the page's footnote. */
+  stackLabel: string;
 };
 
-export function recommendedVoiceStack(rates: RatesFile): string {
-  const found = Object.entries(rates.voice_stacks).find(
-    ([, stack]) => stack.recommended,
-  );
-  return found ? found[0] : (Object.keys(rates.voice_stacks)[0] ?? "");
+function vendor<T>(
+  section: Record<string, T> | undefined,
+  key: string,
+  what: string,
+): T {
+  const found = section?.[key];
+  if (!found) {
+    throw new Error(
+      `The rates file names ${key} as the live stack's ${what}, and has no such entry.`,
+    );
+  }
+  return found;
 }
 
-export function recommendedTextStack(rates: RatesFile): string {
-  const found = Object.entries(rates.text_stacks).find(
-    ([, stack]) => stack.recommended,
-  );
-  return found ? found[0] : (Object.keys(rates.text_stacks)[0] ?? "");
+/**
+ * The production stack with its rates attached. A stack naming something the
+ * file does not hold is refused rather than quietly priced at nothing.
+ */
+export function liveStack(rates: RatesFile): LiveStack {
+  const ref = rates.live_stack;
+  if (!ref) {
+    throw new Error("The rates file names no live stack, so there is nothing to price.");
+  }
+  return {
+    label: ref.label,
+    tel: vendor(rates.telephony, ref.tel, "tel"),
+    stt: vendor(rates.stt, ref.stt, "stt"),
+    tts: vendor(rates.tts, ref.tts, "tts"),
+    llm: vendor(rates.llm, ref.llm, "llm"),
+    sms: vendor(rates.sms, ref.sms, "sms"),
+  };
 }
 
 /**
  * Where the form starts: the volumes and the call length the rates file states,
- * the stacks it marks recommended, and the founder's margin and client count —
- * or the ones this browser last remembered.
+ * and the founder's margin and client count — or the ones this browser last
+ * remembered. There is no stack to choose: the quote prices what is running.
  */
 export function defaultInputs(
   rates: RatesFile,
@@ -327,8 +379,6 @@ export function defaultInputs(
     smsConvsPerMonth: volume.sms_convs_per_month,
     chatConvsPerMonth: volume.chat_convs_per_month,
     outboundMsgsPerMonth: volume.outbound_msgs_per_month,
-    voiceStack: recommendedVoiceStack(rates),
-    textStack: recommendedTextStack(rates),
   };
 }
 
@@ -338,26 +388,18 @@ export function defaultInputs(
  * the price that carries the chosen margin over the lot.
  */
 export function quote(inputs: QuoteInputs, rates: RatesFile): Quote {
-  const voiceStack = rates.voice_stacks[inputs.voiceStack];
-  if (!voiceStack) {
-    throw new Error(`The rates file has no voice stack called ${inputs.voiceStack}.`);
-  }
-  const textStack = rates.text_stacks[inputs.textStack];
-  if (!textStack) {
-    throw new Error(`The rates file has no text stack called ${inputs.textStack}.`);
-  }
-
+  const stack = liveStack(rates);
   const fx = rates.usd_to_cad;
   const conversation = conversationAssumptions(rates);
-  const messaging = rates.sms[textStack.sms];
-  const textModel = rates.llm[textStack.llm];
+  const messaging = stack.sms;
+  const textModel = stack.llm;
 
   const perMinute =
     voicePerMinute(
-      rates.telephony[voiceStack.tel],
-      rates.stt[voiceStack.stt],
-      rates.tts[voiceStack.tts],
-      rates.llm[voiceStack.llm],
+      stack.tel,
+      stack.stt,
+      stack.tts,
+      stack.llm,
       rates.assumptions,
     ).totalUsd * fx;
   const perCall = perMinute * inputs.avgCallMinutes;
@@ -402,44 +444,24 @@ export function quote(inputs: QuoteInputs, rates: RatesFile): Quote {
   ];
 
   const cogsCad = breakdown.reduce((total, line) => total + line.cad, 0);
+  const atMargin = (cost: number) => priceAtMargin(cost, inputs.margin);
 
   return {
     breakdown,
     cogsCad,
-    priceCad: priceAtMargin(cogsCad, inputs.margin),
+    priceCad: atMargin(cogsCad),
     perCall,
     perMinute,
     perTextConv,
     perChatConv,
     perOutboundMsg,
-  };
-}
-
-// --- what a tenant actually cost -------------------------------------------
-
-/** This month at one clinic, as `getAgencyTenants` has it from the runtime. */
-export type MeasuredTenant = {
-  calls: number;
-  callMinutes: number;
-  estCostCad: number;
-};
-
-export type MeasuredCost = {
-  calls: number;
-  minutes: number;
-  costCad: number;
-  /** Nothing when there were no calls: a cost per call of nothing is not zero. */
-  perCall: number | null;
-  perMinute: number | null;
-};
-
-export function measured(row: MeasuredTenant): MeasuredCost {
-  return {
-    calls: row.calls,
-    minutes: row.callMinutes,
-    costCad: row.estCostCad,
-    perCall: row.calls > 0 ? row.estCostCad / row.calls : null,
-    perMinute: row.callMinutes > 0 ? row.estCostCad / row.callMinutes : null,
+    unitPrices: {
+      perCall: atMargin(perCall),
+      perMinute: atMargin(perMinute),
+      perTextConv: atMargin(perTextConv),
+      perChatConv: atMargin(perChatConv),
+    },
+    stackLabel: stack.label,
   };
 }
 

@@ -259,8 +259,9 @@ export const getRuntimeStatus: GetRuntimeStatus<
  * The quote builder at `/admin/pricing` works from these numbers, and the
  * portal keeps no copy of them: `GET /internal/rates` hands back the same file
  * that produces every `est_cost_cad`, so a rate that changes changes the quote
- * and the measured cost together. Admin-only, like every other operation here
- * — what the providers charge the agency is the agency's business.
+ * with it — including `live_stack`, which names the vendors the quote prices.
+ * Admin-only, like every other operation here: what the providers charge the
+ * agency is the agency's business.
  */
 export const getRates: GetRates<void, RatesFile> = async (_args, context) => {
   requireAdmin(context);

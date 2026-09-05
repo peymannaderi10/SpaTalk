@@ -11,12 +11,10 @@ import {
   fixedPlatformCad,
   loadAssumptions,
   marginOf,
-  measured,
   outboundMessage,
   priceAtMargin,
+  liveStack,
   quote,
-  recommendedTextStack,
-  recommendedVoiceStack,
   saveAssumptions,
   textConversation,
   voicePerMinute,
@@ -182,13 +180,64 @@ describe("the cost model, against the Python it is a port of", () => {
     expect(cad4(fixedPlatformCad(RATES.fixed_cad, 40))).toBe(216.45);
   });
 
-  it("names the stacks the file marks recommended", () => {
-    expect(recommendedVoiceStack(RATES)).toBe(
-      "B  RECOMMENDED (Telnyx + Soniox + Inworld Flash + Gemini 2.5 Flash)",
+});
+
+describe("the stack that is actually running", () => {
+  /**
+   * `live_stack` names what production uses, and the quote prices that and
+   * nothing else. `costmodel.py` prints the September research stacks rather
+   * than this one, so these figures were computed with the Python's own
+   * formulas over the same file and are asserted to the same four places.
+   */
+  const live = liveStack(RATES);
+
+  it("resolves to the five vendors the file names", () => {
+    expect(RATES.live_stack.tel).toBe("telnyx_ca_conservative");
+    expect(RATES.live_stack.stt).toBe("soniox_rt");
+    expect(RATES.live_stack.tts).toBe("soniox_tts");
+    expect(RATES.live_stack.llm).toBe("gemini_25_flash_lite");
+    expect(RATES.live_stack.sms).toBe("telnyx_ca_tollfree");
+    expect(live.label).toBe(RATES.live_stack.label);
+  });
+
+  it("costs a call-minute what the model says it does", () => {
+    const perMinute = voicePerMinute(
+      live.tel,
+      live.stt,
+      live.tts,
+      live.llm,
+      RATES.assumptions,
     );
-    expect(recommendedTextStack(RATES)).toBe(
-      "Telnyx CA toll-free + Gemini 2.5 Flash",
-    );
+    expect(cad4(perMinute.tel)).toBe(0.013);
+    expect(cad4(perMinute.stt)).toBe(0.002);
+    expect(cad4(perMinute.tts)).toBe(0.0058);
+    expect(cad4(perMinute.llm)).toBe(0.0004);
+    expect(cad4(perMinute.totalUsd * RATES.usd_to_cad)).toBe(0.0295);
+  });
+
+  it("costs a conversation and an outbound message what the model says", () => {
+    const assumptions = conversationAssumptions(RATES);
+    const fx = RATES.usd_to_cad;
+    expect(
+      cad4(
+        textConversation(live.sms, live.llm, "sms", assumptions).totalUsd * fx,
+      ),
+    ).toBe(0.1399);
+    expect(
+      cad4(
+        textConversation(live.sms, live.llm, "chat", assumptions).totalUsd * fx,
+      ),
+    ).toBe(0.0009);
+    expect(cad4(outboundMessage(live.sms).totalUsd * fx)).toBe(0.0174);
+  });
+
+  it("refuses a rates file whose live stack names a vendor it has not got", () => {
+    const broken: RatesFile = {
+      ...RATES,
+      live_stack: { ...RATES.live_stack, tts: "nope" },
+    };
+    expect(() => liveStack(broken)).toThrow(/tts/i);
+    expect(() => quote(defaultInputs(broken), broken)).toThrow(/tts/i);
   });
 });
 
@@ -228,22 +277,17 @@ describe("the quote at the founder's defaults", () => {
       smsConvsPerMonth: 150,
       chatConvsPerMonth: 100,
       outboundMsgsPerMonth: 300,
-      voiceStack: recommendedVoiceStack(RATES),
-      textStack: recommendedTextStack(RATES),
     });
     expect(inputs.margin).toBe(DEFAULT_MARGIN);
     expect(inputs.clients).toBe(DEFAULT_CLIENTS);
   });
 
-  it("reproduces the Python's cost per tenant and its margin at the list price", () => {
+  it("reproduces the month's cost per tenant and its margin at the list price", () => {
     const result = quote(inputs, RATES);
 
-    // `variable+per-tenant cost per tenant: 54.97 CAD/month` plus the
-    // `1 tenants: cost 79.48` line of the margin table.
-    expect(cad4(result.cogsCad)).toBe(79.4811);
-    expect(cad4(result.priceCad)).toBe(227.089);
-    // `1 tenants: ... gross margin 92.0%`
-    expect(marginOf(result.cogsCad, 999)).toBeCloseTo(0.9204392988, 6);
+    expect(cad4(result.cogsCad)).toBe(77.4114);
+    expect(cad4(result.priceCad)).toBe(221.1755);
+    expect(marginOf(result.cogsCad, 999)).toBeCloseTo(0.9225110929, 6);
   });
 
   it("breaks the month down into the six lines the page prints", () => {
@@ -253,9 +297,9 @@ describe("the quote at the founder's defaults", () => {
     );
 
     expect(lines).toEqual({
-      voice: 23.5824,
-      sms: 21.3443,
-      chat: 0.3335,
+      voice: 22.1137,
+      sms: 20.9837,
+      chat: 0.0931,
       outbound: 5.211,
       "per-tenant-fixed": 4.5,
       "platform-share": 24.51,
@@ -267,10 +311,21 @@ describe("the quote at the founder's defaults", () => {
 
   it("gives the unit costs the model implies", () => {
     const result = quote(inputs, RATES);
-    expect(cad4(result.perMinute)).toBe(0.0314);
-    expect(cad4(result.perCall)).toBe(0.0943);
-    expect(cad4(result.perTextConv)).toBe(0.1423);
-    expect(cad4(result.perChatConv)).toBe(0.0033);
+    expect(cad4(result.perMinute)).toBe(0.0295);
+    expect(cad4(result.perCall)).toBe(0.0885);
+    expect(cad4(result.perTextConv)).toBe(0.1399);
+    expect(cad4(result.perChatConv)).toBe(0.0009);
+  });
+
+  it("gives the unit prices those costs carry at the margin", () => {
+    const result = quote(inputs, RATES);
+    // Each unit cost divided by 0.35, the same arithmetic as the monthly
+    // price: what one call is worth at the margin, not what it cost.
+    expect(cad4(result.unitPrices.perCall)).toBe(0.2527);
+    expect(cad4(result.unitPrices.perMinute)).toBe(0.0842);
+    expect(cad4(result.unitPrices.perTextConv)).toBe(0.3997);
+    expect(cad4(result.unitPrices.perChatConv)).toBe(0.0027);
+    expect(result.unitPrices.perCall).toBeCloseTo(result.perCall / 0.35, 10);
   });
 
   it("shares the platform's fixed cost between the clients on it", () => {
@@ -293,28 +348,6 @@ describe("the quote at the founder's defaults", () => {
     expect(cad4(at80.priceCad)).toBe(cad4(at65.cogsCad / 0.2));
   });
 
-  it("refuses a stack the rates file does not have", () => {
-    expect(() => quote({ ...inputs, voiceStack: "nope" }, RATES)).toThrow(
-      /voice stack/i,
-    );
-    expect(() => quote({ ...inputs, textStack: "nope" }, RATES)).toThrow(
-      /text stack/i,
-    );
-  });
-});
-
-describe("what a tenant actually cost", () => {
-  it("divides the runtime's own figures and nothing more", () => {
-    const row = measured({ calls: 20, callMinutes: 50, estCostCad: 12.5 });
-    expect(row.perCall).toBeCloseTo(0.625, 10);
-    expect(row.perMinute).toBeCloseTo(0.25, 10);
-  });
-
-  it("says nothing rather than dividing by no calls", () => {
-    const row = measured({ calls: 0, callMinutes: 0, estCostCad: 0 });
-    expect(row.perCall).toBeNull();
-    expect(row.perMinute).toBeNull();
-  });
 });
 
 describe("the assumptions this browser remembers", () => {
