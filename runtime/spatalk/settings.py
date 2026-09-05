@@ -95,7 +95,9 @@ class Settings(BaseSettings):
     # gemini-2.5-pro answers 404 "no longer available to new users" on the founder's Google
     # AI Studio key (promptfoo run A, 2026-09-02), and a band judgement is an offline call
     # where reasoning time is free but a per-token price is not.
-    judge_model: str = "gemini-2.5-flash"
+    # gemini-2.5-flash went 404 on the founder's key on 2026-09-05 ("no longer available to
+    # new users"); the judge now runs on the same model as the voice path.
+    judge_model: str = "gemini-3.5-flash-lite"
 
     # --- operations: monitoring and alerts (operations plan, Task E7) ---------------------
     # One SMS per incident per six hours, on top of the email. Empty means email only.

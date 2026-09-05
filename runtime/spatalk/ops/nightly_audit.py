@@ -19,7 +19,7 @@ Three checks run over one local day, per tenant:
 
 The judge is an :class:`~spatalk.brain.driver.LLMClient`, so the tests drive it with
 ``FakeLLM`` and nothing in this repository calls a model. In production it is
-``JUDGE_MODEL`` (default ``gemini-2.5-flash``) with thinking *enabled*, unlike the
+``JUDGE_MODEL`` (default ``gemini-3.5-flash-lite``) with thinking *enabled*, unlike the
 conversational client which sets a budget of 0 for latency: a band judgement is an offline
 call where reasoning time is free but a per-token price is not. gemini-2.5-pro, which the
 plan first named, answers 404 "no longer available to new users" on the founder's Google AI
