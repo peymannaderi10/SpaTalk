@@ -1,14 +1,4 @@
-import {
-  IconAlertTriangle,
-  IconBolt,
-  IconClipboardList,
-  IconClock,
-  IconCoin,
-  IconMessage,
-  IconMessageChatbot,
-  IconPhone,
-  type TablerIcon,
-} from "@tabler/icons-react";
+import { IconAlertTriangle, IconClipboardList } from "@tabler/icons-react";
 import { getTenantOverview, useQuery } from "wasp/client/operations";
 import { UsageChart, type UsagePoint } from "./charts/usage-chart";
 import { EmptyState } from "./components/empty-state";
@@ -19,13 +9,9 @@ import {
   CardHeader,
   CardTitle,
 } from "./components/ui/card";
-import {
-  formatCad,
-  formatDateTime,
-  formatMinutes,
-  itemTypeLabel,
-} from "./formatting";
+import { formatDateTime, itemTypeLabel } from "./formatting";
 import { OrgShell, Problem, type Org } from "./OrgShell";
+import { overviewTiles, OverviewTiles } from "./overview";
 
 /**
  * What the month has looked like, and what is late.
@@ -62,9 +48,6 @@ function Body({ org }: { org: Org }) {
     return <Problem error={error ?? { message: "No overview to show." }} />;
   }
 
-  const { totals } = data.month;
-  const latest = data.latency[data.latency.length - 1];
-
   return (
     <div className="flex flex-col gap-4">
       <p className="text-muted-foreground text-sm">
@@ -72,64 +55,7 @@ function Body({ org }: { org: Org }) {
         {data.tenantId}.
       </p>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Tile
-          id="calls"
-          label="Calls"
-          icon={IconPhone}
-          value={String(totals.calls)}
-          note="answered this month"
-        />
-        <Tile
-          id="call-minutes"
-          label="Call minutes"
-          icon={IconClock}
-          value={formatMinutes(totals.call_minutes)}
-          note="on the phone this month"
-        />
-        <Tile
-          id="texts"
-          label="Texts"
-          icon={IconMessage}
-          value={String(totals.sms_in + totals.sms_out)}
-          note="sent and received"
-        />
-        <Tile
-          id="chats"
-          label="Chats"
-          icon={IconMessageChatbot}
-          value={String(totals.chats)}
-          note="web and social conversations"
-        />
-        <Tile
-          id="open-items"
-          label="Open requests"
-          icon={IconClipboardList}
-          value={String(data.health.open_items)}
-          note="waiting on the team"
-        />
-        <Tile
-          id="overdue-items"
-          label="Overdue"
-          icon={IconAlertTriangle}
-          value={String(data.health.overdue_items)}
-          note="past the promised time"
-        />
-        <Tile
-          id="p95-latency"
-          label="Reply time (p95)"
-          icon={IconBolt}
-          value={latest ? `${latest.p95_ms} ms` : "—"}
-          note="nineteen replies in twenty are faster"
-        />
-        <Tile
-          id="est-cost"
-          label="Estimated cost"
-          icon={IconCoin}
-          value={formatCad(totals.est_cost_cad)}
-          note="what the providers charged us"
-        />
-      </div>
+      <OverviewTiles tiles={overviewTiles(data)} />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-7">
         <Card className="col-span-1 lg:col-span-4">
@@ -236,33 +162,4 @@ function dayLabel(date: string): string {
     month: "short",
     day: "numeric",
   });
-}
-
-function Tile({
-  id,
-  label,
-  value,
-  note,
-  icon: Icon,
-}: {
-  id: string;
-  label: string;
-  value: string;
-  note: string;
-  icon: TablerIcon;
-}) {
-  return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-sm font-medium">{label}</CardTitle>
-        <Icon className="text-muted-foreground size-4" />
-      </CardHeader>
-      <CardContent>
-        <div data-testid={`tile-${id}`} className="text-2xl font-bold">
-          {value}
-        </div>
-        <p className="text-muted-foreground text-xs">{note}</p>
-      </CardContent>
-    </Card>
-  );
 }

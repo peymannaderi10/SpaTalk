@@ -194,6 +194,16 @@ async function actionableItem(
 export type Overview = {
   tenantId: string;
   role: OrgAccess["role"];
+  /**
+   * Whether the person reading is the agency rather than the clinic.
+   *
+   * The overview's "Estimated cost" card is what the providers charged the
+   * agency for this tenant's month — a cost of goods, not the client's bill —
+   * so it is the agency's to see (`src/client/overview.tsx`). The answer is
+   * decided here, on the server, from the session, the same way
+   * `organizationIsEntitled` is told who is asking.
+   */
+  viewerIsAgencyAdmin: boolean;
   /** Local days in the tenant's timezone, oldest first. */
   days: UsageDay[];
   month: { from: string; to: string; totals: UsageTotals };
@@ -269,6 +279,7 @@ export const getTenantOverview: GetTenantOverview<
   return {
     tenantId,
     role: access.role,
+    viewerIsAgencyAdmin: context.user?.isAdmin === true,
     days: chart.days,
     month: { from: monthFrom, to: today, totals: month.totals },
     health,
