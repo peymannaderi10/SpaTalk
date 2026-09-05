@@ -285,5 +285,14 @@
       "with_knowledge_base_and_sms_follow_up_cad_per_min": 0.0889,
       "calculator_screenshot_2026_09_02": "$0.07/min with all four add-ons at 230,000 min/month"
     }
+  },
+  "live_stack": {
+    "_note": "What actually runs in production as of 2026-09-05: Telnyx telephony, Soniox stt-rt-v5, Soniox tts-rt-v2, Gemini 3.5 Flash-Lite (priced here with the 2.5 Flash-Lite rate, the closest published price), Telnyx toll-free SMS. The quote builder prices this stack and nothing else; the candidate stacks above are the September 1 research.",
+    "label": "Telnyx + Soniox STT + Soniox TTS + Gemini Flash-Lite",
+    "tel": "telnyx_ca_conservative",
+    "stt": "soniox_rt",
+    "tts": "soniox_tts",
+    "llm": "gemini_25_flash_lite",
+    "sms": "telnyx_ca_tollfree"
   }
 }
