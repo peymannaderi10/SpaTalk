@@ -1,5 +1,7 @@
 # Demo day state, 2026-09-03 (late afternoon)
 
+> Cold start 2026-09-04 (afternoon): Docker Desktop, Postgres, runtime, tunnel and portal were all down and were brought back in that order. The quick tunnel came up on a new hostname (`findarticles-updated-something-data.trycloudflare.com`); `runtime/.env` (`PUBLIC_BASE_URL`, `MEDIA_WS_HOST`), the Telnyx TeXML app voice URL, the messaging profile webhook and `portal/.env.server` (`RUNTIME_INTERNAL_URL`) were repointed. Runtime healthz is green through the tunnel; portal on :3000.
+
 > Note (2026-09-03, late evening): the commit hashes quoted in this document and in `docs/reports/tasks/*` predate a history rewrite that removed attribution trailers from every message before the first push to https://github.com/peymannaderi10/SpaTalk. The commits are the same, in the same order, with new hashes; find one by its message with `git log --oneline --grep`.
 
 Where everything stands after a day of live test calls on the founder's laptop. Written so a fresh session can pick up without the conversation. Newest facts first; the "How to" section at the end has the exact commands.
@@ -22,7 +24,7 @@ Where everything stands after a day of live test calls on the founder's laptop. 
 | Piece | State |
 |---|---|
 | Runtime | `spatalk serve` on port 8000, started from the session shell; log `scratchpad/serve.log` (rotated copies `serve-call*.log`) |
-| Tunnel | `https://radio-gorgeous-try-universities.trycloudflare.com` via `C:\Program Files (x86)\cloudflared\cloudflared.exe`; log `scratchpad/cloudflared.log`. Hostname changes if it restarts |
+| Tunnel | `https://findarticles-updated-something-data.trycloudflare.com` via `C:\Program Files (x86)\cloudflared\cloudflared.exe`; log `scratchpad/cloudflared.log`. Hostname changes if it restarts |
 | Telnyx | TeXML app `spatalk-demo` (id 3040385824425248764) voice URL and messaging profile `spatalk-sms` (id 4001a064-4921-4479-b618-fe4c44844bf1) webhook both point at the tunnel; number +1 289 917 0079 (voice and SMS) |
 | Skincentrix config | version 19 in the dev database (migration 0012 applied) (`spatalk` on `runtime-db-1`, host port 5434), `team` present |
 | Portal | Wasp dev server in WSL, http://localhost:3000 (client) and :3001 (server); started by `scratchpad/start-portal.ps1`, stopped by `scratchpad/stop-portal.sh`; log `scratchpad/wasp-start.log`; its own database `portal` on the same Postgres; `RUNTIME_INTERNAL_URL` is the tunnel; Dummy email provider prints links to the log |
@@ -31,7 +33,7 @@ Where everything stands after a day of live test calls on the founder's laptop. 
 | Model | `LLM_MODEL=gemini-3.5-flash` on the founder's paid Google project. That project does NOT serve `gemini-2.5-flash` (404). Gemini 3.x needs `thinking_level` (`minimal`; `low` for 3.7 and 3.8), handled by `gemini_thinking_kwargs` |
 | Speech | Soniox STT `stt-rt-v5`; Soniox TTS `tts-rt-v2`, voice `Kayla`; audio tags on for voice only |
 
-`runtime/.env` (gitignored) holds: the paid `GOOGLE_API_KEY` (passed through chat, rotate), `SONIOX_API_KEY`, `TELNYX_API_KEY` (both also passed through chat earlier, rotate), `INTERNAL_API_KEY` (value also in `scratchpad/internal_key.txt`), `SKINCENTRIX_STAFF_SMS=+18567451025`, `PUBLIC_BASE_URL` and `MEDIA_WS_HOST` set to the tunnel host. `TELNYX_PUBLIC_KEY` is still EMPTY, so inbound texts to the runtime are refused with 401 until the founder pastes it from Telnyx (Account, Auth, Public Key).
+`runtime/.env` (gitignored) holds: the paid `GOOGLE_API_KEY` (passed through chat, rotate), `SONIOX_API_KEY`, `TELNYX_API_KEY` (both also passed through chat earlier, rotate), `INTERNAL_API_KEY` (value also in `scratchpad/internal_key.txt`), `SKINCENTRIX_STAFF_SMS=+18567451025`, `PUBLIC_BASE_URL` and `MEDIA_WS_HOST` set to the tunnel host. `TELNYX_PUBLIC_KEY` is set (2026-09-04), so inbound texts are verified and accepted; replies to US numbers still fail with Telnyx error 40010 until 10DLC registration or a verified toll-free number, Canadian numbers work end to end.
 
 ## What the day changed (all committed on main)
 
@@ -72,7 +74,7 @@ Restart the runtime: `bash $SCRATCH/restart-runtime.sh` (refuses while a call is
 cd /c/Users/Peyman/source/repos/SpaTalk/runtime
 PID=$(powershell -NoProfile -Command "(Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty OwningProcess)" | tr -d '\r'); [ -n "$PID" ] && powershell -NoProfile -Command "Stop-Process -Id $PID -Force"
 (.venv/Scripts/python.exe -c "import sys; from spatalk.cli import app; sys.argv=['spatalk','serve','--host','0.0.0.0','--port','8000']; app()" > "$SCRATCH/serve.log" 2>&1 &)
-curl -s https://radio-gorgeous-try-universities.trycloudflare.com/healthz
+curl -s https://findarticles-updated-something-data.trycloudflare.com/healthz
 ```
 
 Import the bundle after editing it: `.venv/Scripts/python.exe -c "import sys; from spatalk.cli import app; sys.argv=['spatalk','tenant','import','tenants/skincentrix']; app()"` then restart.
