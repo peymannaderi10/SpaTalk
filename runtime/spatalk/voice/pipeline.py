@@ -314,6 +314,7 @@ async def run_call(websocket: WebSocket, token: str, ctx) -> None:
         messages=[{"role": "system", "content": build_system_prompt(cfg, "voice", now)}],
         tools=tools_schema(cfg, transfer_enabled=can_transfer),
     )
+    session.context = context
     user_agg, assistant_agg = LLMContextAggregatorPair(context, user_params=user_turn_params())
     stt, tts = make_stt(settings), make_tts(settings)
     # Two vendors when LLM_MODEL_FALLBACK names one, otherwise exactly the single service

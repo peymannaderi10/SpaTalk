@@ -142,6 +142,11 @@ class RulesGateProcessor(FrameProcessor):
             if gate:
                 self._s.band = 3
                 now = self._s.clock.now()
+                # The transcription stops here, so the user aggregator never writes it to the
+                # context and the transcript would show the fixed reply to nothing. The
+                # caller's turn goes in first; the script follows once it is spoken.
+                if self._s.context is not None:
+                    self._s.context.add_message({"role": "user", "content": frame.text})
                 try:
                     out = await self._s.caps.escalate(
                         self._s.ref, EscalateRequest(reason=gate.reason)

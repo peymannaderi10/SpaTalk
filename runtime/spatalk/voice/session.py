@@ -19,6 +19,11 @@ class VoiceSession:
     caps: Capabilities
     clock: Clock
     worker: Any = None
+    # The call's LLMContext, which `_finalize` writes to the transcript at the end of the call.
+    # The rules gate swallows the transcription it answers, so the caller's words would never
+    # reach the context through the user aggregator: the gate adds them itself (founder call
+    # 2026-09-05 12:20, where the notes and the card had no record of what tripped the gate).
+    context: Any = None
     # True only once a Tier A adapter has actually completed something this call.
     has_completed: bool = False
     band: int = 1

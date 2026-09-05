@@ -254,3 +254,19 @@ async def test_health_context_is_propagated_to_the_conversation(ctx, sf):
     res = await _inbound(svc, "I am pregnant, can I still get a facial?", "m1")
     async with sf() as s:
         assert (await s.get(Conversation, res.conversation_id)).health_context is True
+
+
+async def test_a_message_the_rules_gate_answers_is_stored_before_the_fixed_reply(ctx, sf):
+    """Founder call 2026-09-05: the utterance that trips the gate is part of the transcript on
+    every channel, ahead of the fixed reply, so the notes and the request card can show it."""
+    from spatalk.brain.driver import FakeLLM
+    from spatalk.conversations import get_transcript
+    llm = FakeLLM([])
+    svc = _service(ctx, llm)
+    res = await _inbound(svc, "I have a rash after my laser session", "m1")
+    assert llm.calls == [] and res.turn.gate_reason == "clinical"
+    msgs = await get_transcript(sf, res.conversation_id)
+    assert [m.role for m in msgs[:2]] == ["user", "assistant"]
+    assert msgs[0].text == "I have a rash after my laser session"
+    assert all(m.role == "assistant" for m in msgs[1:])
+    assert "clinical team" in " ".join(m.text for m in msgs[1:])

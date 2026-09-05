@@ -118,3 +118,24 @@ async def test_guard_block_with_a_dead_ledger_speaks_the_refusal(fixed_clock):
     for claim in ("sent", "passed it", "confirm with you", "booked"):
         assert claim not in low, f"refusal claimed an action: {texts[0]!r}"
     assert session.guard_blocks == 1
+
+
+async def test_rules_gate_writes_the_callers_words_to_the_context_before_the_script(fixed_clock):
+    """Founder call 2026-09-05 12:20: the gate answered 'painful' with the fixed script and filed
+    the urgent item, but the utterance itself never reached the transcript, so the notes and the
+    request card had no record of what was said. The gate swallows the transcription frame, so
+    it must write the caller's turn to the context itself, before the script it speaks."""
+    from pipecat.processors.aggregators.llm_context import LLMContext
+    from spatalk.voice.processors import RulesGateProcessor
+    session, ledger = _session(fixed_clock)
+    session.context = LLMContext(messages=[{"role": "system", "content": "prompt"}])
+    class FakeWorker:
+        async def queue_frames(self, frames): pass
+    session.worker = FakeWorker()
+    down, _ = await run_test(RulesGateProcessor(session),
+                             frames_to_send=[TranscriptionFrame(text="I have a rash after my laser", user_id="u", timestamp="t")],
+                             expected_down_frames=[TTSSpeakFrame], start_timeout=10.0)
+    turns = [(m["role"], m["content"]) for m in session.context.messages if m["role"] != "system"]
+    assert turns == [("user", "I have a rash after my laser")]
+    # The script is appended by the assistant aggregator once it is spoken, after the caller's turn.
+    assert down[0].append_to_context is True and ledger.items[0].type == "escalation_clinical"
