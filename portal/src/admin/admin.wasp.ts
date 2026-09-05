@@ -1,6 +1,7 @@
 import { action, page, query, route, type Spec } from "@wasp.sh/spec";
 
 import { AdminLoginPage } from "./AdminLoginPage" with { type: "ref" };
+import { AdminPricingPage } from "./AdminPricingPage" with { type: "ref" };
 import { AnalyticsDashboardPage } from "./dashboards/analytics/AnalyticsDashboardPage" with { type: "ref" };
 import { HealthPage } from "./HealthPage" with { type: "ref" };
 import { NewTenantWizard } from "./NewTenantWizard" with { type: "ref" };
@@ -8,6 +9,7 @@ import {
   createTenantFromBundle,
   getAgencyRevenue,
   getAgencyTenants,
+  getRates,
   getRuntimeStatus,
 } from "./operations" with { type: "ref" };
 import { TenantsPage } from "./TenantsPage" with { type: "ref" };
@@ -47,6 +49,13 @@ export const adminSpec: Spec = [
     "/admin/tenants/new",
     page(NewTenantWizard, { authRequired: true }),
   ),
+  // What to charge a client, from the runtime's own rate file. An agency page
+  // through and through: `getRates` refuses anyone who is not an admin.
+  route(
+    "AdminPricingRoute",
+    "/admin/pricing",
+    page(AdminPricingPage, { authRequired: true }),
+  ),
   route(
     "AdminHealthRoute",
     "/admin/health",
@@ -57,6 +66,8 @@ export const adminSpec: Spec = [
   query(getAgencyRevenue, { entities: ["Organization"] }),
   // Nothing of the portal's own: it asks the runtime how it is.
   query(getRuntimeStatus, { entities: [] }),
+  // Nor this one: the rates are the runtime's file, not a copy in the portal.
+  query(getRates, { entities: [] }),
   action(createTenantFromBundle, {
     entities: ["Organization", "Membership", "Invitation"],
   }),

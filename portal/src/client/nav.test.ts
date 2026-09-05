@@ -217,6 +217,21 @@ describe("the sidebar model", () => {
     );
   });
 
+  it("gives the agency its quote builder, in the Platform section", () => {
+    // `/admin/pricing` is where an admin turns a client's volumes into a
+    // monthly price. It is an agency page and belongs in the agency's shell;
+    // the route test above is what stops it from being added and then lost.
+    const pricing = PLATFORM_SECTIONS.flatMap((section) => section.items).find(
+      (item) => item.testId === "nav-pricing",
+    );
+    expect(pricing, "no sidebar item carries nav-pricing").toBeDefined();
+    expect(pricing?.label).toBe("Pricing");
+    expect(pricing?.to).toBe("/admin/pricing");
+    expect(pricing?.visible({ orgSlug: "", role: "OWNER", isAdmin: false })).toBe(
+      false,
+    );
+  });
+
   it("gives the admin shell nothing at all for someone who is not an admin", () => {
     expect(
       platformSections({ orgSlug: "", role: "OWNER", isAdmin: false }),

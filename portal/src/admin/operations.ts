@@ -4,6 +4,7 @@ import {
   type CreateTenantFromBundle,
   type GetAgencyRevenue,
   type GetAgencyTenants,
+  type GetRates,
   type GetRuntimeStatus,
 } from "wasp/server/operations";
 import * as z from "zod";
@@ -25,6 +26,7 @@ import {
   type AgencyTenantRow,
 } from "./agency";
 import { BUNDLE_SLOTS } from "./bundle";
+import { type RatesFile } from "./pricing";
 
 /**
  * What the agency sees and does: every client with its runtime numbers, the
@@ -247,6 +249,29 @@ export const getRuntimeStatus: GetRuntimeStatus<
   ]);
 
   return { health, status };
+};
+
+// --- the provider rates behind every estimated cost ------------------------
+
+/**
+ * The rates file the runtime prices with, served straight through.
+ *
+ * The quote builder at `/admin/pricing` works from these numbers, and the
+ * portal keeps no copy of them: `GET /internal/rates` hands back the same file
+ * that produces every `est_cost_cad`, so a rate that changes changes the quote
+ * and the measured cost together. Admin-only, like every other operation here
+ * — what the providers charge the agency is the agency's business.
+ */
+export const getRates: GetRates<void, RatesFile> = async (_args, context) => {
+  requireAdmin(context);
+  const api = runtime(actorOf(context));
+
+  const rates = await runtimeCall(
+    () => api.GET("/internal/rates", {}),
+    "the provider rates",
+  );
+
+  return rates as unknown as RatesFile;
 };
 
 // --- onboarding a tenant from its bundle -----------------------------------

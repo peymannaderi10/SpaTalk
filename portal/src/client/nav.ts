@@ -4,6 +4,7 @@ import {
   IconChartBar,
   IconClipboardList,
   IconClock,
+  IconCoin,
   IconCreditCard,
   IconHeartbeat,
   IconHistory,
@@ -175,6 +176,13 @@ export const PLATFORM_SECTIONS: NavSection[] = [
         to: "/admin/tenants",
         icon: IconBuildingStore,
         testId: "nav-admin-tenants",
+        visible: admins,
+      },
+      {
+        label: "Pricing",
+        to: "/admin/pricing",
+        icon: IconCoin,
+        testId: "nav-pricing",
         visible: admins,
       },
       {
