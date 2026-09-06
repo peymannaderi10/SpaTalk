@@ -1,11 +1,11 @@
 import {
-  IconBuilding,
   IconCheck,
   IconChevronDown,
   type TablerIcon,
 } from "@tabler/icons-react";
 import { Link } from "react-router";
 
+import { TenantMark } from "../tenant-mark";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -31,6 +31,12 @@ import {
  * file knows nothing about Wasp and the shell stays renderable in a unit test.
  * Choosing one is a navigation, not a mutation: the organisation lives in the
  * URL, so the caller navigates and the URL becomes the truth.
+ *
+ * The button is the clinic's mark and its name in one row, and nothing under
+ * the name: the kit's "plan" subtext, which here read "Organisation", said
+ * nothing a person needed. The mark is `TenantMark`, the initial until a
+ * Branding page gives the clinic a logo; `aria-label` stays "Organisation"
+ * because that is the accessible name the browser suite selects the trigger by.
  */
 export type SwitchableOrg = {
   id: string;
@@ -78,17 +84,10 @@ export function OrgSwitcher({
               aria-label="Organisation"
               className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
             >
-              <div className="bg-sidebar-primary text-sidebar-primary-foreground flex aspect-square size-8 items-center justify-center rounded-lg">
-                <IconBuilding className="size-4" />
-              </div>
-              <div className="grid flex-1 text-left text-sm leading-tight">
-                <span className="truncate font-medium">
-                  {current?.name ?? currentSlug ?? emptyLabel}
-                </span>
-                <span className="text-muted-foreground truncate text-xs">
-                  {orgs.length > 1 ? "Switch organisation" : "Organisation"}
-                </span>
-              </div>
+              <TenantMark name={current?.name ?? currentSlug ?? emptyLabel} />
+              <span className="flex-1 truncate text-left text-sm font-medium">
+                {current?.name ?? currentSlug ?? emptyLabel}
+              </span>
               <IconChevronDown className="ms-auto size-4" />
             </SidebarMenuButton>
           </DropdownMenuTrigger>
