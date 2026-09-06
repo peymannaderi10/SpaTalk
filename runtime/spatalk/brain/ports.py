@@ -59,8 +59,11 @@ class MemoryLedger:
     def __init__(self, clock: Clock):
         self._clock = clock
         self.items: list[ItemRecord] = []
+        # The drafts as filed, so a test can read the closed lead fields an ItemRecord omits.
+        self.drafts: list[ItemDraft] = []
 
     async def create_item(self, ref: ConversationRef, draft: ItemDraft) -> ItemRecord:
+        self.drafts.append(draft)
         due = BusinessCalendar(ref.tenant).due_for(draft.urgency, self._clock.now())
         rec = ItemRecord(
             id=len(self.items) + 1,

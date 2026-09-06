@@ -126,33 +126,6 @@ def test_the_only_unenumerated_strings_on_a_tool_are_contact_details():
                 ("practitioner", "concern", "returning_client", "service_id", "kind", "reason")}
 
 
-def test_the_three_lead_parameters_are_a_boolean_and_two_closed_enums():
-    """Task L1: "returning_client (boolean), practitioner (enum ...), concern (enum ...)"."""
-    from spatalk.brain.tools import build_tools
-
-    cfg = _cfg()
-    tools = {t.name: t for t in build_tools(cfg)}
-    for name in ("send_booking_link", "capture_request"):
-        props = tools[name].properties
-        assert props["returning_client"]["type"] == "boolean"
-        assert "enum" not in props["returning_client"]
-        assert props["practitioner"]["enum"] == cfg.practitioner_names()
-        assert props["concern"]["enum"] == list(cfg.concerns)
-        # Optional, all three: the plan says the assistant asks once and takes no for an answer.
-        assert not set(tools[name].required) & {"returning_client", "practitioner", "concern"}
-
-
-def test_no_other_tool_gained_a_parameter():
-    """Task L1: "No other new parameters." A change tool is not a qualification moment."""
-    from spatalk.brain.tools import build_tools
-
-    tools = {t.name: sorted(t.properties) for t in build_tools(_cfg())}
-    assert tools["request_appointment_change"] == ["contact", "kind", "preferred_window"]
-    assert tools["escalate"] == ["reason"]
-    assert tools["end_conversation"] == []
-    assert not any("note" in p for props in tools.values() for p in props)
-
-
 async def test_an_invented_practitioner_or_concern_never_reaches_the_column(
     sf, registry, fixed_clock
 ):
@@ -310,25 +283,6 @@ def test_the_summary_never_says_none_or_any_any_or_shows_a_seam():
     assert checked > 10_000
 
 
-def test_every_item_type_the_runtime_can_create_has_a_label():
-    """The one door through which a raw id could still reach the summary.
-
-    `type_label` falls back to the raw `item.type`, so a type with no label prints
-    `escalation_whatever` to the owner. Every type the code constructs must be labelled.
-    """
-    from spatalk.brain.requests import CaptureKind, ChangeKind, EscalateReason
-    from spatalk.ledger.summary import TYPE_LABELS
-    from typing import get_args
-
-    produced = (
-        set(get_args(CaptureKind))
-        | set(get_args(ChangeKind))
-        | {f"escalation_{r}" for r in get_args(EscalateReason)}
-        | {"send_link"}
-    )
-    assert produced <= set(TYPE_LABELS), f"unlabelled: {sorted(produced - set(TYPE_LABELS))}"
-
-
 def test_the_summary_never_names_a_service_by_its_id():
     """Task L2: "Service (by name)... No raw ids"; the sentence is the card's title."""
     from spatalk.ledger.summary import summarize_item
@@ -359,36 +313,6 @@ def test_the_summary_never_reaches_the_caller():
     for path in brain.rglob("*.py"):
         source = path.read_text(encoding="utf-8")
         assert "ledger.summary" not in source, f"{path.name} imports the staff summary"
-
-
-async def test_the_spoken_outcome_says_nothing_about_the_lead_fields(fixed_clock):
-    """The caller is told what was filed, never what the assistant wrote down about them."""
-    from spatalk.brain.driver import dispatch_tool
-    from spatalk.brain.ports import MemoryLedger, MemorySms
-    from spatalk.brain.requests import ConversationRef
-    from spatalk.brain.tier_c import TierCCapabilities
-
-    caps = TierCCapabilities(MemoryLedger(fixed_clock), MemorySms(), fixed_clock)
-    ref = ConversationRef(
-        conversation_id=uuid4(), tenant=_cfg(), channel="voice", caller_phone="+19055550101"
-    )
-    _outcome, spoken, _ended = await dispatch_tool(
-        caps,
-        ref,
-        "capture_request",
-        {
-            "kind": "new_booking",
-            "service_id": "mirapeel_facial",
-            "contact": {"name": "Dana", "phone": "+19055550101"},
-            "returning_client": False,
-            "practitioner": "Sabah Shaikh",
-            "concern": "pigmentation",
-        },
-        fixed_clock.now(),
-    )
-    low = spoken.lower()
-    for leaked in ("sabah", "pigmentation", "new client", "returning"):
-        assert leaked not in low, f"the caller was told {leaked!r}"
 
 
 def test_preferred_text_over_the_whole_grid_of_windows():
@@ -625,17 +549,6 @@ def test_the_email_slack_and_digest_all_show_the_one_sentence(fixed_clock):
 # =============================================================================================
 
 
-def test_the_prompt_asks_each_question_once_and_takes_no_for_an_answer():
-    """Global Constraints: "The assistant asks once and takes no for an answer"."""
-    from spatalk.brain.prompt import build_system_prompt
-
-    for channel in ("voice", "sms", "chat", "instagram"):
-        p = build_system_prompt(_cfg(), channel, NOW).lower()
-        assert "ask each of these once and take no for an answer" in p
-        assert "never guess one" in p
-        assert "any is a fine answer" in p
-
-
 def test_the_prompt_contains_no_script_and_no_offer_wording():
     """CLAUDE.md 3: fixed wording is config. The instructions must name no price or offer."""
     from spatalk.brain.prompt import build_system_prompt
@@ -660,15 +573,6 @@ def test_a_tenant_with_no_offers_is_not_told_to_mention_one():
         guard in clause
         for guard in ("if the facts", "if there are", "if any are", "when the facts")
     ), f"unconditional offer instruction: {clause!r}"
-
-
-def test_the_concern_parameter_does_not_invite_the_callers_own_words():
-    from spatalk.brain.tools import build_tools
-
-    spec = {t.name: t for t in build_tools(_cfg())}["capture_request"].properties["concern"]
-    description = spec["description"].lower()
-    assert "own terms" not in description
-    assert "closest" in description or "from the list" in description or "one of" in description
 
 
 # =============================================================================================
@@ -830,3 +734,95 @@ def test_the_generated_portal_client_declares_the_six_new_fields():
     assert "returning_client: boolean | null;" in block
     assert "practitioner: string | null;" in block
     assert "concern: string | null;" in block
+
+
+def test_the_three_lead_values_are_closed_on_the_draft_and_absent_from_every_tool():
+    """Task L1's closed values survive the slot engine: the draft holds a boolean, a team
+    name or 'any', and a concern the engine never fills; no tool takes any of them."""
+    from spatalk.brain.flow import Slots, Step, draft_from, step_tools
+
+    cfg = _cfg()
+    d = draft_from(Slots(flow="callback", returning_client=False, practitioner="Sabah Shaikh"), cfg)
+    assert d.returning_client is False and d.practitioner in cfg.practitioner_names() and d.concern is None
+    for step in Step:
+        for tool in step_tools(step, Slots(flow="callback"), cfg, "voice", transfer_enabled=True):
+            assert not {"returning_client", "practitioner", "concern"} & set(tool.properties), tool.name
+
+
+def test_no_tool_carries_a_note_and_the_always_tools_are_unchanged():
+    from spatalk.brain.flow import Slots, Step, step_tools
+
+    for step in Step:
+        tools = {t.name: sorted(t.properties) for t in step_tools(step, Slots(flow="callback"), _cfg(), "voice")}
+        assert tools["escalate"] == ["reason"]
+        assert tools["end_conversation"] == []
+        assert not any("note" in p for props in tools.values() for p in props)
+
+
+def test_every_item_type_the_runtime_can_create_has_a_label():
+    """The one door through which a raw id could still reach the summary.
+
+    `type_label` falls back to the raw `item.type`, so a type with no label prints
+    `escalation_whatever` to the owner. Every type the code constructs must be labelled.
+    """
+    from typing import get_args
+
+    from spatalk.brain.flow import ITEM_TYPE
+    from spatalk.brain.requests import EscalateReason
+    from spatalk.ledger.summary import TYPE_LABELS
+
+    produced = (
+        set(ITEM_TYPE.values())
+        | {f"escalation_{r}" for r in get_args(EscalateReason)}
+        | {"send_link", "training_enquiry"}
+    )
+    assert produced <= set(TYPE_LABELS), f"unlabelled: {sorted(produced - set(TYPE_LABELS))}"
+
+
+async def test_the_spoken_outcome_says_nothing_about_the_lead_fields(fixed_clock):
+    """The caller is told what was filed, never what the assistant wrote down about them."""
+    from spatalk.brain.driver import run_tool
+    from spatalk.brain.flow import Slots
+    from spatalk.brain.ports import MemoryLedger, MemorySms
+    from spatalk.brain.requests import ConversationRef, PreferredWindow
+    from spatalk.brain.tier_c import TierCCapabilities
+
+    caps = TierCCapabilities(MemoryLedger(fixed_clock), MemorySms(), fixed_clock)
+    ref = ConversationRef(
+        conversation_id=uuid4(), tenant=_cfg(), channel="voice", caller_phone="+19055550101"
+    )
+    slots = Slots(flow="callback", returning_client=False, offers_done=True, practitioner="Sabah Shaikh",
+                  service_id="mirapeel_facial", first_name="Dana", phone="+19055550101",
+                  phone_confirmed=True, preferred_window=PreferredWindow(), team_note_asked=True)
+    _slots, spoken, _outcome, _ended = await run_tool(caps, ref, slots, "file_request", {}, fixed_clock.now())
+    low = " ".join(spoken).lower()
+    for leaked in ("sabah", "pigmentation", "new client", "returning"):
+        assert leaked not in low, f"the caller was told {leaked!r}"
+
+
+def test_the_engine_asks_each_question_once_and_takes_no_for_an_answer():
+    """Global Constraints: "The assistant asks once and takes no for an answer"."""
+    from spatalk.brain.flow import Slots, Step, apply, next_step
+    from spatalk.brain.requests import PreferredWindow
+
+    cfg = _cfg()
+    s = Slots(flow="callback", returning_client=True, practitioner="any", service_id="facial",
+              first_name="Dana", phone="+19055550101", phone_confirmed=True, preferred_window=PreferredWindow())
+    assert next_step(s, cfg, "voice") == Step.TEAM_NOTE
+    after = apply(s, "answer", {"value": "no"}, cfg, "voice", "+19055550101")
+    assert after.slots.team_note_asked and after.file          # asked once, filed on no
+    assert cfg.scripts.ask_window.endswith("Any is fine.")
+    anyone = apply(Slots(flow="new_booking", returning_client=True), "choose_practitioner",
+                   {"said": "no preference"}, cfg, "voice", "+19055550101")
+    assert anyone.slots.practitioner == "any"
+
+
+def test_the_concern_is_never_typed_by_the_model():
+    """The concern was the one lead value with no list to match against; the engine does
+    not fill it, so nothing the caller said in their own words can reach the column."""
+    from spatalk.brain.flow import Slots, Step, draft_from, step_tools
+
+    cfg = _cfg()
+    assert draft_from(Slots(flow="callback", first_name="Dana"), cfg).concern is None
+    for step in Step:
+        assert all("concern" not in t.properties for t in step_tools(step, Slots(flow="callback"), cfg, "voice"))

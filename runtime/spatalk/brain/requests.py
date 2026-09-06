@@ -56,40 +56,14 @@ class PreferredWindow(BaseModel, frozen=True):
         return "any"
 
 
-CaptureKind = Literal["new_booking", "callback", "question", "training_enquiry"]
-ChangeKind = Literal["reschedule", "cancel"]
 EscalateReason = Literal[
     "emergency", "human_request", "clinical", "complaint", "payment", "legal", "unsure"
 ]
 
 
-class LeadContext(BaseModel, frozen=True):
-    """What the assistant learned while qualifying the caller (lead context plan, Task L1).
+class BookingLinkRequest(BaseModel, frozen=True):
+    """Text the caller the booking link for one service (the slot engine's route step)."""
 
-    Every value is closed: a boolean, a `team[].name` or "any", and one of the tenant's
-    `concerns`. Unknown values are nulled in the ledger, so a hallucinated name costs the
-    request nothing and stores nothing.
-    """
-
-    returning_client: bool | None = None
-    practitioner: str | None = None
-    concern: str | None = None
-
-
-class CaptureRequest(LeadContext, frozen=True):
-    kind: CaptureKind
-    service_id: str | None = None
-    contact: ContactInfo = ContactInfo()
-    preferred_window: PreferredWindow = PreferredWindow()
-
-
-class AppointmentChangeRequest(BaseModel, frozen=True):
-    kind: ChangeKind
-    contact: ContactInfo = ContactInfo()
-    preferred_window: PreferredWindow = PreferredWindow()
-
-
-class BookingLinkRequest(LeadContext, frozen=True):
     service_id: str
     contact: ContactInfo = ContactInfo()
 

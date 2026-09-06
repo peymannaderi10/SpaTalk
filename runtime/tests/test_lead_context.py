@@ -72,17 +72,6 @@ def _item(**over):
 # ----- the tenant config: who the clinic's people are, and what a concern may be ------------
 
 
-def test_team_members_are_a_name_and_a_role_and_nothing_else():
-    from spatalk.tenants.schema import TeamMember
-
-    member = TeamMember(name="Sabah Shaikh", role="founder, aesthetician")
-    assert member.name == "Sabah Shaikh" and member.role == "founder, aesthetician"
-    assert TeamMember(name="Emma Walker").role == ""
-    assert set(TeamMember.model_fields) == {"name", "role"}
-    with pytest.raises(Exception):
-        member.name = "someone else"          # frozen: config is versioned, not mutated
-
-
 def test_a_tenant_starts_with_no_team_and_the_default_cosmetic_concerns():
     from spatalk.tenants.schema import TenantConfig
 
@@ -189,18 +178,6 @@ def test_the_draft_carries_the_three_closed_fields_and_still_no_free_text():
     assert filled.returning_client is False and filled.practitioner == "Sabah Shaikh"
 
 
-def test_capture_and_booking_link_requests_carry_the_lead_fields():
-    from spatalk.brain.requests import BookingLinkRequest, CaptureRequest
-
-    req = CaptureRequest(
-        kind="new_booking", returning_client=True, practitioner="any", concern="acne"
-    )
-    assert (req.returning_client, req.practitioner, req.concern) == (True, "any", "acne")
-    link = BookingLinkRequest(service_id="facial", concern="glow", returning_client=False)
-    assert link.concern == "glow" and link.returning_client is False
-    assert link.practitioner is None
-
-
 def test_the_preferred_window_date_is_a_closed_value_and_never_a_sentence():
     """CLAUDE.md 2: the window is written straight into JSONB, so it is the last gate.
 
@@ -238,40 +215,6 @@ class _RecordingLedger:
     async def create_item(self, ref, draft):
         self.drafts.append(draft)
         return await self._inner.create_item(ref, draft)
-
-
-async def test_the_driver_passes_the_lead_fields_from_a_tool_call_to_the_ledger(fixed_clock):
-    """A model tool call is a dict; the three fields must survive the trip to the draft."""
-    from uuid import uuid4
-
-    from spatalk.brain.driver import dispatch_tool
-    from spatalk.brain.ports import MemorySms
-    from spatalk.brain.requests import ConversationRef
-    from spatalk.brain.tier_c import TierCCapabilities
-
-    ledger = _RecordingLedger(fixed_clock)
-    caps = TierCCapabilities(ledger, MemorySms(), fixed_clock)
-    ref = ConversationRef(
-        conversation_id=uuid4(), tenant=_cfg(), channel="voice", caller_phone="+19055550101"
-    )
-    await dispatch_tool(
-        caps,
-        ref,
-        "capture_request",
-        {
-            "kind": "new_booking",
-            "service_id": "mirapeel_facial",
-            "contact": {"name": "Dana"},
-            "returning_client": False,
-            "practitioner": "any",
-            "concern": "pigmentation",
-        },
-        fixed_clock.now(),
-    )
-    assert len(ledger.drafts) == 1
-    draft = ledger.drafts[0]
-    assert draft.returning_client is False
-    assert draft.practitioner == "any" and draft.concern == "pigmentation"
 
 
 # ----- the ledger: closed values only ------------------------------------------------------
@@ -459,62 +402,7 @@ def test_the_summary_never_leaks_a_raw_id_or_a_none():
 # ----- the tools the model sees ------------------------------------------------------------
 
 
-def test_the_lead_fields_are_closed_enums_on_both_booking_tools():
-    from spatalk.brain.tools import build_tools
-
-    cfg = _cfg()
-    names = ["any"] + [m.name for m in cfg.team]
-    for tool_name in ("capture_request", "send_booking_link"):
-        tool = next(t for t in build_tools(cfg) if t.name == tool_name)
-        assert tool.properties["practitioner"]["enum"] == names
-        assert tool.properties["concern"]["enum"] == cfg.concerns
-        assert tool.properties["returning_client"]["type"] == "boolean"
-        for field in ("returning_client", "practitioner", "concern"):
-            assert field not in tool.required
-
-
-def test_a_tenant_with_no_team_still_offers_no_preference():
-    from spatalk.brain.tools import build_tools
-
-    cfg = _cfg().model_copy(update={"team": []})
-    tool = next(t for t in build_tools(cfg) if t.name == "capture_request")
-    assert tool.properties["practitioner"]["enum"] == ["any"]
-
-
 # ----- the prompt --------------------------------------------------------------------------
-
-
-def test_the_prompt_qualifies_the_caller_before_it_books_on_voice_and_on_text():
-    from datetime import datetime, timezone
-
-    from spatalk.brain.prompt import build_system_prompt
-
-    now = datetime(2026, 9, 1, 23, 30, tzinfo=timezone.utc)
-    for channel in ("voice", "sms", "chat"):
-        p = build_system_prompt(_cfg(), channel, now).lower()
-        assert "ask whether they have been in to see us before" in p
-        assert "new-client offers listed in the facts" in p
-        assert "what they have in mind" in p
-        assert "someone in particular they would like to see" in p
-        assert "which day or time of day suits them best" in p
-        assert "any is a fine answer" in p
-        assert "never guess" in p
-
-
-def test_the_prompt_leaves_the_offer_wording_in_the_knowledge_file():
-    from datetime import datetime, timezone
-
-    from spatalk.brain.prompt import build_system_prompt
-
-    cfg = _cfg()
-    now = datetime(2026, 9, 1, 23, 30, tzinfo=timezone.utc)
-    p = build_system_prompt(cfg, "voice", now)
-    # The instructions are everything before the catalog and the facts; the credit and the
-    # consultation are facts about this clinic, not wording written into code.
-    instructions = p.split("HOURS:")[0]
-    assert "$50" not in instructions and "virtual consultation" not in instructions.lower()
-    assert "new-client offers listed in the facts" in instructions
-    assert "$50 credit" in cfg.knowledge and "free virtual consultation" in cfg.knowledge
 
 
 # ----- delivery ----------------------------------------------------------------------------
@@ -627,3 +515,99 @@ def test_item_out_leaves_service_name_empty_when_there_is_no_service(fixed_clock
     assert out.service_name is None
     assert out.summary == "Callback: Callback requested. Would like to come in any day."
     assert out.preferred_text == "any day"
+
+
+def test_team_members_are_a_name_a_role_and_the_services_they_do():
+    from spatalk.tenants.schema import TeamMember
+
+    member = TeamMember(name="Sabah Shaikh", role="founder, aesthetician")
+    assert member.name == "Sabah Shaikh" and member.role == "founder, aesthetician"
+    assert TeamMember(name="Emma Walker").role == "" and TeamMember(name="Emma Walker").services == []
+    assert set(TeamMember.model_fields) == {"name", "role", "services"}
+    with pytest.raises(Exception):
+        member.name = "someone else"          # frozen: config is versioned, not mutated
+
+
+def test_the_draft_takes_the_lead_fields_from_the_slot_record():
+    """The lead fields ride from the engine's record to the draft; nothing else carries them."""
+    from spatalk.brain.flow import Slots, draft_from
+    from spatalk.brain.requests import BookingLinkRequest
+
+    s = Slots(flow="new_booking", returning_client=True, practitioner="any", service_id="facial",
+              first_name="Dana", phone="+19055550101", phone_confirmed=True)
+    d = draft_from(s, _cfg())
+    assert (d.returning_client, d.practitioner, d.concern) == (True, "any", None)
+    assert set(BookingLinkRequest.model_fields) == {"service_id", "contact"}
+
+
+async def test_the_engine_passes_the_lead_fields_from_the_record_to_the_ledger(fixed_clock):
+    """The record is the only source: the model's tool call carries nothing about the item."""
+    from uuid import uuid4
+
+    from spatalk.brain.driver import run_tool
+    from spatalk.brain.flow import Slots
+    from spatalk.brain.ports import MemorySms
+    from spatalk.brain.requests import ConversationRef, PreferredWindow
+    from spatalk.brain.tier_c import TierCCapabilities
+
+    ledger = _RecordingLedger(fixed_clock)
+    caps = TierCCapabilities(ledger, MemorySms(), fixed_clock)
+    ref = ConversationRef(
+        conversation_id=uuid4(), tenant=_cfg(), channel="voice", caller_phone="+19055550101"
+    )
+    slots = Slots(flow="callback", returning_client=False, offers_done=True, practitioner="any",
+                  service_id="mirapeel_facial", first_name="Dana", phone="+19055550101",
+                  phone_confirmed=True, preferred_window=PreferredWindow(), team_note_asked=True)
+    await run_tool(caps, ref, slots, "file_request", {}, fixed_clock.now())
+    assert len(ledger.drafts) == 1
+    draft = ledger.drafts[0]
+    assert draft.returning_client is False
+    assert draft.practitioner == "any" and draft.concern is None
+
+
+def test_no_tool_carries_a_lead_field_any_more():
+    """The three lead values are decided by the engine from list matches, never typed by the model."""
+    from spatalk.brain.flow import Slots, Step, step_tools
+
+    cfg = _cfg()
+    for step in Step:
+        for tool in step_tools(step, Slots(flow="new_booking"), cfg, "voice", transfer_enabled=True):
+            assert not {"returning_client", "practitioner", "concern"} & set(tool.properties), tool.name
+
+
+def test_a_tenant_with_no_team_still_takes_no_preference():
+    from spatalk.brain.resolve import match_practitioner
+
+    cfg = _cfg().model_copy(update={"team": []})
+    assert match_practitioner("anyone is fine", cfg).value == "any"
+    assert match_practitioner("Helen", cfg).kind == "none"
+
+
+def test_the_engine_qualifies_the_caller_in_the_same_order_on_every_channel():
+    from spatalk.brain.flow import Slots, Step, next_step, step_question
+
+    cfg = _cfg()
+    for channel in ("voice", "sms", "chat"):
+        s = Slots(flow="new_booking")
+        assert next_step(s, cfg, channel) == Step.RETURNING
+        assert step_question(Step.RETURNING, s, cfg, channel) == ("ask_returning", {})
+        s = s.with_(returning_client=True)
+        assert step_question(next_step(s, cfg, channel), s, cfg, channel) == ("ask_practitioner", {})
+        s = s.with_(practitioner="any")
+        assert step_question(next_step(s, cfg, channel), s, cfg, channel) == ("ask_service", {})
+    assert cfg.scripts.ask_window.endswith("Any is fine.")
+
+
+def test_the_prompt_leaves_the_offer_wording_in_the_knowledge_file():
+    from datetime import datetime, timezone
+
+    from spatalk.brain.prompt import build_system_prompt
+
+    cfg = _cfg()
+    now = datetime(2026, 9, 1, 23, 30, tzinfo=timezone.utc)
+    p = build_system_prompt(cfg, "voice", now)
+    # The instructions are everything before the catalog and the facts; the credit and the
+    # consultation are facts about this clinic, not wording written into code.
+    instructions = p.split("HOURS:")[0]
+    assert "$50" not in instructions and "virtual consultation" not in instructions.lower()
+    assert "$50 credit" in cfg.knowledge and "free virtual consultation" in cfg.knowledge

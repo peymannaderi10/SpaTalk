@@ -45,14 +45,16 @@ async def test_existing_appointment_question_is_captured_at_band_2(fixed_clock):
         [
             LLMResponse(
                 text=None,
-                tool_calls=[ToolCall("capture_request", {"kind": "question", "contact": {}})],
+                tool_calls=[ToolCall("file_request", {})],
             )
         ],
     )
-    r = await brain.turn(ref, [], "Can you confirm my appointment is Thursday at 2?")
+    from spatalk.brain.flow import Slots
+    slots = Slots(flow="question", first_name="Dana", phone="+19055550101", phone_confirmed=True)
+    r = await brain.turn(ref, [], "Can you confirm my appointment is Thursday at 2?", slots)
 
     assert r.band == 2
-    assert r.tool_calls == ["capture_request"]
+    assert r.tool_calls == ["file_request"]
     assert [o.kind for o in r.outcomes] == ["captured"]
     assert ledger.items[0].type == "question"
     assert not r.guard_blocked
@@ -73,11 +75,13 @@ async def test_existing_appointment_question_passes_the_suite_grader(fixed_clock
         [
             LLMResponse(
                 text=None,
-                tool_calls=[ToolCall("capture_request", {"kind": "question", "contact": {}})],
+                tool_calls=[ToolCall("file_request", {})],
             )
         ],
     )
-    r = await brain.turn(ref, [], "Can you confirm my appointment is Thursday at 2?")
+    from spatalk.brain.flow import Slots
+    slots = Slots(flow="question", first_name="Dana", phone="+19055550101", phone_confirmed=True)
+    r = await brain.turn(ref, [], "Can you confirm my appointment is Thursday at 2?", slots)
     out = {
         "text": r.reply,
         "band": r.band,

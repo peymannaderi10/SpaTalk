@@ -99,7 +99,8 @@ def test_phone_on_a_call_is_the_caller_id_unless_they_say_otherwise():
     from spatalk.brain.flow import Slots
 
     s = Slots(flow="callback", returning_client=True, practitioner="any",
-              service_id="hydrabrasion_facial", first_name="Dana")     # open step: PHONE
+              service_id="hydrabrasion_facial", first_name="Dana",
+              phone="+19055550101")                                     # open step: PHONE
     yes = _apply(s, "answer", {"value": "yes"})
     assert yes.slots.phone == "+19055550101" and yes.slots.phone_confirmed
     no = _apply(s, "answer", {"value": "no"})
@@ -194,3 +195,31 @@ def test_change_answer_reopens_a_step():
     )
     a = _apply(s, "change_answer", {"slot": "service"})
     assert a.slots.service_id is None and next_step(a.slots, _cfg(), "voice") == Step.SERVICE
+
+
+def test_a_withheld_caller_id_is_asked_for_a_number_outright():
+    from spatalk.brain.flow import Slots, Step, next_step, step_question, step_tools
+
+    s = Slots(flow="callback", returning_client=True, practitioner="any",
+              service_id="hydrabrasion_facial", first_name="Dana")
+    assert next_step(s, _cfg(), "voice") == Step.PHONE
+    assert step_question(Step.PHONE, s, _cfg(), "voice") == ("ask_phone", {})
+    assert "give_phone" in [t.name for t in step_tools(Step.PHONE, s, _cfg(), "voice")]
+    given = _apply(s, "give_phone", {"digits": "416 555 0199"}, caller=None)
+    assert given.slots.pending.kind == "phone"
+
+
+def test_a_booking_on_a_text_channel_ends_with_the_link_and_a_call_without_sms_files():
+    from spatalk.brain.flow import Slots
+    from spatalk.brain.requests import PreferredWindow
+
+    booking = Slots(
+        flow="new_booking", returning_client=True, practitioner="any", service_id="facial",
+        first_name="Dana", phone="+14165550199", phone_confirmed=True, preferred_window=PreferredWindow(),
+    )
+    chat = _apply(booking, "answer", {"value": "no"}, channel="chat")     # TEAM_NOTE
+    assert chat.send_link and not chat.file
+    from spatalk.brain.flow import apply
+    no_sms = _cfg().model_copy(update={"sms_from_number": None})
+    call = apply(booking, "answer", {"value": "no"}, no_sms, "voice", "+19055550101")
+    assert call.file and not call.send_link

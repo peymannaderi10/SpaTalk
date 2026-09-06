@@ -70,52 +70,6 @@ GROUNDED = (
 # =============================================================================================
 
 
-def test_the_prompt_asks_once_whether_there_is_anything_the_team_should_know():
-    from spatalk.brain.prompt import build_system_prompt
-
-    for channel in ("voice", "sms", "chat", "instagram", "messenger"):
-        p = build_system_prompt(_cfg(), channel, NOW).lower()
-        assert "anything they would like the team to know before they call" in p, channel
-        assert "what they are hoping to get out of the visit" in p, channel
-        assert "do not repeat their answer back" in p, channel
-
-
-def test_the_question_is_asked_once_and_takes_no_for_an_answer():
-    from spatalk.brain.prompt import build_system_prompt
-
-    booking = build_system_prompt(_cfg(), "voice", NOW).lower().split("when they want to book", 1)[1]
-    step = next(
-        line for line in booking.splitlines() if "would like the team to know" in line
-    )
-    assert step.lstrip().startswith("- ask once whether")
-    assert "take no for an answer" in step
-
-
-def test_the_question_never_invites_a_medical_history():
-    """The booking block may name a condition or a medication only to forbid asking about it."""
-    import re
-
-    from spatalk.brain.prompt import build_system_prompt
-
-    instructions = build_system_prompt(_cfg(), "voice", NOW).split("HOURS:")[0]
-    booking = instructions.lower().split("when they want to book", 1)[1]
-    for word in ("condition", "medication", "history"):
-        for sentence in re.split(r"(?<=[.;])\s+", booking):
-            if word in sentence:
-                assert "never ask about" in sentence, (
-                    f"{word!r} appears in the booking block outside the never-ask clause: "
-                    f"{sentence!r}"
-                )
-
-
-def test_the_question_is_asked_after_the_name_and_number_and_before_the_tool_call():
-    from spatalk.brain.prompt import build_system_prompt
-
-    booking = build_system_prompt(_cfg(), "voice", NOW).lower().split("when they want to book", 1)[1]
-    assert booking.index("first name") < booking.index("would like the team to know")
-    assert booking.index("would like the team to know") < booking.index("on the tool call")
-
-
 # =============================================================================================
 # 2. Grounding: a sentence the caller did not say does not survive
 # =============================================================================================
@@ -798,3 +752,43 @@ async def test_a_transient_provider_error_lets_the_notes_job_retry(sf, registry,
     assert job.state != "dead", job.last_error
     assert job.attempts == 1
     assert "503" in (job.last_error or "")
+
+
+def test_the_team_note_question_is_asked_once_by_the_engine_from_a_script():
+    """The question moved from the prompt to the slot engine (slot engine design, §4.1 step 8)."""
+    from spatalk.brain.flow import Slots, Step, next_step, step_question
+    from spatalk.brain.requests import PreferredWindow
+
+    cfg = _cfg()
+    assert cfg.scripts.ask_team_note == "Is there anything you'd like the team to know before they call?"
+    s = Slots(flow="callback", returning_client=True, practitioner="any", service_id="facial",
+              first_name="Dana", phone="+19055550101", phone_confirmed=True, preferred_window=PreferredWindow())
+    assert next_step(s, cfg, "voice") == Step.TEAM_NOTE
+    assert step_question(Step.TEAM_NOTE, s, cfg, "voice") == ("ask_team_note", {})
+    assert next_step(s.with_(team_note_asked=True), cfg, "voice") != Step.TEAM_NOTE
+
+
+def test_the_team_note_question_never_invites_a_medical_history():
+    """The script names no condition, medication or history, and the prompt still forbids asking."""
+    from spatalk.brain.prompt import build_system_prompt
+
+    cfg = _cfg()
+    low = cfg.scripts.ask_team_note.lower()
+    for word in ("condition", "medication", "history", "health"):
+        assert word not in low, word
+    instructions = build_system_prompt(cfg, "voice", NOW).split("HOURS:")[0].lower()
+    assert "do not ask about it" in instructions
+
+
+def test_the_team_note_question_comes_after_the_name_and_number_and_before_the_filing():
+    from spatalk.brain.flow import Slots, Step, next_step
+    from spatalk.brain.requests import PreferredWindow
+
+    cfg = _cfg()
+    s = Slots(flow="callback", returning_client=True, practitioner="any", service_id="facial")
+    assert next_step(s, cfg, "voice") == Step.NAME
+    s = s.with_(first_name="Dana", phone="+19055550101")
+    assert next_step(s, cfg, "voice") == Step.PHONE
+    s = s.with_(phone_confirmed=True, preferred_window=PreferredWindow())
+    assert next_step(s, cfg, "voice") == Step.TEAM_NOTE
+    assert next_step(s.with_(team_note_asked=True), cfg, "voice") == Step.COMPLETE

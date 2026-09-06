@@ -60,7 +60,7 @@ def _score(said: str, candidate: str) -> float:
 
 def _best(said: str, options: list[tuple[str, str]]) -> Match:
     """`options` are (value, label) pairs; labels are matched, values returned."""
-    if not said:
+    if not said or not options:
         return Match(kind="none")
     exact = [
         v for v, label in options

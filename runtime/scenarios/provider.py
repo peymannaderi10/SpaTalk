@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, Coroutine
 
 from spatalk.brain.driver import OPENAI, Brain, GeminiClient, OpenAIClient, provider_for
+from spatalk.brain.flow import Slots
 from spatalk.brain.ports import MemoryLedger, MemorySms
 from spatalk.brain.requests import ConversationRef
 from spatalk.brain.tier_c import TierCCapabilities
@@ -60,9 +61,12 @@ async def _run(vars_: dict) -> dict:
         channel=vars_.get("channel", "voice"),
         caller_phone=vars_.get("caller", "+19055550101"),
     )
-    r = await brain.turn(ref, list(vars_.get("history") or []), vars_["user"])
+    slots = Slots.model_validate(vars_["slots"]) if vars_.get("slots") else Slots()
+    r = await brain.turn(ref, list(vars_.get("history") or []), vars_["user"], slots)
     return {
         "text": r.reply,
+        "said": r.said,
+        "slots": r.slots.model_dump(mode="json"),
         "band": r.band,
         "gate_reason": r.gate_reason,
         "tool_calls": r.tool_calls,

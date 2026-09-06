@@ -21,25 +21,6 @@ def world(fixed_clock):
     return cfg, ledger, sms, TierCCapabilities(ledger=ledger, sms=sms, clock=fixed_clock)
 
 
-async def test_capture_creates_item_with_due_time(world):
-    cfg, ledger, sms, caps = world
-    from spatalk.brain.requests import CaptureRequest, ContactInfo, PreferredWindow
-    out = await caps.capture(_ref(cfg), CaptureRequest(kind="callback", service_id="facial",
-                              contact=ContactInfo(name="Dana"), preferred_window=PreferredWindow()))
-    assert out.kind == "captured" and out.urgency == "normal"
-    assert ledger.items[0].contact.phone == "+19055550101"   # caller id fills contact
-    assert out.confirm_by > datetime(2026, 9, 1, 18, 0, tzinfo=timezone.utc)
-
-
-async def test_appointment_change_is_captured_not_completed(world):
-    cfg, ledger, sms, caps = world
-    from spatalk.brain.requests import AppointmentChangeRequest, ContactInfo, PreferredWindow
-    out = await caps.request_appointment_change(_ref(cfg), AppointmentChangeRequest(
-        kind="cancel", contact=ContactInfo(name="Dana"), preferred_window=PreferredWindow()))
-    assert out.kind == "captured"
-    assert ledger.items[0].type == "cancel"
-
-
 async def test_booking_link_texts_when_sms_number_configured(world):
     cfg, ledger, sms, caps = world
     from spatalk.brain.requests import BookingLinkRequest, ContactInfo
@@ -73,25 +54,35 @@ async def test_escalate_is_urgent(world):
     assert out.urgency == "urgent" and ledger.items[0].type == "escalation_clinical"
 
 
-async def test_booking_or_callback_without_a_first_name_is_refused_before_anything_is_written(world):
+async def test_capture_creates_item_with_due_time(world):
     cfg, ledger, sms, caps = world
-    from spatalk.brain.requests import CaptureRequest, ContactInfo, PreferredWindow
+    from spatalk.brain.ports import ItemDraft
+    from spatalk.brain.requests import ContactInfo
+    out = await caps.capture(_ref(cfg), ItemDraft(type="callback", urgency="normal", service_id="facial",
+                                                   contact=ContactInfo(name="Dana")))
+    assert out.kind == "captured" and out.urgency == "normal"
+    assert ledger.items[0].contact.phone == "+19055550101"   # caller id fills contact
+    assert out.confirm_by > datetime(2026, 9, 1, 18, 0, tzinfo=timezone.utc)
+
+
+async def test_appointment_change_is_captured_not_completed(world):
+    cfg, ledger, sms, caps = world
+    from spatalk.brain.ports import ItemDraft
+    from spatalk.brain.requests import ContactInfo
+    out = await caps.capture(_ref(cfg), ItemDraft(type="cancel", urgency="normal", contact=ContactInfo(name="Dana")))
+    assert out.kind == "captured"
+    assert ledger.items[0].type == "cancel"
+
+
+async def test_a_request_about_a_person_without_a_first_name_is_refused_before_anything_is_written(world):
+    cfg, ledger, sms, caps = world
+    from spatalk.brain.ports import ItemDraft
+    from spatalk.brain.requests import ContactInfo
     for contact in (ContactInfo(), ContactInfo(name="  ")):
-        for kind in ("new_booking", "callback"):
-            out = await caps.capture(_ref(cfg), CaptureRequest(kind=kind, service_id="facial",
-                                      contact=contact, preferred_window=PreferredWindow()))
-            assert out.kind == "refused" and out.reason == "no_name"
+        for kind in ("new_booking", "callback", "reschedule", "cancel"):
+            out = await caps.capture(_ref(cfg), ItemDraft(type=kind, urgency="normal", service_id="facial", contact=contact))
+            assert out.kind == "refused" and out.reason == "no_name", kind
     assert ledger.items == []
     # A question needs no name: the team can answer it either way.
-    out = await caps.capture(_ref(cfg), CaptureRequest(kind="question", service_id="facial",
-                              contact=ContactInfo(), preferred_window=PreferredWindow()))
+    out = await caps.capture(_ref(cfg), ItemDraft(type="question", urgency="normal", service_id="facial"))
     assert out.kind == "captured"
-
-
-async def test_appointment_change_without_a_first_name_is_refused(world):
-    cfg, ledger, sms, caps = world
-    from spatalk.brain.requests import AppointmentChangeRequest, ContactInfo, PreferredWindow
-    out = await caps.request_appointment_change(_ref(cfg), AppointmentChangeRequest(
-        kind="reschedule", contact=ContactInfo(), preferred_window=PreferredWindow()))
-    assert out.kind == "refused" and out.reason == "no_name"
-    assert ledger.items == []

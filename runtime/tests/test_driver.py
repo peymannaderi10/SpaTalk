@@ -23,14 +23,6 @@ def _world(fixed_clock, responses, sms_number=None, ledger=None):
     return Brain(llm, caps, fixed_clock), ref, ledger, sms, llm
 
 
-async def test_rules_gate_short_circuits_without_llm(fixed_clock):
-    from spatalk.brain.driver import LLMResponse
-    brain, ref, ledger, sms, llm = _world(fixed_clock, [LLMResponse(text="should not be used", tool_calls=[])])
-    r = await brain.turn(ref, [], "I have a rash after my laser treatment")
-    assert r.band == 3 and r.gate_reason == "clinical" and "911" not in r.reply and r.ended
-    assert llm.calls == [] and ledger.items[0].type == "escalation_clinical"
-
-
 async def test_an_emergency_is_gated_to_the_911_script_without_llm(fixed_clock):
     from spatalk.brain.driver import LLMResponse
     brain, ref, ledger, _, llm = _world(fixed_clock, [LLMResponse(text="should not be used", tool_calls=[])])
@@ -47,42 +39,12 @@ async def test_plain_answer_passes_through_guard(fixed_clock):
     assert r.band == 1 and r.reply == "The express treatment is $99." and not r.guard_blocked
 
 
-async def test_tool_call_reply_is_rendered_not_generated(fixed_clock):
-    from spatalk.brain.driver import LLMResponse, ToolCall
-    brain, ref, ledger, *_ = _world(fixed_clock, [LLMResponse(text=None, tool_calls=[
-        ToolCall("request_appointment_change", {"kind": "cancel", "contact": {"name": "Dana"}})])])
-    r = await brain.turn(ref, [], "Cancel my appointment please, it's Dana")
-    assert r.band == 2 and r.tool_calls == ["request_appointment_change"]
-    assert r.reply.startswith("I've sent that to the team as a request")
-    assert "cancel" not in r.reply.lower() and ledger.items[0].type == "cancel"
-
-
 async def test_guard_blocks_hallucinated_completion_and_files_item(fixed_clock):
     from spatalk.brain.driver import LLMResponse
     brain, ref, ledger, *_ = _world(fixed_clock, [LLMResponse(text="Done, I've booked you for Thursday at 2.", tool_calls=[])])
     r = await brain.turn(ref, [], "Book me Thursday at 2")
     assert r.guard_blocked and "booked" not in r.reply and "passed it to the team" in r.reply
     assert ledger.items[0].type == "question"
-
-
-async def test_volunteered_health_context_flags_item_and_proceeds(fixed_clock):
-    from spatalk.brain.driver import LLMResponse, ToolCall
-    brain, ref, ledger, *_ = _world(fixed_clock, [LLMResponse(text=None, tool_calls=[
-        ToolCall("capture_request", {"kind": "question", "service_id": "microchanneling", "contact": {"name": "Dana"}})])])
-    r = await brain.turn(ref, [], "I'm on blood thinners, is the microchanneling okay for me? I'm Dana")
-    assert r.band == 2 and r.health_context and ledger.items[0].health_context is True
-    assert "team" in r.reply.lower()
-
-
-async def test_booking_link_and_end(fixed_clock):
-    from spatalk.brain.driver import LLMResponse, ToolCall
-    brain, ref, ledger, sms, _ = _world(fixed_clock, [
-        LLMResponse(text=None, tool_calls=[ToolCall("send_booking_link", {"service_id": "facial"})]),
-        LLMResponse(text=None, tool_calls=[ToolCall("end_conversation", {})])], sms_number="+18885550100")
-    r = await brain.turn(ref, [], "Text me the link for a facial")
-    assert r.outcomes[0].kind == "link_sent" and sms.sent[0][1] == "+19055550101"
-    r2 = await brain.turn(ref, [], "That's all, thanks")
-    assert r2.ended and r2.reply.startswith("Thanks for calling")
 
 
 @pytest.mark.skipif(not os.environ.get("GOOGLE_API_KEY"), reason="live Gemini smoke test")
@@ -135,3 +97,50 @@ async def test_guard_block_with_a_dead_ledger_refuses_and_claims_nothing(fixed_c
     low = r.reply.lower()
     for claim in ("sent", "passed it", "confirm with you", "booked"):
         assert claim not in low, f"refusal claimed an action: {r.reply!r}"
+
+
+async def test_rules_gate_offers_the_clinical_team_without_llm(fixed_clock):
+    from spatalk.brain.driver import LLMResponse
+    brain, ref, ledger, sms, llm = _world(fixed_clock, [LLMResponse(text="should not be used", tool_calls=[])])
+    r = await brain.turn(ref, [], "I have a rash after my laser treatment")
+    assert r.band == 3 and r.gate_reason == "clinical" and "911" not in r.reply and not r.ended
+    assert r.reply == ref.tenant.scripts.clinical_offer
+    assert llm.calls == [] and ledger.items == [] and r.slots.flow == "clinical"
+
+
+async def test_tool_call_reply_is_rendered_not_generated(fixed_clock):
+    from spatalk.brain.driver import LLMResponse, ToolCall
+    from spatalk.brain.flow import Slots
+    brain, ref, ledger, *_ = _world(fixed_clock, [LLMResponse(text=None, tool_calls=[ToolCall("file_request", {})])])
+    slots = Slots(flow="cancel", first_name="Dana", phone="+19055550101", phone_confirmed=True)
+    r = await brain.turn(ref, [], "Yes, cancel it", slots)
+    assert r.band == 2 and r.tool_calls == ["file_request"]
+    assert r.reply.startswith("I've sent that to the team as a request")
+    assert "cancel" not in r.reply.lower() and ledger.items[0].type == "cancel"
+
+
+async def test_volunteered_health_context_flags_item_and_proceeds(fixed_clock):
+    from spatalk.brain.driver import LLMResponse, ToolCall
+    from spatalk.brain.flow import Slots
+    brain, ref, ledger, *_ = _world(fixed_clock, [LLMResponse(text=None, tool_calls=[ToolCall("file_request", {})])])
+    slots = Slots(flow="question", service_id="microchanneling", first_name="Dana", phone="+19055550101", phone_confirmed=True)
+    r = await brain.turn(ref, [], "I'm on blood thinners, is the microchanneling okay for me?", slots)
+    assert r.band == 2 and r.health_context and ledger.items[0].health_context is True
+    assert "team" in r.reply.lower()
+
+
+async def test_booking_link_and_end(fixed_clock):
+    from spatalk.brain.driver import LLMResponse, ToolCall
+    from spatalk.brain.flow import Slots
+    from spatalk.brain.requests import PreferredWindow
+    brain, ref, ledger, sms, _ = _world(fixed_clock, [
+        LLMResponse(text=None, tool_calls=[ToolCall("answer", {"value": "yes"})]),
+        LLMResponse(text=None, tool_calls=[ToolCall("end_conversation", {})])], sms_number="+18885550100")
+    # Every slot filled on a call with an SMS number: the route question is open.
+    slots = Slots(flow="new_booking", returning_client=True, practitioner="any", service_id="facial",
+                  first_name="Dana", phone="+19055550101", phone_confirmed=True,
+                  preferred_window=PreferredWindow(), team_note_asked=True)
+    r = await brain.turn(ref, [], "Text me the link", slots)
+    assert r.outcomes[0].kind == "link_sent" and sms.sent[0][1] == "+19055550101"
+    r2 = await brain.turn(ref, [], "That's all, thanks", r.slots)
+    assert r2.ended and r2.reply.startswith("Thanks for calling")

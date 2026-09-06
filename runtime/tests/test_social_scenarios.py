@@ -217,62 +217,6 @@ async def test_the_provider_puts_the_instagram_channel_rule_in_the_prompt(fixed_
     assert a.social_brevity(out, {"vars": vars_}) is True
 
 
-async def test_the_provider_shows_the_booking_link_in_the_dm_and_sends_no_sms(
-    fixed_clock, monkeypatch
-):
-    from spatalk.brain.driver import FakeLLM, LLMResponse, ToolCall
-
-    import scenarios.asserts as a
-    import scenarios.provider as p
-
-    monkeypatch.setattr(
-        p,
-        "_make_llm",
-        lambda: FakeLLM(
-            [
-                LLMResponse(
-                    text=None, tool_calls=[ToolCall("send_booking_link", {"service_id": "facial"})]
-                )
-            ]
-        ),
-    )
-    monkeypatch.setattr(p, "_clock", lambda: fixed_clock)
-    out = p.call_api(
-        "",
-        {},
-        {"vars": {"channel": "instagram", "caller": "", "user": "send me the link to book a facial"}},
-    )["output"]
-
-    assert a.link_inline(out, {}) is True
-    assert out["sms_sent"] == 0 and out["items"] == []
-
-
-async def test_a_clinical_dm_is_gated_and_files_an_urgent_item_without_a_phone_number(
-    fixed_clock, monkeypatch
-):
-    """The clinical scenario: the gate runs before the model, so no key is needed to prove it."""
-    from spatalk.brain.driver import FakeLLM
-
-    import scenarios.asserts as a
-    import scenarios.provider as p
-
-    llm = FakeLLM([])
-    monkeypatch.setattr(p, "_make_llm", lambda: llm)
-    monkeypatch.setattr(p, "_clock", lambda: fixed_clock)
-    vars_ = {
-        "channel": "instagram",
-        "caller": "",
-        "user": "I have a rash and some swelling after my laser session yesterday",
-        "expect_reason": "clinical",
-    }
-    out = p.call_api("", {}, {"vars": vars_})["output"]
-
-    assert llm.calls == [], "a clinical DM reached the model"
-    assert a.band3_gate(out, {"vars": vars_}) is True
-    assert out["items"][0]["type"] == "escalation_clinical"
-    assert "911" not in out["text"] and "clinical team" in out["text"]
-
-
 # --- the comment path, deterministic (the plan says this one is not a promptfoo case) ---
 
 
@@ -506,3 +450,57 @@ def test_meta_is_in_the_subprocessor_register():
     ).read_text(encoding="utf-8")
     register = spec.split("**Initial subprocessor register:**")[1].split("Adding any provider")[0]
     assert "Meta" in register, "Meta is not in the subprocessor register"
+
+
+async def test_the_provider_shows_the_booking_link_in_the_dm_and_sends_no_sms(
+    fixed_clock, monkeypatch
+):
+    """A booking on a social channel ends with the link in the conversation (slot engine)."""
+    from spatalk.brain.driver import FakeLLM, LLMResponse, ToolCall
+
+    import scenarios.asserts as a
+    import scenarios.provider as p
+
+    monkeypatch.setattr(
+        p, "_make_llm",
+        lambda: FakeLLM([LLMResponse(text=None, tool_calls=[ToolCall("answer", {"value": "no"})])]),
+    )
+    monkeypatch.setattr(p, "_clock", lambda: fixed_clock)
+    slots = {
+                "flow": "new_booking", "returning_client": True, "practitioner": "any",
+                "service_id": "facial", "first_name": "Dana", "phone": "+14165550199",
+                "phone_confirmed": True, "preferred_window": {"date": "any", "part_of_day": "any"},
+            }
+    out = p.call_api(
+        "", {},
+        {"vars": {"channel": "instagram", "caller": "", "user": "no, nothing else", "slots": slots}},
+    )["output"]
+
+    assert a.link_inline(out, {}) is True
+    assert out["sms_sent"] == 0 and out["items"] == []
+
+
+async def test_a_clinical_dm_is_gated_and_offers_the_clinical_team_before_anything_is_filed(
+    fixed_clock, monkeypatch
+):
+    """The clinical scenario: the gate runs before the model, so no key is needed to prove it.
+    Nothing is filed until the customer says yes (slot engine design, §4.2)."""
+    from spatalk.brain.driver import FakeLLM
+
+    import scenarios.provider as p
+
+    llm = FakeLLM([])
+    monkeypatch.setattr(p, "_make_llm", lambda: llm)
+    monkeypatch.setattr(p, "_clock", lambda: fixed_clock)
+    vars_ = {
+        "channel": "instagram",
+        "caller": "",
+        "user": "I have a rash and some swelling after my laser session yesterday",
+        "expect_reason": "clinical",
+    }
+    out = p.call_api("", {}, {"vars": vars_})["output"]
+
+    assert llm.calls == [], "a clinical DM reached the model"
+    assert out["band"] == 3 and out["gate_reason"] == "clinical"
+    assert out["items"] == [] and out["slots"]["flow"] == "clinical"
+    assert "911" not in out["text"] and "clinical team" in out["text"]

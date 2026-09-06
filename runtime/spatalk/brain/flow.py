@@ -178,7 +178,7 @@ def step_question(
     if step == Step.NAME:
         return ("ask_name_again" if slots.misses.get("name") else "ask_name"), {}
     if step == Step.PHONE:
-        same = channel == "voice" and not slots.misses.get("phone")
+        same = bool(slots.phone) and not slots.misses.get("phone")
         return ("ask_phone_same" if same else "ask_phone"), {}
     if step == Step.WINDOW:
         return "ask_window", {}
@@ -214,8 +214,8 @@ def step_tools(
     elif step == Step.PHONE:
         if slots.pending is not None and slots.pending.kind == "phone":
             tools.append(slot_tool("answer", cfg))
-        elif channel == "voice" and not slots.misses.get("phone"):
-            tools.append(slot_tool("answer", cfg))
+        elif slots.phone and not slots.misses.get("phone"):
+            tools.append(slot_tool("answer", cfg))   # "is the number you're calling from ok?"
         else:
             tools.append(slot_tool("give_phone", cfg))
     elif step == Step.COMPLETE:
@@ -261,7 +261,9 @@ def _open(kind: str, previous: Slots, channel: str, caller_phone: str | None) ->
         flow=kind,
         returning_client=previous.returning_client,
         first_name=previous.first_name,
-        phone=previous.phone or (caller_phone if on_sms else None),
+        # The caller id is the number to confirm ("is this the best one?"); on SMS the
+        # sender's number needs no confirming.
+        phone=previous.phone or caller_phone,
         phone_confirmed=previous.phone_confirmed or on_sms,
     )
 
@@ -278,7 +280,12 @@ def _finalize(applied: Applied, cfg: TenantConfig, channel: str) -> Applied:
     if s.flow is None or s.ended_flow or s.pending is not None:
         return applied
     if next_step(s, cfg, channel) == Step.COMPLETE:
-        return applied.model_copy(update={"slots": s.with_(ended_flow=True), "file": True})
+        done = s.with_(ended_flow=True)
+        if s.flow == "new_booking" and channel != "voice":
+            # Text channels show the booking link in the conversation itself (Task B4); a
+            # call without an SMS number files a callback instead.
+            return applied.model_copy(update={"slots": done, "send_link": True})
+        return applied.model_copy(update={"slots": done, "file": True})
     return applied
 
 
@@ -391,8 +398,8 @@ def _answer(
         say = (("ask_after_offers", {}),) if yes else ()
         return Applied(slots=slots.with_(offers_done=True), say=say)
     if step == Step.PHONE:
-        if yes:
-            return Applied(slots=slots.with_(phone=caller_phone, phone_confirmed=bool(caller_phone)))
+        if yes and slots.phone:
+            return Applied(slots=slots.with_(phone_confirmed=True))
         return Applied(slots=slots.miss("phone"))
     if step == Step.TEAM_NOTE:
         return Applied(slots=slots.with_(team_note_asked=True))

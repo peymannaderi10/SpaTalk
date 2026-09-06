@@ -25,7 +25,7 @@ def test_each_step_offers_exactly_its_slot_tool():
     from spatalk.brain.flow import Slots, Step, step_tools
 
     cfg = _cfg()
-    s = Slots(flow="new_booking")
+    s = Slots(flow="new_booking", phone="+19055550101")   # the caller id, still to confirm
     expect = {
         Step.RETURNING: "answer", Step.OFFERS: "answer", Step.PRACTITIONER: "choose_practitioner",
         Step.SERVICE: "choose_service", Step.NAME: "give_name", Step.PHONE: "answer",

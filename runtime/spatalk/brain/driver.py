@@ -4,7 +4,7 @@ The three structural-honesty layers are visible here, top to bottom:
 
 1. :func:`~spatalk.brain.rules.rules_gate` runs *before* the model. A band-3 trigger never
    reaches the LLM; the reply is fixed tenant wording and the turn ends.
-2. Tool calls go through :func:`dispatch_tool`, which asks the capability what actually
+2. Tool calls go through :func:`run_tool`, which moves the slot record and asks the capability what actually
    happened and renders the sentence from the tenant scripts. The model's own words are
    never spoken for an outcome.
 3. Free model text passes :func:`~spatalk.brain.guard.guard`. A blocked utterance is replaced
@@ -28,17 +28,24 @@ from spatalk.brain.guard import guard
 from spatalk.brain.outcomes import Captured, Completed, Outcome, Refused
 from spatalk.brain.prompt import build_system_prompt
 from spatalk.brain.renderer import render, render_script
+from spatalk.brain.flow import (
+    Slots,
+    apply,
+    draft_from,
+    next_step,
+    open_flow,
+    step_message,
+    step_question,
+    step_tools,
+)
 from spatalk.brain.requests import (
-    AppointmentChangeRequest,
     BookingLinkRequest,
-    CaptureRequest,
     ContactInfo,
     ConversationRef,
     EscalateRequest,
-    PreferredWindow,
 )
 from spatalk.brain.rules import health_context_mentioned, rules_gate
-from spatalk.brain.tools import build_tools, to_genai_declarations
+from spatalk.brain.tools import to_genai_declarations
 from spatalk.clock import Clock
 
 
@@ -66,9 +73,11 @@ class FakeLLM:
     def __init__(self, responses: list[LLMResponse]):
         self._responses = list(responses)
         self.calls: list[tuple[str, list[dict]]] = []
+        self.calls_with_tools: list[tuple[str, list[dict], list]] = []
 
     async def complete(self, system, history, tools) -> LLMResponse:
         self.calls.append((system, history))
+        self.calls_with_tools.append((system, history, list(tools)))
         if not self._responses:
             return LLMResponse(text="", tool_calls=[])
         return self._responses.pop(0)
@@ -418,85 +427,56 @@ class FailoverLLMClient:
         raise last  # type: ignore[misc]
 
 
-def _contact(d: dict | None) -> ContactInfo:
-    d = d or {}
-    return ContactInfo(
-        name=d.get("name") or None, phone=d.get("phone") or None, email=d.get("email") or None
-    )
+_SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
 
 
-def _lead(args: dict) -> dict:
-    """The three qualification answers as the model returned them (lead context, Task L1).
+def first_sentence(text: str) -> str:
+    """One acknowledgement at most (slot engine design, §3 invariant 4)."""
+    parts = _SENTENCE_END.split(text.strip(), maxsplit=1)
+    return parts[0] if parts else ""
 
-    Nothing is coerced and nothing is guessed: an empty string is "did not say", and a name
-    or a concern the tenant does not have is dropped later, by the ledger.
+
+async def run_tool(
+    caps: Capabilities, ref: ConversationRef, slots: Slots, name: str, args: dict, now: datetime
+) -> tuple[Slots, list[str], Outcome | None, bool]:
+    """One tool call through the engine. Returns (slots, spoken lines, outcome, ended).
+
+    Spoken lines are tenant scripts, never model text. A tool the step did not offer is
+    ignored: nothing is said and nothing is written.
     """
-    returning = args.get("returning_client")
-    return {
-        "returning_client": returning if isinstance(returning, bool) else None,
-        "practitioner": args.get("practitioner") or None,
-        "concern": args.get("concern") or None,
-    }
-
-
-def _window(d: dict | None) -> PreferredWindow:
-    d = d or {}
-    return PreferredWindow(
-        date=d.get("date") or "any", part_of_day=d.get("part_of_day") or "any"
-    )
-
-
-async def dispatch_tool(
-    caps: Capabilities, ref: ConversationRef, name: str, arguments: dict, now: datetime
-) -> tuple[Outcome | None, str, bool]:
-    """Execute one tool. Returns (outcome, spoken text, ended).
-
-    The spoken text always comes from a tenant script via the renderer, never from the model.
-    """
-    cfg, args = ref.tenant, arguments
+    cfg = ref.tenant
+    applied = apply(slots, name, args or {}, cfg, ref.channel, ref.caller_phone)
+    if applied.ignored:
+        logger.warning("tool {} ignored at this step with args {}", name, args)
+        return slots, [], None, False
+    spoken = [render_script(key, cfg, now, urgent=False, **fills) for key, fills in applied.say]
+    outcome: Outcome | None = None
+    ended = applied.end
     try:
-        if name == "send_booking_link":
-            out = await caps.send_booking_link(
-                ref,
-                BookingLinkRequest(
-                    service_id=args.get("service_id", ""),
-                    contact=_contact(args.get("contact")),
-                    **_lead(args),
-                ),
-            )
-        elif name == "capture_request":
-            out = await caps.capture(
-                ref,
-                CaptureRequest(
-                    kind=args.get("kind", "question"),
-                    service_id=args.get("service_id"),
-                    contact=_contact(args.get("contact")),
-                    preferred_window=_window(args.get("preferred_window")),
-                    **_lead(args),
-                ),
-            )
-        elif name == "request_appointment_change":
-            out = await caps.request_appointment_change(
-                ref,
-                AppointmentChangeRequest(
-                    kind=args.get("kind", "reschedule"),
-                    contact=_contact(args.get("contact")),
-                    preferred_window=_window(args.get("preferred_window")),
-                ),
-            )
-        elif name == "escalate":
-            out = await caps.escalate(ref, EscalateRequest(reason=args.get("reason", "unsure")))
+        if name == "escalate":
+            outcome = await caps.escalate(ref, EscalateRequest(reason=args.get("reason", "unsure")))
+            spoken.append(render(outcome, cfg, now, channel=ref.channel))
+            ended = True
         elif name == "end_conversation":
-            return None, render_script("goodbye", cfg, now, urgent=False), True
-        else:
-            out = Refused(reason="out_of_scope")
+            spoken.append(render_script("goodbye", cfg, now, urgent=False))
+        elif applied.file:
+            draft = draft_from(applied.slots, cfg, health_context=ref.health_context)
+            outcome = await caps.capture(ref, draft)
+            spoken.append(render(outcome, cfg, now, channel=ref.channel))
+        elif applied.send_link:
+            contact = ContactInfo(name=applied.slots.first_name, phone=applied.slots.phone)
+            outcome = await caps.send_booking_link(
+                ref, BookingLinkRequest(service_id=applied.slots.service_id or "", contact=contact)
+            )
+            spoken.append(render(outcome, cfg, now, channel=ref.channel))
     except (ValueError, TypeError) as e:  # bad enum values or shapes from the model
         logger.warning("tool {} rejected args {}: {}", name, args, e)
-        out = Refused(reason="out_of_scope")
+        return slots, [], None, False
     except Exception as e:  # noqa: BLE001  ledger, SMS or database failure: nothing was saved
         logger.exception("tool {} failed: {}", name, e)
-        out = Refused(reason="unavailable")
-    return out, render(out, cfg, now, channel=ref.channel), False
+        outcome = Refused(reason="unavailable")
+        spoken.append(render(outcome, cfg, now, channel=ref.channel))
+    return applied.slots, spoken, outcome, ended
 
 
 @dataclass
@@ -509,6 +489,10 @@ class TurnResult:
     guard_blocked: bool = False
     ended: bool = False
     health_context: bool = False
+    # The slot engine's record after this turn, for the driver to persist (slot engine, §6.3).
+    slots: Slots = field(default_factory=Slots)
+    # The fixed lines the runtime spoke this turn, for the tests that read them.
+    said: list[str] = field(default_factory=list)
 
 
 class Brain:
@@ -517,12 +501,15 @@ class Brain:
     def __init__(self, llm: LLMClient, caps: Capabilities, clock: Clock):
         self._llm, self._caps, self._clock = llm, caps, clock
 
-    async def turn(self, ref: ConversationRef, history: list[dict], user_text: str) -> TurnResult:
+    async def turn(
+        self, ref: ConversationRef, history: list[dict], user_text: str, slots: Slots | None = None
+    ) -> TurnResult:
         cfg, now = ref.tenant, self._clock.now()
+        slots = slots or Slots()
         if health_context_mentioned(user_text, cfg) and not ref.health_context:
             ref = ref.model_copy(update={"health_context": True})
         gate = rules_gate(user_text, cfg)
-        if gate:
+        if gate and gate.reason != "clinical":
             out = await self._caps.escalate(ref, EscalateRequest(reason=gate.reason))
             return TurnResult(
                 reply=render(out, cfg, now, channel=ref.channel),
@@ -532,45 +519,68 @@ class Brain:
                 outcomes=[out],
                 ended=True,
                 health_context=ref.health_context,
+                slots=slots,
             )
+        if gate:
+            # Clinical: the offer first, filed only on yes (slot engine design, §4.2).
+            opened = open_flow("clinical", slots, ref.channel, ref.caller_phone)
+            return TurnResult(
+                reply=render_script("clinical_offer", cfg, now, urgent=False),
+                band=3,
+                gate_reason="clinical",
+                health_context=ref.health_context,
+                slots=opened,
+            )
+        step = next_step(slots, cfg, ref.channel)
+        # The step brief rides at the end of the system prompt: the static prefix stays
+        # cacheable, and both vendors keep it as an instruction rather than a model turn.
+        system = build_system_prompt(cfg, ref.channel, now) + "\n\n" + step_message(step, slots, cfg, ref.channel)
         resp = await self._llm.complete(
-            build_system_prompt(cfg, ref.channel, now),
+            system,
             history + [{"role": "user", "content": user_text}],
-            build_tools(cfg),
+            step_tools(step, slots, cfg, ref.channel),
         )
-        parts: list[str] = []
+        said: list[str] = []
         outcomes: list[Outcome] = []
         names: list[str] = []
         ended, band = False, 1
         for tc in resp.tool_calls:
             names.append(tc.name)
-            out, spoken, did_end = await dispatch_tool(self._caps, ref, tc.name, tc.arguments, now)
+            slots, spoken, out, did_end = await run_tool(
+                self._caps, ref, slots, tc.name, tc.arguments, now
+            )
+            said.extend(spoken)
             if out is not None:
                 outcomes.append(out)
                 if isinstance(out, Captured):
                     band = 3 if out.item_type.startswith("escalation_") else max(band, 2)
-            parts.append(spoken)
             ended = ended or did_end
-        blocked = False
+        ack, blocked = "", False
         if resp.text:
             has_completed = any(isinstance(o, Completed) for o in outcomes)
             g = guard(resp.text, has_completed, cfg, replacement="")
             if g.blocked:
                 blocked = True
                 try:
-                    out = await self._caps.capture(ref, CaptureRequest(kind="question"))
-                    spoken = render_script("cannot_complete", cfg, now, urgent=False)
+                    out = await self._caps.capture(ref, draft_from(Slots(flow="question"), cfg))
+                    said.insert(0, render_script("cannot_complete", cfg, now, urgent=False))
                 except Exception as e:  # noqa: BLE001  ledger down: nothing was filed, promise nothing
                     logger.exception("guard could not file the blocked claim: {}", e)
                     out = Refused(reason="unavailable")
-                    spoken = render(out, cfg, now, channel=ref.channel)
+                    said.insert(0, render(out, cfg, now, channel=ref.channel))
                 outcomes.append(out)
                 band = max(band, 2)
-                parts.insert(0, spoken)
                 logger.warning("guard blocked model text ({}): {!r}", g.matched, resp.text)
             else:
-                parts.insert(0, g.text)
-        reply = " ".join(p for p in parts if p).strip()
+                ack = first_sentence(g.text) if names else g.text
+        question = ""
+        if not ended and slots.flow and not slots.ended_flow:
+            q = step_question(next_step(slots, cfg, ref.channel), slots, cfg, ref.channel)
+            if q is not None:
+                question = render_script(q[0], cfg, now, urgent=False, **q[1])
+        if slots.ended_flow:
+            slots = slots.with_(flow=None, ended_flow=False)
+        reply = " ".join(p for p in [ack, *said, question] if p).strip()
         return TurnResult(
             reply=reply,
             band=band,
@@ -580,4 +590,6 @@ class Brain:
             guard_blocked=blocked,
             ended=ended,
             health_context=ref.health_context,
+            slots=slots,
+            said=said,
         )

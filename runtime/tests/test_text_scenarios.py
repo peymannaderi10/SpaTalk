@@ -174,31 +174,6 @@ def test_the_suite_names_the_python_provider_and_passes_the_channel_through():
 # --- the provider carries the channel into the brain --------------------------
 
 
-async def test_the_provider_shows_the_booking_link_inline_on_chat_and_sends_no_sms(
-    fixed_clock, monkeypatch
-):
-    """The chat scenario only means something if `channel: chat` reaches the capability."""
-    from spatalk.brain.driver import FakeLLM, LLMResponse, ToolCall
-
-    import scenarios.provider as p
-
-    monkeypatch.setattr(
-        p,
-        "_make_llm",
-        lambda: FakeLLM(
-            [LLMResponse(text=None, tool_calls=[ToolCall("send_booking_link", {"service_id": "facial"})])]
-        ),
-    )
-    monkeypatch.setattr(p, "_clock", lambda: fixed_clock)
-    out = p.call_api(
-        "", {}, {"vars": {"channel": "chat", "caller": "", "user": "send me the facial link"}}
-    )["output"]
-    import scenarios.asserts as a
-
-    assert a.chat_link_inline(out, {}) is True
-    assert out["sms_sent"] == 0 and out["items"] == []
-
-
 async def test_the_provider_asks_the_brain_for_an_sms_length_reply(fixed_clock, monkeypatch):
     from spatalk.brain.driver import FakeLLM, LLMResponse
 
@@ -297,3 +272,30 @@ async def test_a_normal_message_does_reach_the_brain(sms_world):
     r = await _post(c, _event("How much is the express treatment?", msg_id="m-price"))
     assert r.status_code == 200
     assert len(llm.calls) == 1
+
+
+async def test_the_provider_shows_the_booking_link_inline_on_chat_and_sends_no_sms(
+    fixed_clock, monkeypatch
+):
+    """The chat scenario only means something if `channel: chat` reaches the capability."""
+    from spatalk.brain.driver import FakeLLM, LLMResponse, ToolCall
+
+    import scenarios.asserts as a
+    import scenarios.provider as p
+
+    monkeypatch.setattr(
+        p, "_make_llm",
+        lambda: FakeLLM([LLMResponse(text=None, tool_calls=[ToolCall("answer", {"value": "no"})])]),
+    )
+    monkeypatch.setattr(p, "_clock", lambda: fixed_clock)
+    slots = {
+                "flow": "new_booking", "returning_client": True, "practitioner": "any",
+                "service_id": "facial", "first_name": "Dana", "phone": "+14165550199",
+                "phone_confirmed": True, "preferred_window": {"date": "any", "part_of_day": "any"},
+            }
+    out = p.call_api(
+        "", {}, {"vars": {"channel": "chat", "caller": "", "user": "no thanks", "slots": slots}}
+    )["output"]
+
+    assert a.chat_link_inline(out, {}) is True
+    assert out["sms_sent"] == 0 and out["items"] == []

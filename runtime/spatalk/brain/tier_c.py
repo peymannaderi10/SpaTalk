@@ -4,9 +4,7 @@ from __future__ import annotations
 from spatalk.brain.outcomes import Captured, LinkSent, Refused
 from spatalk.brain.ports import ItemDraft, LedgerPort, SmsPort
 from spatalk.brain.requests import (
-    AppointmentChangeRequest,
     BookingLinkRequest,
-    CaptureRequest,
     ContactInfo,
     ConversationRef,
     EscalateRequest,
@@ -19,12 +17,8 @@ from spatalk.clock import Clock
 INLINE_LINK_CHANNELS = ("chat", "instagram", "messenger")
 
 
-# The request types that are about a named person coming in: filed only with a first name.
-NAME_REQUIRED = frozenset({"new_booking", "callback"})
-
-
-def _named(contact: ContactInfo) -> bool:
-    return bool((contact.name or "").strip())
+# The item types that are about a named person coming in: filed only with a first name.
+NAME_REQUIRED_TYPES = frozenset({"new_booking", "callback", "reschedule", "cancel"})
 
 
 def _with_caller(ref: ConversationRef, contact: ContactInfo) -> ContactInfo:
@@ -47,39 +41,13 @@ class TierCCapabilities:
             item_id=rec.id, urgency=rec.urgency, confirm_by=rec.due_at, item_type=rec.type
         )
 
-    async def capture(self, ref: ConversationRef, req: CaptureRequest) -> Captured | Refused:
-        # A booking or callback without a first name is a request the team cannot act on, so
-        # it is refused before anything is written, and the fixed script asks for the name.
-        if req.kind in NAME_REQUIRED and not _named(req.contact):
+    async def capture(self, ref: ConversationRef, draft: ItemDraft) -> Captured | Refused:
+        # The last line of defence for CLAUDE.md 2 and the slot engine's invariant: a booking,
+        # callback or change with no first name is refused before anything is written.
+        if draft.type in NAME_REQUIRED_TYPES and not (draft.contact.name or "").strip():
             return Refused(reason="no_name")
-        return await self._capture(
-            ref,
-            ItemDraft(
-                type=req.kind,
-                urgency="normal",
-                service_id=req.service_id,
-                contact=_with_caller(ref, req.contact),
-                preferred_window=req.preferred_window,
-                returning_client=req.returning_client,
-                practitioner=req.practitioner,
-                concern=req.concern,
-            ),
-        )
-
-    async def request_appointment_change(
-        self, ref: ConversationRef, req: AppointmentChangeRequest
-    ) -> Captured | Refused:
-        if not _named(req.contact):
-            return Refused(reason="no_name")
-        return await self._capture(
-            ref,
-            ItemDraft(
-                type=req.kind,
-                urgency="normal",
-                contact=_with_caller(ref, req.contact),
-                preferred_window=req.preferred_window,
-            ),
-        )
+        contact = _with_caller(ref, draft.contact)
+        return await self._capture(ref, draft.model_copy(update={"contact": contact}))
 
     async def send_booking_link(
         self, ref: ConversationRef, req: BookingLinkRequest
@@ -107,9 +75,6 @@ class TierCCapabilities:
                     urgency="normal",
                     service_id=service.id,
                     contact=contact,
-                    returning_client=req.returning_client,
-                    practitioner=req.practitioner,
-                    concern=req.concern,
                 ),
             )
         return Refused(reason="no_contact")

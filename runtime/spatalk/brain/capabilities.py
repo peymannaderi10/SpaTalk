@@ -3,11 +3,9 @@ from __future__ import annotations
 from typing import Protocol
 
 from spatalk.brain.outcomes import Captured, LinkSent, Outcome, Refused, Transferred
-from spatalk.brain.ports import LedgerPort, SmsPort
+from spatalk.brain.ports import ItemDraft, LedgerPort, SmsPort
 from spatalk.brain.requests import (
-    AppointmentChangeRequest,
     BookingLinkRequest,
-    CaptureRequest,
     ConversationRef,
     EscalateRequest,
     TransferRequest,
@@ -19,11 +17,9 @@ from spatalk.tenants.schema import TenantConfig
 class Capabilities(Protocol):
     """What the assistant may attempt. The tier decides what each one can actually achieve."""
 
-    async def capture(self, ref: ConversationRef, req: CaptureRequest) -> Outcome: ...
-
-    async def request_appointment_change(
-        self, ref: ConversationRef, req: AppointmentChangeRequest
-    ) -> Outcome: ...
+    # The draft is built by `spatalk.brain.flow.draft_from` from the slot record, never
+    # from a tool argument (slot engine design, §3.2).
+    async def capture(self, ref: ConversationRef, draft: ItemDraft) -> Outcome: ...
 
     async def send_booking_link(
         self, ref: ConversationRef, req: BookingLinkRequest
