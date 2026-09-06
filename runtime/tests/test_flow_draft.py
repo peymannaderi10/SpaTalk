@@ -43,6 +43,6 @@ def test_the_offers_brief_tells_the_model_to_recite_from_the_facts_and_the_qa_br
     from spatalk.brain.flow import Slots, Step, step_message
 
     offers = step_message(Step.OFFERS, Slots(flow="new_booking", returning_client=False), _cfg(), "voice")
-    assert "listed in the facts" in offers and "call answer with yes" in offers
+    assert "the system reads the offers itself" in offers
     qa = step_message(Step.QA, Slots(), _cfg(), "voice")
     assert "never say that you will start, file or pass on a request" in qa

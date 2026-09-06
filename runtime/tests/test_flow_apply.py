@@ -181,7 +181,7 @@ def test_the_clinical_offer_is_answered_yes_or_no_before_the_name():
     s = Slots(flow="clinical")
     assert next_step(s, _cfg(), "voice") == Step.NAME
     yes = _apply(s, "answer", {"value": "yes"})
-    assert yes.slots == s and yes.say == ()
+    assert yes.slots.offer_accepted and yes.say == ()
     no = _apply(s, "answer", {"value": "no"})
     assert no.slots.ended_flow and no.say == (("clinical_declined", {}),) and not no.file
 
@@ -233,3 +233,49 @@ def test_a_training_enquiry_is_a_request_too():
     done = a.slots.with_(first_name="Dana", phone="+19055550101", phone_confirmed=True)
     assert draft_from(done, _cfg()).type == "training_enquiry"
 
+
+def test_the_clinical_offer_takes_only_yes_or_no_until_it_is_accepted():
+    from spatalk.brain.flow import Slots, Step, step_tools
+
+    s = Slots(flow="clinical", phone="+19055550101")
+    assert [t.name for t in step_tools(Step.NAME, s, _cfg(), "voice")][:1] == ["answer"]
+    assert "give_name" not in [t.name for t in step_tools(Step.NAME, s, _cfg(), "voice")]
+    ignored = _apply(s, "give_name", {"first_name": "yes please, that would be great"})
+    assert ignored.ignored and ignored.slots.first_name is None
+    yes = _apply(s, "answer", {"value": "yes"})
+    assert yes.slots.offer_accepted
+    assert "give_name" in [t.name for t in step_tools(Step.NAME, yes.slots, _cfg(), "voice")]
+
+
+def test_words_that_are_not_a_name_are_not_stored_as_one():
+    from spatalk.brain.flow import Slots
+
+    s = Slots(flow="callback", returning_client=True, practitioner="any", service_id="facial")
+    for said in ("yes please", "actually, make it the hydrabrasion instead", "no", "um", "12"):
+        a = _apply(s, "give_name", {"first_name": said})
+        assert a.slots.first_name is None and a.slots.misses.get("name") == 1, said
+    for said, want in (("it's Dana", "Dana"), ("My name is Dana Whitfield", "Dana"), ("dana", "Dana")):
+        assert _apply(s, "give_name", {"first_name": said}).slots.first_name == want, said
+
+
+def test_a_goodbye_at_the_last_question_files_the_request_first():
+    from spatalk.brain.flow import Slots
+    from spatalk.brain.requests import PreferredWindow
+
+    s = Slots(flow="callback", returning_client=True, practitioner="any", service_id="facial",
+              first_name="Dana", phone="+19055550101", phone_confirmed=True, preferred_window=PreferredWindow())
+    a = _apply(s, "end_conversation", {})
+    assert a.file and a.end and a.slots.team_note_asked
+    early = _apply(Slots(flow="callback", returning_client=True), "end_conversation", {})
+    assert early.end and not early.file
+
+
+def test_the_runtime_recites_the_offers_from_the_knowledge_file():
+    from spatalk.brain.flow import Slots, offers_text
+
+    text = offers_text(_cfg())
+    assert text.startswith("a $50 credit") and "free virtual consultation" in text and " and " in text
+    a = _apply(Slots(flow="new_booking", returning_client=False), "answer", {"value": "yes"})
+    assert a.say == (("offers_intro", {"offers": text}),) and a.slots.offers_done
+    no = _apply(Slots(flow="new_booking", returning_client=False), "answer", {"value": "no"})
+    assert no.say == () and no.slots.offers_done

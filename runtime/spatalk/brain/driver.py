@@ -458,8 +458,6 @@ async def run_tool(
             outcome = await caps.escalate(ref, EscalateRequest(reason=args.get("reason", "unsure")))
             spoken.append(render(outcome, cfg, now, channel=ref.channel))
             ended = True
-        elif name == "end_conversation":
-            spoken.append(render_script("goodbye", cfg, now, urgent=False))
         elif applied.file:
             draft = draft_from(applied.slots, cfg, health_context=ref.health_context)
             outcome = await caps.capture(ref, draft)
@@ -470,6 +468,9 @@ async def run_tool(
                 ref, BookingLinkRequest(service_id=applied.slots.service_id or "", contact=contact)
             )
             spoken.append(render(outcome, cfg, now, channel=ref.channel))
+        if name == "end_conversation":
+            # A goodbye that also filed the request says the outcome first, then the goodbye.
+            spoken.append(render_script("goodbye", cfg, now, urgent=False))
     except (ValueError, TypeError) as e:  # bad enum values or shapes from the model
         logger.warning("tool {} rejected args {}: {}", name, args, e)
         return slots, [], None, False, False

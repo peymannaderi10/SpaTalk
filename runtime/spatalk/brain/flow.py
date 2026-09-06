@@ -6,6 +6,7 @@ database or a phone: the drivers do, with what these functions return.
 """
 from __future__ import annotations
 
+import re
 from enum import Enum
 from typing import Literal
 
@@ -69,6 +70,8 @@ class Slots(BaseModel, frozen=True):
     phone_confirmed: bool = False
     preferred_window: PreferredWindow | None = None
     team_note_asked: bool = False
+    # The clinical flow opens with a yes/no offer; only after yes is the name asked.
+    offer_accepted: bool = False
     pending: Pending | None = None
     misses: dict[str, int] = Field(default_factory=dict)
     ended_flow: bool = False
@@ -225,12 +228,12 @@ def step_tools(
             tools.append(slot_tool("give_phone", cfg))
     elif step == Step.COMPLETE:
         tools.append(slot_tool("file_request", cfg))
+    elif step == Step.NAME and slots.flow == "clinical" and not slots.offer_accepted:
+        tools.append(slot_tool("answer", cfg))  # the clinical offer is answered yes/no first
     else:
         tools.append(slot_tool(STEP_TOOL[step], cfg))
         if slots.pending is not None and STEP_TOOL[step] != "answer":
             tools.append(slot_tool("answer", cfg))
-        if step == Step.NAME and slots.flow == "clinical" and not slots.misses.get("name"):
-            tools.append(slot_tool("answer", cfg))  # the clinical offer is answered yes/no first
         if step == Step.ROUTE:
             tools.append(slot_tool("file_request", cfg))
             if cfg.sms_from_number and slots.phone and slots.phone_confirmed:
@@ -283,7 +286,7 @@ def _finalize(applied: Applied, cfg: TenantConfig, channel: str) -> Applied:
     """The record files itself the moment the last required slot lands (the route step of a
     booking on a call with an SMS number is the one question asked before it)."""
     s = applied.slots
-    if applied.ignored or applied.file or applied.send_link or applied.end:
+    if applied.ignored or applied.file or applied.send_link:
         return applied
     if s.flow is None or s.ended_flow or s.pending is not None:
         return applied
@@ -308,8 +311,14 @@ def _apply(
     slots: Slots, name: str, args: dict, cfg: TenantConfig, channel: str, caller_phone: str | None
 ) -> Applied:
     step = next_step(slots, cfg, channel)
-    if name in ("escalate", "end_conversation", "transfer_to_human"):
-        return Applied(slots=slots, end=(name == "end_conversation"))
+    if name == "end_conversation":
+        # A caller who says "no, that's all" at the last optional question is done with the
+        # request, not walking away from it: the record files itself, then the goodbye.
+        if slots.flow and not slots.ended_flow and slots.pending is None and step == Step.TEAM_NOTE:
+            return Applied(slots=slots.with_(team_note_asked=True), end=True)
+        return Applied(slots=slots, end=True)
+    if name in ("escalate", "transfer_to_human"):
+        return Applied(slots=slots)
     if not _tool_allowed(name, step, slots, cfg, channel):
         return Applied(slots=slots, ignored=True)
     args = args or {}
@@ -395,17 +404,22 @@ def _answer(
             return _after_slot(slots.with_(pending=None, service_id=consult.id), cfg)
         if p.kind == "route":
             return _route(slots.with_(pending=None), yes, cfg)
-    if slots.flow == "clinical" and slots.first_name is None and step == Step.NAME:
+    if slots.flow == "clinical" and not slots.offer_accepted and step == Step.NAME:
         # The clinical offer: yes goes on to the name, no closes with nothing filed.
         if yes:
-            return Applied(slots=slots)
+            return Applied(slots=slots.with_(offer_accepted=True))
         return Applied(slots=slots.with_(ended_flow=True), say=(("clinical_declined", {}),))
     if step == Step.RETURNING:
         return Applied(slots=slots.with_(returning_client=yes))
     if step == Step.OFFERS:
-        # After the offers the treatment question is "What did you have in mind?" (the
-        # SERVICE step asks it that way for a new client); the model's recital comes whole.
-        return Applied(slots=slots.with_(offers_done=True), model_speaks=yes)
+        # The offers are the tenant's own words from the knowledge file, spoken by the runtime
+        # (neither model recited them reliably); the SERVICE step then asks "What did you
+        # have in mind?" for a new client.
+        done = slots.with_(offers_done=True)
+        offers = offers_text(cfg)
+        if yes and offers:
+            return Applied(slots=done, say=(("offers_intro", {"offers": offers}),))
+        return Applied(slots=done)
     if step == Step.PHONE:
         if yes and slots.phone:
             return Applied(slots=slots.with_(phone_confirmed=True))
@@ -469,13 +483,12 @@ def _service(slots: Slots, said: str, cfg: TenantConfig) -> Applied:
 
 
 def _name(slots: Slots, first_name: str, cfg: TenantConfig) -> Applied:
-    name = " ".join((first_name or "").split())[:80]
-    if not name or not any(ch.isalpha() for ch in name):
+    name = _clean_name((first_name or "")[:80])
+    if name is None:
         missed = slots.miss("name")
         if missed.misses["name"] >= 2:
             return Applied(slots=missed.with_(ended_flow=True), say=(("no_name", {}),))
         return Applied(slots=missed)
-    name = name.split()[0].capitalize()
     staff = slots.practitioner and slots.practitioner != "any"
     if staff and sounds_like(name, first_name_of(slots.practitioner or "")):
         pending = Pending(kind="name_staff", slot="name", value=name)
@@ -496,6 +509,53 @@ def _phone_miss(slots: Slots, caller_phone: str | None, channel: str) -> Applied
         fallback = missed.with_(phone=caller_phone, phone_confirmed=True)
         return Applied(slots=fallback, say=(("phone_fallback", {}),))
     return Applied(slots=missed)
+
+
+_OFFERS_HEADING = re.compile(r"^##\s+new-client offers\s*$", re.I | re.M)
+
+
+def offers_text(cfg: TenantConfig) -> str:
+    """The new-client offers as one spoken sentence: the first sentence of each bullet under
+    the knowledge file's "New-client offers" heading, in the order the file lists them."""
+    m = _OFFERS_HEADING.search(cfg.knowledge or "")
+    if not m:
+        return ""
+    section = cfg.knowledge[m.end():]
+    nxt = re.search(r"^##\s", section, re.M)
+    section = section[: nxt.start()] if nxt else section
+    items = []
+    for line in section.splitlines():
+        line = line.strip()
+        if not line.startswith("- "):
+            continue
+        first = re.split(r"(?<=[.!?])\s+", line[2:].strip(), maxsplit=1)[0].rstrip(".")
+        if first:
+            items.append(first[0].lower() + first[1:])
+    if len(items) > 1:
+        return ", ".join(items[:-1]) + " and " + items[-1]
+    return items[0] if items else ""
+
+
+def _clean_name(text: str) -> str | None:
+    """A first name from what the model passed, or None when it is not one: 'yes please',
+    'actually make it the hydrabrasion' and the like are answers to other questions."""
+    words = re.sub(r"[^A-Za-z' -]+", " ", text or "").split()
+    lead = ("it's", "its", "this", "is", "my", "name", "i'm", "im", "call", "me", "the", "name's")
+    while words and words[0].lower() in lead:
+        words.pop(0)
+    if not words or len(words) > 3:
+        return None
+    first = words[0]
+    if first.lower() in NOT_A_NAME or len(first) < 2:
+        return None
+    return first.capitalize()
+
+
+NOT_A_NAME = frozenset({
+    "yes", "yeah", "yep", "yup", "no", "nope", "nah", "sure", "ok", "okay", "please", "actually",
+    "um", "uh", "hi", "hello", "hey", "thanks", "thank", "what", "why", "how", "when", "can",
+    "make", "change", "book", "cancel", "reschedule", "sorry", "wait", "hold", "just",
+})
 
 
 def _join(names: list[str]) -> str:
@@ -566,9 +626,14 @@ def step_message(step: Step, slots: Slots, cfg: TenantConfig, channel: str) -> s
     if step == Step.OFFERS and slots.pending is None:
         return (
             f"{STEP_MARKER} {known_text}The system has just asked whether they would like to hear "
-            "the new-client offers. If they say yes, say the new-client offers listed in the facts, "
-            "in the order the facts list them, in one breath, and call answer with yes. If they "
-            "say no, call answer with no and say nothing else. Never invent an offer."
+            "the new-client offers. Call answer with yes or no and say nothing else: the system "
+            "reads the offers itself."
+        )
+    if step == Step.TEAM_NOTE:
+        return (
+            f"{STEP_MARKER} {known_text}The system has just asked whether there is anything for the "
+            "team to know. 'No', 'nothing' or 'that's all' is the answer to that question: call "
+            "answer with no. Do not end the conversation; the system files the request next."
         )
     if slots.pending is not None and slots.pending.kind == "offers":
         return (
@@ -585,5 +650,6 @@ def step_message(step: Step, slots: Slots, cfg: TenantConfig, channel: str) -> s
     tool = next((n for n in order if n in offered), "answer")
     return (
         f"{STEP_MARKER} {known_text}The system has just asked the caller a question. Put their "
-        f"answer in {tool}. Do not ask a question yourself; one short acknowledgement at most."
+        f"answer in {tool}. If instead they change an earlier answer, call change_answer with "
+        "that slot. Do not ask a question yourself; one short acknowledgement at most."
     )

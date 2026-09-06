@@ -129,6 +129,7 @@ ask_team_note: "Is there anything you'd like the team to know before they call?"
 ask_route: "I can text you the booking link now, or have the team call you to book — which do you prefer?"
 clinical_offer: "That's one for our clinical team rather than me — would you like me to have them reach out to you?"
 clinical_declined: "No problem. Is there anything else I can help with?"
+offers_intro: "Here's what we have for new clients: {offers}."
 followup: "Just checking in from {name}: still want a hand with that? Reply here anytime, or book online: {booking_url}"      # sent at most once
 missed_call_text: "Hi, this is {name}'s assistant. You just called us. Reply here and I can help, or book online: {booking_url}"
 offline_reply: "Thanks for texting {name}. We'll reply shortly. To book now: {booking_url}"                                   # sent by the edge worker when the platform is down

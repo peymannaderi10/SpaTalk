@@ -137,13 +137,28 @@ async def test_an_emergency_still_files_at_once(fixed_clock):
     r = await brain.turn(ref, [], "I can't breathe", Slots())
     assert "911" in r.reply and ledger.items[0].type == "escalation_emergency" and r.ended
 
-async def test_the_offers_are_recited_whole_when_the_caller_says_yes(fixed_clock):
-    """The model's words are the content of that turn, not an acknowledgement to trim."""
+async def test_the_offers_are_recited_by_the_runtime_when_the_caller_says_yes(fixed_clock):
+    """The offers are the tenant's own words from the knowledge file, not the model's."""
     from spatalk.brain.driver import LLMResponse, ToolCall
-    from spatalk.brain.flow import Slots
+    from spatalk.brain.flow import Slots, offers_text
 
-    offers = "We have a $50 credit toward a first advanced facial. There is a free virtual consultation. And a free underarm laser trial."
-    resp = LLMResponse(text=offers, tool_calls=[ToolCall("answer", {"value": "yes"})])
+    resp = LLMResponse(text="Lovely.", tool_calls=[ToolCall("answer", {"value": "yes"})])
     brain, ref, ledger, llm, cfg = _world(fixed_clock, [resp])
     r = await brain.turn(ref, [], "yes please", Slots(flow="new_booking", returning_client=False))
-    assert r.reply == offers + " " + cfg.scripts.ask_after_offers
+    intro = cfg.scripts.offers_intro.format(offers=offers_text(cfg))
+    assert r.reply == "Lovely. " + intro + " " + cfg.scripts.ask_after_offers
+    assert "$50" in r.reply
+
+
+async def test_a_goodbye_at_the_last_question_speaks_the_outcome_then_the_goodbye(fixed_clock):
+    from spatalk.brain.driver import LLMResponse, ToolCall
+    from spatalk.brain.flow import Slots
+    from spatalk.brain.requests import PreferredWindow
+
+    brain, ref, ledger, llm, cfg = _world(fixed_clock, [LLMResponse(text=None, tool_calls=[ToolCall("end_conversation", {})])])
+    s = Slots(flow="callback", returning_client=True, practitioner="any", service_id="facial",
+              first_name="Dana", phone="+19055550101", phone_confirmed=True, preferred_window=PreferredWindow())
+    r = await brain.turn(ref, [], "no, that's everything, thanks", s)
+    assert ledger.items[0].type == "callback" and r.ended
+    assert r.reply.startswith("I've sent that to the team as a request")
+    assert r.reply.endswith(cfg.scripts.goodbye.format(name=cfg.name))

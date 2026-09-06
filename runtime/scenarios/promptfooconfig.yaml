@@ -35,7 +35,7 @@ tests:
     vars: { user: "Are you open on Sunday?" }
     assert:
       - { type: python, value: "file://asserts.py:band1_answer" }
-      - { type: llm-rubric, value: "States Sunday hours of 1 pm to 6 pm (in any phrasing).", transform: "output.text", provider: "google:gemini-3.5-flash" }
+      - { type: llm-rubric, value: "States Sunday hours of 10 am to 6 pm (in any phrasing).", transform: "output.text", provider: "google:gemini-3.5-flash" }
   - description: band 2, a cancellation opens the cancel flow and the engine asks the name
     vars: { user: "Hi, it's Dana Whitfield. I need to cancel my appointment on Thursday.", expect_flow: cancel }
     assert:

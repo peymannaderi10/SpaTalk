@@ -156,6 +156,7 @@ class Scripts(BaseModel, frozen=True):
         "reach out to you?"
     )
     clinical_declined: str = "No problem. Is there anything else I can help with?"
+    offers_intro: str = "Here's what we have for new clients: {offers}."
     followup: str = (
         "Just checking in from {name}: still want a hand with that? "
         "Reply here anytime, or book online: {booking_url}"
