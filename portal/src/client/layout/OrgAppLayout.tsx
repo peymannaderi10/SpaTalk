@@ -13,6 +13,7 @@ import {
   listMyOrganizations,
   useQuery,
 } from "wasp/client/operations";
+import { type Branding } from "../branding/themes";
 import {
   OrgSwitcher,
   type CommandAction,
@@ -40,6 +41,7 @@ export function OrgAppLayout({
   breadcrumbs = [],
   fixed,
   fluid,
+  branding,
   children,
 }: {
   orgSlug: string;
@@ -51,6 +53,11 @@ export function OrgAppLayout({
   breadcrumbs?: Crumb[];
   fixed?: boolean;
   fluid?: boolean;
+  /**
+   * The organisation's branding, when the caller fetched it: the logo goes to
+   * the switcher's mark, the preset and accent to the shell's tokens.
+   */
+  branding?: Branding | null;
   children: ReactNode;
 }) {
   const navigate = useNavigate();
@@ -79,6 +86,7 @@ export function OrgAppLayout({
         <OrgSwitcher
           orgs={mine}
           currentSlug={orgSlug}
+          logoUrl={branding?.logoDataUrl}
           onSelect={(slug) => navigate(orgHomePath(slug))}
           links={switcherLinks(Boolean(user?.isAdmin))}
         />
@@ -96,6 +104,7 @@ export function OrgAppLayout({
       onPaletteOpenChange={setPaletteOpen}
       fixed={fixed}
       fluid={fluid}
+      branding={branding}
     >
       {children}
     </AppLayout>
@@ -200,14 +209,22 @@ function usePaletteActions(
     for (const row of conversations?.items ?? []) {
       actions.push({
         group: "Conversations",
-        label: `${row.caller_masked ?? "no number"} · ${channelLabel(row.channel)}`,
-        value: ["conversation", row.caller_masked ?? "", row.channel, row.id].join(
-          " ",
-        ),
+        label: `${row.caller_masked ?? "no number"} · ${channelLabel(
+          row.channel,
+        )}`,
+        value: [
+          "conversation",
+          row.caller_masked ?? "",
+          row.channel,
+          row.id,
+        ].join(" "),
         icon: IconMessages,
         run: () =>
           navigate(
-            `${navPath("/app/:orgSlug/conversations", orgSlug)}?conversation=${encodeURIComponent(row.id)}`,
+            `${navPath(
+              "/app/:orgSlug/conversations",
+              orgSlug,
+            )}?conversation=${encodeURIComponent(row.id)}`,
           ),
       });
     }

@@ -1,6 +1,7 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
-import { beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { THEME_PRESETS } from "../branding/themes";
 import {
   NAV_SECTIONS,
   PLATFORM_SECTIONS,
@@ -52,9 +53,16 @@ function mount(context: NavContext, extra: Record<string, unknown> = {}) {
     <MemoryRouter initialEntries={[`/app/${context.orgSlug}/overview`]}>
       <AppLayout
         context={context}
-        breadcrumbs={[{ label: "Skincentrix", to: "/app/skincentrix" }, { label: "Overview" }]}
+        breadcrumbs={[
+          { label: "Skincentrix", to: "/app/skincentrix" },
+          { label: "Overview" },
+        ]}
         orgSwitcher={<div data-testid="org-switcher">Skincentrix</div>}
-        profile={{ name: "Ada Lovelace", email: "ada@example.com", onSignOut: () => {} }}
+        profile={{
+          name: "Ada Lovelace",
+          email: "ada@example.com",
+          onSignOut: () => {},
+        }}
         {...extra}
       >
         <p>the page</p>
@@ -134,7 +142,9 @@ describe("the app shell", () => {
     expect(screen.getByTestId("command-palette-open")).toBeTruthy();
     expect(screen.getByTestId("theme-switch")).toBeTruthy();
     expect(screen.getByTestId("profile-menu")).toBeTruthy();
-    expect(screen.getByText("Overview", { selector: "[data-slot=breadcrumb-page]" })).toBeTruthy();
+    expect(
+      screen.getByText("Overview", { selector: "[data-slot=breadcrumb-page]" }),
+    ).toBeTruthy();
   });
 
   it("puts the content in a container-query context, which the kit's widths need", () => {
@@ -153,5 +163,77 @@ describe("the app shell", () => {
     for (const item of itemsOf("Front desk")) {
       expect(screen.queryByTestId(item.testId)).toBeNull();
     }
+  });
+});
+
+/**
+ * The clinic's branding on the shell. The resolved tokens go inline on the
+ * shell's root element — the kit's sidebar wrapper — so every `bg-primary`
+ * and `text-foreground` under it reads them; a shell given no branding sets
+ * nothing, and the admin shell never passes any.
+ */
+describe("the clinic's branding on the shell", () => {
+  const rose = THEME_PRESETS.find((preset) => preset.id === "rose")!;
+
+  function root(container: HTMLElement): HTMLElement {
+    const wrapper = container.querySelector("[data-slot=sidebar-wrapper]");
+    if (!(wrapper instanceof HTMLElement)) throw new Error("no shell root");
+    return wrapper;
+  }
+
+  afterEach(() => {
+    document.body.classList.remove("dark");
+  });
+
+  it("sets no token inline when the organisation has no branding", () => {
+    const bare = mount(owner);
+    expect(root(bare.container).style.getPropertyValue("--primary")).toBe("");
+    expect(root(bare.container).style.getPropertyValue("--background")).toBe(
+      "",
+    );
+    bare.unmount();
+
+    const unset = mount(owner, {
+      branding: { themePreset: null, accentHex: null },
+    });
+    expect(root(unset.container).style.getPropertyValue("--primary")).toBe("");
+  });
+
+  it("carries the resolved --primary when the organisation has an accent", () => {
+    const { container } = mount(owner, {
+      branding: { themePreset: null, accentHex: "#1a2b3c" },
+    });
+    const style = root(container).style;
+    expect(style.getPropertyValue("--primary")).toBe("#1a2b3c");
+    expect(style.getPropertyValue("--primary-foreground")).toBe("#ffffff");
+    expect(style.getPropertyValue("--sidebar-primary")).toBe("#1a2b3c");
+    // The rest is the default preset's, so an accent alone recolours only
+    // the primary.
+    expect(style.getPropertyValue("--background")).toBe(
+      THEME_PRESETS[0].light["--background"],
+    );
+  });
+
+  it("resolves for the mode the body is in, and follows the kit's dark toggle", async () => {
+    const { container } = mount(owner, {
+      branding: { themePreset: "rose", accentHex: null },
+    });
+    expect(root(container).style.getPropertyValue("--primary")).toBe(
+      rose.light["--primary"],
+    );
+
+    document.body.classList.add("dark");
+    await waitFor(() =>
+      expect(root(container).style.getPropertyValue("--primary")).toBe(
+        rose.dark["--primary"],
+      ),
+    );
+
+    document.body.classList.remove("dark");
+    await waitFor(() =>
+      expect(root(container).style.getPropertyValue("--primary")).toBe(
+        rose.light["--primary"],
+      ),
+    );
   });
 });

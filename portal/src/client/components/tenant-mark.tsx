@@ -8,9 +8,12 @@ import { cn } from "../utils";
  * idiom, the square the sidebar's team switcher draws (`team-switcher.tsx` in
  * `satnaing/shadcn-admin`).
  *
- * A Branding page will let the clinic set `logoUrl`; until then every shell
- * passes none and gets the initial. A name with no letter to take gets the
- * building the switcher always showed, so there is always a mark.
+ * The Branding page stores the logo on the organisation as a `data:` URL and
+ * the clinic shell hands it in as `logoUrl`; a clinic that has not uploaded
+ * one gets the initial. The logo is fitted inside the square, not cropped to
+ * it, because a wordmark is wider than it is tall. A name with no letter to
+ * take gets the building the switcher always showed, so there is always a
+ * mark.
  */
 export function TenantMark({
   name,
@@ -32,7 +35,7 @@ export function TenantMark({
       )}
     >
       {logoUrl ? (
-        <img src={logoUrl} alt={name} className="size-full object-cover" />
+        <img src={logoUrl} alt={name} className="size-full object-contain" />
       ) : initial ? (
         <span className="text-sm font-semibold" aria-hidden="true">
           {initial}

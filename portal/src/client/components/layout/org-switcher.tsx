@@ -34,9 +34,11 @@ import {
  *
  * The button is the clinic's mark and its name in one row, and nothing under
  * the name: the kit's "plan" subtext, which here read "Organisation", said
- * nothing a person needed. The mark is `TenantMark`, the initial until a
- * Branding page gives the clinic a logo; `aria-label` stays "Organisation"
- * because that is the accessible name the browser suite selects the trigger by.
+ * nothing a person needed. The mark is `TenantMark`: the logo the Branding
+ * page stored, handed in as `logoUrl` by the shell that fetched the
+ * organisation, and the initial until there is one. `aria-label` stays
+ * "Organisation" because that is the accessible name the browser suite
+ * selects the trigger by.
  */
 export type SwitchableOrg = {
   id: string;
@@ -58,12 +60,15 @@ export type SwitcherLink = {
 export function OrgSwitcher({
   orgs,
   currentSlug,
+  logoUrl,
   onSelect,
   emptyLabel = "No organisation",
   links = [],
 }: {
   orgs: SwitchableOrg[];
   currentSlug?: string | null;
+  /** The current organisation's logo, when it has one. */
+  logoUrl?: string | null;
   onSelect: (slug: string) => void;
   /** Shown while the list is still loading, or when there is nothing to pick. */
   emptyLabel?: string;
@@ -84,7 +89,10 @@ export function OrgSwitcher({
               aria-label="Organisation"
               className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
             >
-              <TenantMark name={current?.name ?? currentSlug ?? emptyLabel} />
+              <TenantMark
+                name={current?.name ?? currentSlug ?? emptyLabel}
+                logoUrl={logoUrl}
+              />
               <span className="flex-1 truncate text-left text-sm font-medium">
                 {current?.name ?? currentSlug ?? emptyLabel}
               </span>

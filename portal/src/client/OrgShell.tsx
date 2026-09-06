@@ -185,6 +185,7 @@ function Frame({
       breadcrumbs={[{ label: title }]}
       fixed={fixed}
       fluid={fluid}
+      branding={org}
     >
       <div
         className={cn(

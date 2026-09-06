@@ -79,3 +79,28 @@ describe("the organisation switcher's header", () => {
     expect(within(trigger).getByTestId("tenant-mark")).toHaveTextContent("S");
   });
 });
+
+describe("the organisation switcher's mark", () => {
+  it("shows the clinic's logo when the shell hands it one", () => {
+    const logo = "data:image/png;base64,iVBORw0KGgo=";
+    render(
+      <MemoryRouter>
+        <SidebarProvider>
+          <OrgSwitcher
+            orgs={[skincentrix]}
+            currentSlug="skincentrix"
+            onSelect={vi.fn()}
+            logoUrl={logo}
+          />
+        </SidebarProvider>
+      </MemoryRouter>,
+    );
+    const trigger = screen.getByTestId("org-switcher");
+    expect(
+      within(trigger).getByRole("img", { name: "Skincentrix" }),
+    ).toHaveAttribute("src", logo);
+    expect(within(trigger).getByTestId("tenant-mark")).not.toHaveTextContent(
+      "S",
+    );
+  });
+});

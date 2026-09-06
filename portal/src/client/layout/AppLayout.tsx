@@ -12,6 +12,8 @@ import {
   type Crumb,
   type ProfileMenuItem,
 } from "../components/layout";
+import { type Branding } from "../branding/themes";
+import { useBrandingStyle } from "../branding/useBrandingStyle";
 import { DarkModeSwitcher } from "../components/DarkModeSwitcher";
 import { SidebarInset, SidebarProvider } from "../components/ui/sidebar";
 import { type NavContext, type NavSection } from "../nav";
@@ -64,6 +66,12 @@ export type AppLayoutProps = {
   fixed?: boolean;
   /** Drop the reading-width cap: what a wall of cards wants. */
   fluid?: boolean;
+  /**
+   * The organisation's chosen look. Its resolved tokens go inline on the
+   * shell's root, so everything under it wears them; nothing is set when it
+   * is absent, which is how the admin shell keeps the kit's own look.
+   */
+  branding?: Pick<Branding, "themePreset" | "accentHex"> | null;
   children: ReactNode;
 };
 
@@ -78,10 +86,13 @@ export function AppLayout({
   onPaletteOpenChange,
   fixed,
   fluid,
+  branding,
   children,
 }: AppLayoutProps) {
+  const brandingStyle = useBrandingStyle(branding);
+
   return (
-    <SidebarProvider>
+    <SidebarProvider style={brandingStyle}>
       <SearchProvider
         context={context}
         sections={sections}
