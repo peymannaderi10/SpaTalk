@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { randomUUID } from "crypto";
 import { readFileSync } from "fs";
 import { join } from "path";
 import {
@@ -39,8 +40,11 @@ const WIZARD_OWNER_EMAIL = "owner@skincentrix-portal-e2e.test";
  * starter rendered around a timezone, hours, a booking link and an owner. Its
  * id is the organisation's slug, which is what the basics path uses.
  */
-const BASICS_ORG_NAME = "Basics Portal E2E";
-const BASICS_ORG_SLUG = "basics-portal-e2e";
+// Unique per run: the basics path refuses a tenant id that already exists (it never
+// overwrites a configured clinic), so a fixed slug passes once and fails every run after.
+const BASICS_SUFFIX = randomUUID().slice(0, 8);
+const BASICS_ORG_NAME = `Basics Portal E2E ${BASICS_SUFFIX}`;
+const BASICS_ORG_SLUG = `basics-portal-e2e-${BASICS_SUFFIX}`;
 const BASICS_OWNER_EMAIL = "owner@basics-portal-e2e.test";
 const BASICS_BOOKING_URL = "https://basics-portal-e2e.janeapp.com/";
 
@@ -274,7 +278,7 @@ test.describe("the onboarding wizard, from the basics", () => {
       expect.objectContaining({ kind: "email", address: BASICS_OWNER_EMAIL }),
       expect.objectContaining({
         kind: "sms",
-        address_env: "BASICS_PORTAL_E2E_STAFF_SMS",
+        address_env: `${BASICS_ORG_SLUG.toUpperCase().replace(/-/g, "_")}_STAFF_SMS`,
       }),
     ]);
     // The wording is the starter's, placeholders and all, never a clinic's.

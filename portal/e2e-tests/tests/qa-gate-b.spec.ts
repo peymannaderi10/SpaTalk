@@ -132,6 +132,10 @@ test.describe("switching between organisations", () => {
     // The third organisation exists, and is none of this person's business.
     expect(offered).not.toContain(UNRELATED.name);
     await clientPage.keyboard.press("Escape");
+    // Radix keeps the closing menu mounted for its exit animation, and a
+    // click on the trigger inside that window is swallowed by the departing
+    // layer (seen 2026-09-06); the next test opens it again, so wait it out.
+    await expect(clientPage.getByRole("menu")).toHaveCount(0);
   });
 
   test("picking the other one lands on its pages", async () => {
