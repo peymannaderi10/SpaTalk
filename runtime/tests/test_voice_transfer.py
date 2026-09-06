@@ -48,16 +48,24 @@ def test_shipped_bundle_has_no_back_line_so_the_tool_is_never_exposed_yet():
 
 
 def test_tool_list_is_built_per_call_from_the_calendar_state():
-    from spatalk.brain.tools import TOOL_NAMES, build_tools, tools_schema
+    from spatalk.brain.flow import Slots, Step, step_tools
+    from spatalk.brain.tools import build_tools, tools_schema
     from spatalk.voice.transfer import TRANSFER_TOOL
 
     cfg = _cfg()
+    # The Q&A set of the slot engine: start a request, escalate, end; the transfer only
+    # when the calendar says the back-line is staffed.
+    qa = ["start_request", "escalate", "end_conversation"]
     closed = [t.name for t in build_tools(cfg)]
-    assert closed == list(TOOL_NAMES) and TRANSFER_TOOL not in closed
+    assert closed == qa and TRANSFER_TOOL not in closed
 
     open_names = [t.name for t in build_tools(cfg, transfer_enabled=True)]
-    assert open_names == list(TOOL_NAMES) + [TRANSFER_TOOL]
+    assert open_names == qa + [TRANSFER_TOOL]
     assert TRANSFER_TOOL in [t.name for t in tools_schema(cfg, transfer_enabled=True).standard_tools]
+    # And on every later step too, so a caller mid-booking can still ask for a person.
+    for step in Step:
+        names = [t.name for t in step_tools(step, Slots(flow="new_booking"), cfg, "voice", transfer_enabled=True)]
+        assert TRANSFER_TOOL in names, step
 
 
 def test_transfer_tool_has_no_free_text_parameters():

@@ -85,8 +85,10 @@ async def test_rules_gate_speaks_script_and_swallows_transcription(fixed_clock):
                              frames_to_send=[TranscriptionFrame(text="I have a rash after my laser", user_id="u", timestamp="t")],
                              expected_down_frames=[TTSSpeakFrame], start_timeout=10.0)
     assert "911" not in down[0].text and "clinical team" in down[0].text
-    assert session.band == 3 and ledger.items[0].type == "escalation_clinical"
-    assert ended == ["EndFrame"]
+    # The offer first: nothing filed, the call stays open, the record is on the clinical flow.
+    assert down[0].text == session.cfg.scripts.clinical_offer
+    assert session.band == 3 and ledger.items == [] and session.slots.flow == "clinical"
+    assert ended == []
 
 
 async def test_rules_gate_speaks_the_911_script_only_for_an_emergency(fixed_clock):
@@ -152,4 +154,49 @@ async def test_rules_gate_writes_the_callers_words_to_the_context_before_the_scr
     turns = [(m["role"], m["content"]) for m in session.context.messages if m["role"] != "system"]
     assert turns == [("user", "I have a rash after my laser")]
     # The script is appended by the assistant aggregator once it is spoken, after the caller's turn.
-    assert down[0].append_to_context is True and ledger.items[0].type == "escalation_clinical"
+    assert down[0].append_to_context is True and ledger.items == []
+    assert down[0].text == session.cfg.scripts.clinical_offer
+
+
+async def test_the_open_question_follows_a_side_answer(fixed_clock):
+    """Mid-flow, the model answered a price question in words; the runtime re-asks the step."""
+    from spatalk.brain.flow import Slots
+    from spatalk.voice.processors import OutputGuardProcessor
+
+    session, _ = _session(fixed_clock)
+    session.slots = Slots(flow="new_booking", returning_client=True)
+    frames = [LLMFullResponseStartFrame(), LLMTextFrame("The Classic facial is $125."), LLMFullResponseEndFrame()]
+    down, _ = await run_test(OutputGuardProcessor(session), frames_to_send=frames,
+                             expected_down_frames=[LLMFullResponseStartFrame, LLMTextFrame, LLMFullResponseEndFrame, TTSSpeakFrame],
+                             start_timeout=10.0)
+    spoken = [f.text for f in down if isinstance(f, TTSSpeakFrame)]
+    assert spoken == [session.cfg.scripts.ask_practitioner]
+
+
+async def test_no_question_is_repeated_when_a_tool_ran_this_turn(fixed_clock):
+    from pipecat.frames.frames import FunctionCallInProgressFrame
+    from spatalk.brain.flow import Slots
+    from spatalk.voice.processors import OutputGuardProcessor
+
+    session, _ = _session(fixed_clock)
+    session.slots = Slots(flow="new_booking", returning_client=True)
+    frames = [
+        LLMFullResponseStartFrame(),
+        FunctionCallInProgressFrame(function_name="choose_practitioner", tool_call_id="c1", arguments={"said": "Helen"}),
+        LLMFullResponseEndFrame(),
+    ]
+    down, _ = await run_test(OutputGuardProcessor(session), frames_to_send=frames,
+                             expected_down_frames=[LLMFullResponseStartFrame, FunctionCallInProgressFrame, LLMFullResponseEndFrame],
+                             start_timeout=10.0)
+    assert not any(isinstance(f, TTSSpeakFrame) for f in down) and session.tool_called_this_turn
+
+
+async def test_no_question_outside_a_flow(fixed_clock):
+    from spatalk.voice.processors import OutputGuardProcessor
+
+    session, _ = _session(fixed_clock)
+    frames = [LLMFullResponseStartFrame(), LLMTextFrame("We open at nine."), LLMFullResponseEndFrame()]
+    down, _ = await run_test(OutputGuardProcessor(session), frames_to_send=frames,
+                             expected_down_frames=[LLMFullResponseStartFrame, LLMTextFrame, LLMFullResponseEndFrame],
+                             start_timeout=10.0)
+    assert not any(isinstance(f, TTSSpeakFrame) for f in down)

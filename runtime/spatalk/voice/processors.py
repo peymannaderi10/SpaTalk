@@ -22,6 +22,7 @@ from pipecat.frames.frames import (
     InterimTranscriptionFrame,
     InterruptionFrame,
     LLMContextFrame,
+    FunctionCallInProgressFrame,
     LLMFullResponseEndFrame,
     LLMFullResponseStartFrame,
     LLMTextFrame,
@@ -34,11 +35,12 @@ from spatalk.brain.audio_tags import drop_unknown_tags
 from spatalk.brain.guard import guard
 from spatalk.brain.outcomes import Refused
 from spatalk.brain.renderer import render, render_script
-from spatalk.brain.flow import Slots, draft_from
+from spatalk.brain.flow import Slots, draft_from, open_flow
 from spatalk.brain.requests import EscalateRequest
 from spatalk.brain.rules import health_context_mentioned, rules_gate
 from spatalk.voice.echo import scrub_echo
 from spatalk.voice.session import VoiceSession
+from spatalk.voice.steps import next_question, sync_context
 
 SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
 
@@ -148,6 +150,21 @@ class RulesGateProcessor(FrameProcessor):
                 # caller's turn goes in first; the script follows once it is spoken.
                 if self._s.context is not None:
                     self._s.context.add_message({"role": "user", "content": frame.text})
+                if gate.reason == "clinical":
+                    # The offer first, filed only on yes (slot engine design, §4.2). The
+                    # call stays open; the record and the context move to the clinical flow.
+                    self._s.slots = open_flow(
+                        "clinical", self._s.slots, "voice", self._s.ref.caller_phone
+                    )
+                    sync_context(self._s, now)
+                    logger.info("rules gate: clinical ({!r}) -> offer", gate.matched)
+                    await self.push_frame(
+                        TTSSpeakFrame(
+                            text=render_script("clinical_offer", self._s.cfg, now, urgent=False),
+                            append_to_context=True,
+                        )
+                    )
+                    return
                 try:
                     out = await self._s.caps.escalate(
                         self._s.ref, EscalateRequest(reason=gate.reason)
@@ -239,6 +256,7 @@ class OutputGuardProcessor(FrameProcessor):
         await super().process_frame(frame, direction)
         if isinstance(frame, LLMFullResponseStartFrame):
             self._buffer, self._dropping = "", False
+            self._s.tool_called_this_turn = False
             # A fresh completion began, so an error after this one is a new failed *turn*
             # and not another error from the turn that already apologised (llm failover
             # plan, Task F2). The count itself is cleared only by words coming back: a
@@ -253,10 +271,21 @@ class OutputGuardProcessor(FrameProcessor):
             for complete in parts[:-1]:
                 await self._emit(complete)
             self._buffer = parts[-1]
+        elif isinstance(frame, FunctionCallInProgressFrame):
+            # A tool ran this turn: its handler speaks the next question itself.
+            self._s.tool_called_this_turn = True
+            await self.push_frame(frame, direction)
         elif isinstance(frame, LLMFullResponseEndFrame):
             await self._emit(self._buffer)
             self._buffer, self._dropping = "", False
             await self.push_frame(frame, direction)
+            # A side answer mid-flow ("the Classic facial is $125"): the open question is
+            # asked again after it, by the runtime, from the script (slot engine, §4.3).
+            if not self._s.tool_called_this_turn and not self._s.ended:
+                question = next_question(self._s, self._s.clock.now())
+                if question:
+                    self._s.remember_spoken(question)
+                    await self.push_frame(TTSSpeakFrame(text=question, append_to_context=True))
         elif isinstance(frame, InterruptionFrame):
             self._buffer, self._dropping = "", False
             await self.push_frame(frame, direction)
