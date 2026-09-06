@@ -83,3 +83,16 @@ def test_the_static_prompt_no_longer_carries_the_booking_order():
         assert "new-client offers" not in p
         assert "the system asks the questions" in p
         assert "never ask for a name or a number yourself" in p
+
+
+def test_the_faq_is_rendered_ahead_of_the_facts_and_only_when_there_is_one():
+    from spatalk.brain.prompt import build_system_prompt
+
+    cfg = _cfg()
+    p = build_system_prompt(cfg, "voice", NOW)
+    assert "FREQUENTLY ASKED" in p
+    assert p.index("FREQUENTLY ASKED") < p.index("FACTS ABOUT")
+    assert "Q: What is the cancellation policy?" in p and "A: Rescheduling and cancellations need 48 hours" in p
+    assert "in your own words, and add nothing the clinic did not say" in p
+    bare = build_system_prompt(cfg.model_copy(update={"faq": []}), "voice", NOW)
+    assert "FREQUENTLY ASKED" not in bare

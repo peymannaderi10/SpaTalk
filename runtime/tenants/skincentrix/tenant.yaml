@@ -43,6 +43,26 @@ persona:
 # The people a caller may ask for by name (lead context plan, L1). Names and roles from
 # skincentrix.com and knowledge.md; this list, plus "any", is the whole of what the model
 # may return for `practitioner`. `concerns` is left to the schema default.
+# Questions the clinic answers in its own words (FAQ, 2026-09-05). Every answer below is a
+# fact the knowledge file already states; the clinical ones (does it hurt, downtime) are for
+# the team to add in the portal, in their words.
+faq:
+  - question: How do I book an appointment?
+    answer: "Online through Jane at skincentrix.janeapp.com, or the team can book it for you. The clinic is appointment-based, so there are no walk-ins."
+  - question: I'm a new client. Where do I start?
+    answer: "Most new clients start with a free virtual consultation by phone, video, FaceTime or WhatsApp, or an in-person skin assessment using the clinic's skin-analysis technology."
+  - question: What is the cancellation policy?
+    answer: "Rescheduling and cancellations need 48 hours' notice. A deposit is forfeited when an appointment is cancelled or rescheduled inside 48 hours."
+  - question: Can I move my deposit to a different treatment?
+    answer: "Yes, a deposit on a treatment not yet performed can be moved to a different service."
+  - question: Are treatments or packages refundable?
+    answer: "All sales are final. Laser hair removal packages and treatment packages are non-refundable whether or not sessions have started; management may consider an exception for documented medical reasons."
+  - question: Do you offer financing?
+    answer: "Yes, through iFinance Canada: treatment now, monthly payments over time. The team explains the plans and eligibility."
+  - question: Do you sell gift cards?
+    answer: "Yes. Gift cards are available, and the clinic also sells medical-grade skincare in the clinic and online."
+  - question: Where are you and what are your hours?
+    answer: "2285 Britannia Road West in Mississauga, at Britannia Road and Erin Mills Parkway. Closed Monday; Tuesday 10 to 6, Wednesday 10 to 8, Thursday 12 to 8, Friday 10 to 7, Saturday and Sunday 10 to 6."
 team:
   - name: Sabah Shaikh
     role: founder and aesthetician, leads the facial and skin programs

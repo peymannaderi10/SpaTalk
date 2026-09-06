@@ -57,6 +57,21 @@ ON THE PHONE
 - Say prices as words a person would say aloud, for example "two ninety-five" or "a hundred and twenty-five dollars", and phone numbers in groups of digits."""
 
 
+def _faq_text(cfg: TenantConfig) -> str:
+    """The clinic's own answers to its common questions, ahead of the facts, with the one
+    rule that makes them safe: phrase them, add nothing to them."""
+    if not cfg.faq:
+        return ""
+    lines = [
+        "FREQUENTLY ASKED (answer these from here first, in your own words, and add nothing "
+        "the clinic did not say)"
+    ]
+    for item in cfg.faq:
+        lines.append(f"Q: {item.question.strip()}")
+        lines.append(f"A: {item.answer.strip()}")
+    return "\n".join(lines) + "\n\n"
+
+
 def build_system_prompt(cfg: TenantConfig, channel: str, now: datetime) -> str:
     cal = BusinessCalendar(cfg)
     local = now.astimezone(ZoneInfo(cfg.timezone))
@@ -117,7 +132,7 @@ HOURS: {_hours_text(cfg)}
 SERVICES (name [id]: price):
 {_services_text(cfg)}
 
-FACTS ABOUT {cfg.name.upper()}
+{_faq_text(cfg)}FACTS ABOUT {cfg.name.upper()}
 {cfg.knowledge.strip()}
 
 RIGHT NOW

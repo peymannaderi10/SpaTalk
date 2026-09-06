@@ -71,6 +71,17 @@ DEFAULT_CONCERNS: tuple[str, ...] = (
 )
 
 
+class FaqItem(BaseModel, frozen=True):
+    """One question the clinic answers in its own words (FAQ, 2026-09-05).
+
+    The answer is a fact the assistant may phrase, like a line of `knowledge.md`, never a
+    script it reads aloud. Bounded so a row stays one answer, not a page.
+    """
+
+    question: str = Field(min_length=1, max_length=200)
+    answer: str = Field(min_length=1, max_length=600)
+
+
 class Persona(BaseModel, frozen=True):
     assistant_name: str = "the assistant"
     tone: str = "warm, brief, plain-spoken"
@@ -379,6 +390,9 @@ class TenantConfig(BaseModel, frozen=True):
     concerns: list[Concern] = Field(default_factory=lambda: list(DEFAULT_CONCERNS))
     services: list[Service]
     knowledge: str
+    # Questions the clinic answers in its own words; rendered into the facts ahead of the
+    # knowledge text, so the assistant answers them first (FAQ, 2026-09-05).
+    faq: list[FaqItem] = Field(default_factory=list)
     scripts: Scripts
     lexicons: Lexicons = Lexicons()
     escalation: Escalation

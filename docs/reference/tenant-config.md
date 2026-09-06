@@ -56,6 +56,8 @@ tenants/<id>/
 
 Each `team[]` entry may carry `services: [service_id, …]`, the treatments that person performs; empty or absent means every service. The slot engine reads it for "unfortunately Helen doesn't do X" (slot engine design, §4.3).
 
+`faq:` is a list of `{question, answer}` rows (question up to 200 characters, answer up to 600) the clinic answers in its own words. The runtime renders them into the prompt's facts under a FREQUENTLY ASKED heading, ahead of `knowledge.md`, with the rule that the assistant answers from them first, phrased, adding nothing. They are facts, not scripts: the wording the caller hears is the model's. Edited on the portal's Knowledge page.
+
 ## services.yaml
 
 `services:` list of: `id` (slug), `name`, `category`, `price_text`, `duration_minutes` (optional), `booking_url`, `consult_required` (bool), `clinical` (bool), `description`. The service ids become the enum the model may use; nothing outside this list can be referenced by a tool call.

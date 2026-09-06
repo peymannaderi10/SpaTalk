@@ -45,3 +45,17 @@ def test_team_services_are_validated_and_queryable():
         cfg.model_copy(
             update={"team": [helen.model_copy(update={"services": ["no_such_service"]})]}
         ).check_team_services()
+
+
+def test_faq_rows_are_bounded_facts_the_bundle_ships():
+    from pydantic import ValidationError
+
+    from spatalk.tenants.schema import FaqItem
+
+    cfg = _cfg()
+    assert len(cfg.faq) >= 5 and all(item.question and item.answer for item in cfg.faq)
+    assert any("48 hours" in item.answer for item in cfg.faq)
+    with pytest.raises(ValidationError):
+        FaqItem(question="", answer="x")
+    with pytest.raises(ValidationError):
+        FaqItem(question="q", answer="a" * 601)
