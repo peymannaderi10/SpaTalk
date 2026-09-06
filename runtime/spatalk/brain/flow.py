@@ -13,7 +13,15 @@ from pipecat.adapters.schemas.function_schema import FunctionSchema
 from pydantic import BaseModel, Field
 
 from spatalk.brain.requests import PreferredWindow
-from spatalk.brain.resolve import first_name_of, spoken_digits, typed_digits
+from spatalk.brain.resolve import (
+    first_name_of,
+    match_practitioner,
+    match_service,
+    normalise_phone,
+    sounds_like,
+    spoken_digits,
+    typed_digits,
+)
 from spatalk.brain.tools import always_tools, slot_tool
 from spatalk.tenants.schema import TenantConfig
 
@@ -224,3 +232,258 @@ def step_tools(
     if step != Step.QA:
         tools.append(slot_tool("change_answer", cfg))
     return tools + always_tools(cfg, transfer_enabled)
+
+
+class Applied(BaseModel, frozen=True):
+    """What one tool call did: the new record, the fixed lines to say, and the acts the
+    driver must perform (file, send the link, end). `ignored` means the model called a tool
+    the step did not offer: nothing is said and nothing is written."""
+
+    slots: Slots
+    say: tuple[tuple[str, dict], ...] = ()
+    file: bool = False
+    send_link: bool = False
+    end: bool = False
+    ignored: bool = False
+
+
+def _tool_allowed(name: str, step: Step, slots: Slots, cfg: TenantConfig, channel: str) -> bool:
+    return name in {t.name for t in step_tools(step, slots, cfg, channel, transfer_enabled=True)}
+
+
+def _open(kind: str, previous: Slots, channel: str, caller_phone: str | None) -> Slots:
+    """A new flow keeps what the conversation already knows about the person, never about
+    the request: the name and number asked once are not asked twice; a second request
+    still gets its own treatment and practitioner."""
+    on_sms = channel == "sms" and bool(caller_phone)
+    return Slots(
+        flow=kind,
+        returning_client=previous.returning_client,
+        first_name=previous.first_name,
+        phone=previous.phone or (caller_phone if on_sms else None),
+        phone_confirmed=previous.phone_confirmed or on_sms,
+    )
+
+
+open_flow = _open
+
+
+def _finalize(applied: Applied, cfg: TenantConfig, channel: str) -> Applied:
+    """The record files itself the moment the last required slot lands (the route step of a
+    booking on a call with an SMS number is the one question asked before it)."""
+    s = applied.slots
+    if applied.ignored or applied.file or applied.send_link or applied.end:
+        return applied
+    if s.flow is None or s.ended_flow or s.pending is not None:
+        return applied
+    if next_step(s, cfg, channel) == Step.COMPLETE:
+        return applied.model_copy(update={"slots": s.with_(ended_flow=True), "file": True})
+    return applied
+
+
+def apply(
+    slots: Slots, name: str, args: dict, cfg: TenantConfig, channel: str, caller_phone: str | None
+) -> Applied:
+    """Move the record on one tool call. Answers land only in the open slot (§3.3)."""
+    return _finalize(_apply(slots, name, args, cfg, channel, caller_phone), cfg, channel)
+
+
+def _apply(
+    slots: Slots, name: str, args: dict, cfg: TenantConfig, channel: str, caller_phone: str | None
+) -> Applied:
+    step = next_step(slots, cfg, channel)
+    if name in ("escalate", "end_conversation", "transfer_to_human"):
+        return Applied(slots=slots, end=(name == "end_conversation"))
+    if not _tool_allowed(name, step, slots, cfg, channel):
+        return Applied(slots=slots, ignored=True)
+    args = args or {}
+    if name == "start_request":
+        kind = args.get("kind")
+        if kind not in ("new_booking", "callback", "reschedule", "cancel", "question"):
+            return Applied(slots=slots, ignored=True)
+        return Applied(slots=_open(kind, slots, channel, caller_phone))
+    if name == "change_answer":
+        return Applied(slots=_reopen(slots, args.get("slot", "")))
+    if name == "answer":
+        return _answer(slots, step, args.get("value", "unsure"), cfg, channel, caller_phone)
+    if name == "choose_practitioner":
+        return _practitioner(slots, args.get("said", ""), cfg)
+    if name == "choose_service":
+        return _service(slots, args.get("said", ""), cfg)
+    if name == "give_name":
+        return _name(slots, args.get("first_name", ""), cfg)
+    if name == "give_phone":
+        return _phone(slots, args.get("digits", ""), caller_phone, channel)
+    if name == "choose_window":
+        window = PreferredWindow(
+            date=args.get("date") or "any", part_of_day=args.get("part_of_day") or "any"
+        )
+        return Applied(slots=slots.with_(preferred_window=window))
+    if name == "file_request":
+        return Applied(slots=slots.with_(ended_flow=True), file=True)
+    if name == "send_link":
+        return Applied(slots=slots.with_(ended_flow=True), send_link=True)
+    return Applied(slots=slots, ignored=True)
+
+
+def _reopen(slots: Slots, slot: str) -> Slots:
+    clear = {
+        "returning_client": {"returning_client": None},
+        "practitioner": {"practitioner": None},
+        "service": {"service_id": None},
+        "name": {"first_name": None},
+        "phone": {"phone": None, "phone_confirmed": False},
+        "window": {"preferred_window": None},
+    }.get(slot)
+    if clear is None:
+        return slots
+    misses = {k: v for k, v in slots.misses.items() if k != slot}
+    return slots.with_(pending=None, misses=misses, **clear)
+
+
+def _answer(
+    slots: Slots, step: Step, value: str, cfg: TenantConfig, channel: str, caller_phone: str | None
+) -> Applied:
+    yes = value == "yes"
+    p = slots.pending
+    if p is not None:
+        if p.kind == "which":
+            # Answered by naming one of the two, through the slot tool, not yes/no.
+            return Applied(slots=slots, ignored=True)
+        if p.kind == "match":
+            if yes:
+                field = "practitioner" if p.slot == "practitioner" else "service_id"
+                return _after_slot(slots.with_(pending=None, **{field: p.value}), cfg)
+            return Applied(slots=slots.with_(pending=None).miss(p.slot))
+        if p.kind == "name_staff":
+            if yes:
+                return Applied(slots=slots.with_(pending=None, first_name=p.value))
+            return Applied(slots=slots.with_(pending=None).miss("name"))
+        if p.kind == "phone":
+            if yes:
+                return Applied(slots=slots.with_(pending=None, phone=p.value, phone_confirmed=True))
+            return _phone_miss(slots.with_(pending=None), caller_phone, channel)
+        if p.kind == "not_service":
+            if yes:
+                names = [first_name_of(m.name) for m in cfg.team_for_service(slots.service_id or "")]
+                fills = {"names": _join(names[:3]), "service": _service_name(cfg, slots.service_id or "")}
+                return Applied(slots=slots.with_(pending=None), say=(("practitioner_suggest", fills),))
+            return Applied(slots=slots.with_(pending=None), say=(("practitioner_else", {}),))
+        if p.kind == "offers":
+            # yes = hear options (the model names two or three from the facts); no = the consultation
+            if yes:
+                return Applied(slots=slots.with_(pending=None))
+            consult = next((s for s in cfg.services if s.category == "consultation"), None)
+            if consult is None:
+                return Applied(slots=slots.with_(pending=None))
+            return _after_slot(slots.with_(pending=None, service_id=consult.id), cfg)
+        if p.kind == "route":
+            return _route(slots.with_(pending=None), yes, cfg)
+    if slots.flow == "clinical" and slots.first_name is None and step == Step.NAME:
+        # The clinical offer: yes goes on to the name, no closes with nothing filed.
+        if yes:
+            return Applied(slots=slots)
+        return Applied(slots=slots.with_(ended_flow=True), say=(("clinical_declined", {}),))
+    if step == Step.RETURNING:
+        return Applied(slots=slots.with_(returning_client=yes))
+    if step == Step.OFFERS:
+        say = (("ask_after_offers", {}),) if yes else ()
+        return Applied(slots=slots.with_(offers_done=True), say=say)
+    if step == Step.PHONE:
+        if yes:
+            return Applied(slots=slots.with_(phone=caller_phone, phone_confirmed=bool(caller_phone)))
+        return Applied(slots=slots.miss("phone"))
+    if step == Step.TEAM_NOTE:
+        return Applied(slots=slots.with_(team_note_asked=True))
+    if step == Step.ROUTE:
+        return _route(slots, yes, cfg)
+    return Applied(slots=slots, ignored=True)
+
+
+def _route(slots: Slots, yes: bool, cfg: TenantConfig) -> Applied:
+    if yes and cfg.sms_from_number and slots.phone_confirmed:
+        return Applied(slots=slots.with_(ended_flow=True), send_link=True)
+    return Applied(slots=slots.with_(ended_flow=True), file=True)
+
+
+def _after_slot(slots: Slots, cfg: TenantConfig) -> Applied:
+    """A practitioner and a service both known: check the pairing (§4.3)."""
+    if slots.practitioner and slots.practitioner != "any" and slots.service_id:
+        if not cfg.member_does(slots.practitioner, slots.service_id):
+            pending = Pending(kind="not_service", slot="practitioner", value=slots.practitioner)
+            return Applied(slots=slots.with_(practitioner=None, pending=pending))
+    return Applied(slots=slots)
+
+
+def _practitioner(slots: Slots, said: str, cfg: TenantConfig) -> Applied:
+    m = match_practitioner(said, cfg)
+    if m.kind == "exact":
+        return _after_slot(slots.with_(pending=None, practitioner=m.value), cfg)
+    if m.kind == "confirm":
+        pending = Pending(kind="match", slot="practitioner", value=m.value)
+        return Applied(slots=slots.with_(pending=pending))
+    if m.kind == "which":
+        pending = Pending(kind="which", slot="practitioner", candidates=m.candidates)
+        return Applied(slots=slots.with_(pending=pending))
+    missed = slots.with_(pending=None).miss("practitioner")
+    if missed.misses["practitioner"] >= 2:
+        return Applied(slots=missed.with_(practitioner="any"), say=(("practitioner_any", {}),))
+    return Applied(slots=missed)
+
+
+def _service(slots: Slots, said: str, cfg: TenantConfig) -> Applied:
+    m = match_service(said, cfg)
+    if m.kind == "exact":
+        return _after_slot(slots.with_(pending=None, service_id=m.value), cfg)
+    if m.kind == "confirm":
+        pending = Pending(kind="match", slot="service", value=m.value)
+        return Applied(slots=slots.with_(pending=pending))
+    if m.kind == "which":
+        pending = Pending(kind="which", slot="service", candidates=m.candidates)
+        return Applied(slots=slots.with_(pending=pending))
+    if m.kind == "kind":
+        pending = Pending(kind="offers", slot="service_kind", value=m.value)
+        return Applied(slots=slots.with_(pending=pending))
+    missed = slots.with_(pending=None).miss("service")
+    if missed.misses["service"] >= 2:
+        pending = Pending(kind="offers", slot="service_kind")
+        return Applied(slots=missed.with_(pending=pending))
+    return Applied(slots=missed)
+
+
+def _name(slots: Slots, first_name: str, cfg: TenantConfig) -> Applied:
+    name = " ".join((first_name or "").split())[:80]
+    if not name or not any(ch.isalpha() for ch in name):
+        missed = slots.miss("name")
+        if missed.misses["name"] >= 2:
+            return Applied(slots=missed.with_(ended_flow=True), say=(("no_name", {}),))
+        return Applied(slots=missed)
+    name = name.split()[0].capitalize()
+    staff = slots.practitioner and slots.practitioner != "any"
+    if staff and sounds_like(name, first_name_of(slots.practitioner or "")):
+        pending = Pending(kind="name_staff", slot="name", value=name)
+        return Applied(slots=slots.with_(pending=pending))
+    return Applied(slots=slots.with_(first_name=name, pending=None))
+
+
+def _phone(slots: Slots, digits: str, caller_phone: str | None, channel: str) -> Applied:
+    e164 = normalise_phone(digits)
+    if e164 is None:
+        return _phone_miss(slots, caller_phone, channel)
+    return Applied(slots=slots.with_(pending=Pending(kind="phone", slot="phone", value=e164)))
+
+
+def _phone_miss(slots: Slots, caller_phone: str | None, channel: str) -> Applied:
+    missed = slots.miss("phone")
+    if missed.misses["phone"] >= 2 and channel == "voice" and caller_phone:
+        fallback = missed.with_(phone=caller_phone, phone_confirmed=True)
+        return Applied(slots=fallback, say=(("phone_fallback", {}),))
+    return Applied(slots=missed)
+
+
+def _join(names: list[str]) -> str:
+    if not names:
+        return "Someone on the team"
+    if len(names) == 1:
+        return names[0]
+    return ", ".join(names[:-1]) + " or " + names[-1]
