@@ -124,10 +124,21 @@ export function overviewTiles(data: OverviewCards): OverviewTile[] {
   return tiles;
 }
 
+/** Four across when the cards divide by four, three across otherwise: a clinic's six
+ * cards sit as two full rows of three rather than four and two. */
+export function gridColumns(count: number): 3 | 4 {
+  return count % 4 === 0 ? 4 : 3;
+}
+
 /** The cards themselves, in the kit's dashboard row. */
 export function OverviewTiles({ tiles }: { tiles: OverviewTile[] }) {
+  const wide =
+    gridColumns(tiles.length) === 4 ? "lg:grid-cols-4" : "lg:grid-cols-3";
   return (
-    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    <div
+      className={`grid gap-4 sm:grid-cols-2 ${wide}`}
+      data-testid="overview-tiles"
+    >
       {tiles.map((tile) => (
         <Tile key={tile.id} tile={tile} />
       ))}

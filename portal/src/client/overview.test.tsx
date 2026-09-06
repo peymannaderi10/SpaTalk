@@ -1,6 +1,11 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { overviewTiles, OverviewTiles, type OverviewCards } from "./overview";
+import {
+  gridColumns,
+  overviewTiles,
+  OverviewTiles,
+  type OverviewCards,
+} from "./overview";
 
 /**
  * Who the cards are for.
@@ -73,5 +78,21 @@ describe("the overview cards", () => {
     const tiles = overviewTiles({ ...overview(true), latency: [] });
     const latency = tiles.find((tile) => tile.id === "p95-latency");
     expect(latency?.value).toBe("—");
+  });
+});
+
+describe("the row of cards", () => {
+  it("lays six cards out three and three, and eight four and four", () => {
+    expect(gridColumns(6)).toBe(3);
+    expect(gridColumns(8)).toBe(4);
+    const { unmount } = mount(false);
+    expect(screen.getByTestId("overview-tiles").className).toContain(
+      "lg:grid-cols-3",
+    );
+    unmount();
+    mount(true);
+    expect(screen.getByTestId("overview-tiles").className).toContain(
+      "lg:grid-cols-4",
+    );
   });
 });
