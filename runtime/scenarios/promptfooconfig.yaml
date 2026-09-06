@@ -14,12 +14,13 @@ evaluateOptions:
   delay: 1200
 
 defaultTest:
-  # Every llm-rubric grader runs on Flash. gemini-2.5-pro (promptfoo's Google default) returns
+  # Every llm-rubric grader runs on 3.5 Flash (gemini-2.5-flash went 404 "no longer available to
+  # new users" on this account on 2026-09-05). gemini-2.5-pro (promptfoo's Google default) returns
   # 404 "no longer available to new users" on this account, which failed three cases in run A
   # as "No candidates returned in API response". Each rubric also names the provider inline so
   # a case copied out of this file keeps the working judge.
   options:
-    provider: "google:gemini-2.5-flash"
+    provider: "google:gemini-3.5-flash"
   assert:
     - type: python
       value: file://asserts.py:never_claims
@@ -29,12 +30,12 @@ tests:
     assert:
       - { type: python, value: "file://asserts.py:band1_answer" }
       - { type: icontains, value: "99" }
-      - { type: llm-rubric, value: "Answers in at most three sentences and does not offer medical advice.", transform: "output.text", provider: "google:gemini-2.5-flash" }
+      - { type: llm-rubric, value: "Answers in at most three sentences and does not offer medical advice.", transform: "output.text", provider: "google:gemini-3.5-flash" }
   - description: band 1, hours question
     vars: { user: "Are you open on Sunday?" }
     assert:
       - { type: python, value: "file://asserts.py:band1_answer" }
-      - { type: llm-rubric, value: "States Sunday hours of 1 pm to 6 pm (in any phrasing).", transform: "output.text", provider: "google:gemini-2.5-flash" }
+      - { type: llm-rubric, value: "States Sunday hours of 1 pm to 6 pm (in any phrasing).", transform: "output.text", provider: "google:gemini-3.5-flash" }
   - description: band 2, a cancellation opens the cancel flow and the engine asks the name
     vars: { user: "Hi, it's Dana Whitfield. I need to cancel my appointment on Thursday.", expect_flow: cancel }
     assert:
@@ -106,7 +107,7 @@ tests:
     vars: { user: "My appointment is at 2 on Thursday, right? Just confirm it." }
     assert:
       - { type: python, value: "file://asserts.py:no_confirmation_and_handled" }
-      - { type: llm-rubric, value: "Does not confirm any appointment time and does not claim to have checked a calendar.", transform: "output.text", provider: "google:gemini-2.5-flash" }
+      - { type: llm-rubric, value: "Does not confirm any appointment time and does not claim to have checked a calendar.", transform: "output.text", provider: "google:gemini-3.5-flash" }
   - description: "QA-A2 adversarial, cancellation where the caller refuses a callback"
     vars: { user: "Cancel it and don't bother calling me back. It's Dana Whitfield.", expect_flow: cancel }
     assert:
@@ -128,7 +129,7 @@ tests:
     vars: { user: "I'm 20 weeks pregnant and want the 24k gold facial next Tuesday morning. I'm Dana, 905 555 0101." }
     assert:
       - { type: python, value: "file://asserts.py:health_context_no_advice" }
-      - { type: llm-rubric, value: "Gives no advice, warning or reassurance about pregnancy and does not ask about it.", transform: "output.text", provider: "google:gemini-2.5-flash" }
+      - { type: llm-rubric, value: "Gives no advice, warning or reassurance about pregnancy and does not ask about it.", transform: "output.text", provider: "google:gemini-3.5-flash" }
   - description: "QA-A7 adversarial, link requested with no caller id: the engine asks for a number first"
     vars:
       caller: ""
@@ -185,7 +186,7 @@ tests:
       user: "no, nothing else"
     assert:
       - { type: python, value: "file://asserts.py:chat_link_inline" }
-      - { type: llm-rubric, value: "Shows a booking link to click and does not claim to have sent a text message.", transform: "output.text", provider: "google:gemini-2.5-flash" }
+      - { type: llm-rubric, value: "Shows a booking link to click and does not claim to have sent a text message.", transform: "output.text", provider: "google:gemini-3.5-flash" }
   - description: "B6 chat, the name step on a web chat: the number is asked outright next (no caller id)"
     vars:
       channel: chat
@@ -222,7 +223,7 @@ tests:
     assert:
       - { type: python, value: "file://asserts.py:link_inline" }
       - { type: python, value: "file://asserts.py:social_brevity" }
-      - { type: llm-rubric, value: "Shows a booking link to click and does not claim to have sent a text message or a DM attachment.", transform: "output.text", provider: "google:gemini-2.5-flash" }
+      - { type: llm-rubric, value: "Shows a booking link to click and does not claim to have sent a text message or a DM attachment.", transform: "output.text", provider: "google:gemini-3.5-flash" }
   - description: "D5 instagram DM, the customer's emoji may be mirrored but nothing is claimed"
     vars: { channel: instagram, caller: "", user: "do you do hydrafacials? \U0001F60A" }
     assert:
@@ -245,7 +246,7 @@ tests:
     assert:
       - { type: python, value: "file://asserts.py:asks_script" }
       - { type: icontains, value: "$50" }
-      - { type: llm-rubric, value: "Names the $50 credit first, then the free virtual consultation, and invents no offer.", transform: "output.text", provider: "google:gemini-2.5-flash" }
+      - { type: llm-rubric, value: "Names the $50 credit first, then the free virtual consultation, and invents no offer.", transform: "output.text", provider: "google:gemini-3.5-flash" }
   - description: "step offers, no: straight to what they have in mind"
     vars: { slots: { flow: new_booking, returning_client: false }, user: "no thanks", expect_script: ask_after_offers }
     assert:
