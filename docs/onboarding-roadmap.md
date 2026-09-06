@@ -67,7 +67,7 @@ Today a tenant is created by hand: a YAML bundle on disk, `spatalk tenant import
 ## 5. Gates before a real clinic is on it
 
 - The founder's eight call tests on the chosen model, then the live check that no request since go-live lacks a name and a number (`docs/reports/tasks/slot-engine.md`).
-- The Playwright acceptance run (portal plan R4), on the production build.
+- The Playwright acceptance run (portal plan R4): run in full on 2026-09-06 against the development server the suite starts itself, on an isolated stack (`docs/reports/tasks/playwright-acceptance.md`); every failure was a stale expectation, fixed. To be run once more on the production build when the VPS is up.
 - The promptfoo gate on the chosen model (done 2026-09-06: 47/50 on Gemini 3.1 Flash-Lite; the three misses are recorded).
 - Recording stays off; the AI disclosure script and the privacy page reviewed once by a person who reads contracts; the 30-day retention default confirmed with the clinic.
 - A support path the clinic can find: who they text or email when something is wrong, and the takeover thread in Slack once Slack is connected.
