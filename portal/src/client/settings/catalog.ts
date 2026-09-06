@@ -46,3 +46,13 @@ export function uniqueServiceId(name: string, taken: Iterable<string>): string {
 function trimTo(id: string, max: number): string {
   return id.slice(0, max).replace(/_+$/, "");
 }
+
+/**
+ * A category as the clinic reads it. Categories are stored lowercase — the
+ * runtime matches them lowercase and lowercases whatever is saved — and shown
+ * with their first letter up and nothing else touched, so a person typing one
+ * sees what they typed with a capital at the front.
+ */
+export function displayCategory(category: string): string {
+  return category.charAt(0).toUpperCase() + category.slice(1);
+}

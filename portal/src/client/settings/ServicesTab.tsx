@@ -4,7 +4,7 @@ import { useState } from "react";
 import { EmptyState } from "../components/empty-state";
 import { Button } from "../components/ui/button";
 import { Card, CardContent } from "../components/ui/card";
-import { uniqueServiceId } from "./catalog";
+import { displayCategory, uniqueServiceId } from "./catalog";
 import { fieldsOf, invalidAt, type Draft, type TabProps } from "./schemaFields";
 import { SchemaInput } from "./SchemaInput";
 
@@ -18,6 +18,11 @@ import { SchemaInput } from "./SchemaInput";
  * name as the name is typed, made unique among the tenant's ids; the id
  * freezes when the person moves on from the name, and a saved service keeps
  * its id whatever it is renamed to.
+ *
+ * A category is stored lowercase, because the runtime matches categories
+ * lowercase, and read with a capital: the control shows `displayCategory` of
+ * the draft and writes the draft lowercase, so the saved config never carries
+ * a capital and the person never sees the lack of one.
  *
  * Each service is one of the kit's cards with the schema's fields inside it.
  */
@@ -45,7 +50,9 @@ export function ServicesTab({
     setServices(
       services.map((entry, i) => {
         if (i !== index) return entry;
-        const changed = { ...entry, [name]: value };
+        const stored =
+          name === "category" ? String(value ?? "").toLowerCase() : value;
+        const changed = { ...entry, [name]: stored };
         if (name === "name" && naming.includes(index)) {
           const taken = services
             .filter((_, j) => j !== index)
@@ -100,7 +107,11 @@ export function ServicesTab({
                 <SchemaInput
                   key={field.name}
                   field={field}
-                  value={service[field.name]}
+                  value={
+                    field.name === "category"
+                      ? displayCategory(String(service.category ?? ""))
+                      : service[field.name]
+                  }
                   disabled={disabled}
                   long={field.name === "description"}
                   invalid={invalidAt(errors, ["services", index, field.name])}

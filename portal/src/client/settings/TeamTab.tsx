@@ -15,6 +15,7 @@ import {
   CollapsibleTrigger,
 } from "../components/ui/collapsible";
 import { Label } from "../components/ui/label";
+import { displayCategory } from "./catalog";
 import { fieldsOf, invalidAt, type Draft, type TabProps } from "./schemaFields";
 import { SchemaInput } from "./SchemaInput";
 
@@ -238,7 +239,9 @@ function CategoryBar({
             data-testid={`${testId}-toggle`}
             className="group flex flex-1 items-center justify-between gap-2 text-left text-sm"
           >
-            <span className="font-medium">{group.category}</span>
+            <span className="font-medium">
+              {displayCategory(group.category)}
+            </span>
             <span className="text-muted-foreground flex items-center gap-2">
               {ticked} of {ids.length}
               <IconChevronDown className="size-4 transition-transform group-data-[state=open]:rotate-180" />

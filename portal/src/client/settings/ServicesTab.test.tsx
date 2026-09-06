@@ -169,6 +169,24 @@ describe("the Services tab", () => {
     expect(id.startsWith("ultra_deluxe_24k_gold_facial")).toBe(true);
   });
 
+  it("shows a category capitalized and stores it lowercase", () => {
+    const last = mount();
+    expect(screen.getByTestId("service-0-category")).toHaveValue("Facials");
+    fireEvent.change(screen.getByTestId("service-0-category"), {
+      target: { value: "Facial" },
+    });
+    expect(last().services[0].category).toBe("facial");
+    expect(screen.getByTestId("service-0-category")).toHaveValue("Facial");
+
+    fireEvent.change(screen.getByTestId("service-0-category"), {
+      target: { value: "HAIR removal " },
+    });
+    expect(last().services[0].category).toBe("hair removal ");
+    expect(screen.getByTestId("service-0-category")).toHaveValue(
+      "Hair removal ",
+    );
+  });
+
   it("removes a row, and the ids of the rows after it stay theirs", () => {
     const last = mount({
       services: [goldFacial, { ...goldFacial, id: "peel", name: "Peel" }],

@@ -1,5 +1,23 @@
 import { describe, expect, test } from "vitest";
-import { SERVICE_ID_MAX, slugifyServiceId, uniqueServiceId } from "./catalog";
+import {
+  displayCategory,
+  SERVICE_ID_MAX,
+  slugifyServiceId,
+  uniqueServiceId,
+} from "./catalog";
+
+describe("displayCategory", () => {
+  test("upper-cases the first letter of a stored, lowercase category", () => {
+    expect(displayCategory("laser")).toBe("Laser");
+    expect(displayCategory("hair removal")).toBe("Hair removal");
+  });
+
+  test("changes nothing else, so what is typed stays where it was typed", () => {
+    expect(displayCategory("Hair Removal ")).toBe("Hair Removal ");
+    expect(displayCategory("")).toBe("");
+    expect(displayCategory("24k")).toBe("24k");
+  });
+});
 
 describe("slugifyServiceId", () => {
   test("lowercases, keeps letters and digits, joins words with underscores", () => {

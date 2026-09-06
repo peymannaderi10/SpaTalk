@@ -137,11 +137,17 @@ describe("the Team tab", () => {
     expect(serviceBoxes(0)).toBe(0);
   });
 
-  it("groups the services by category, labelled by name, and skips one with no id", () => {
+  it("groups the services by category, read capitalized, labelled by name, and skips one with no id", () => {
     mount();
     const row = within(screen.getByTestId("team-0"));
-    for (const category of ["facials", "laser", "consultation"]) {
-      expect(row.getByText(category)).toBeInTheDocument();
+    // Categories are stored lowercase; the bar reads them with a capital.
+    for (const [category, label] of [
+      ["facials", "Facials"],
+      ["laser", "Laser"],
+      ["consultation", "Consultation"],
+    ]) {
+      expect(row.getByText(label)).toBeInTheDocument();
+      expect(row.queryByText(category)).toBeNull();
       expand(0, category);
     }
     expect(row.getByText("Laser hair removal")).toBeInTheDocument();
