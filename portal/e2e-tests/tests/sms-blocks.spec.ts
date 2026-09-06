@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { agencyAdmin, callOperation, SERVER_URL, signInOrSignUp } from "./utils";
+import { agencyAdmin, organisationForTenant, SERVER_URL, signInOrSignUp } from "./utils";
 import { checkoutSessionCompleted, postStripeEvent } from "./stripe";
 import { runtimeGet } from "./runtime";
 
@@ -13,7 +13,9 @@ test.describe.configure({ mode: "serial" });
 
 const FIRST_RENDER = { timeout: 30_000 };
 const ORG_NAME = "Skincentrix Blocks";
-const ORG_SLUG = "skincentrix-blocks";
+// Asked for, then replaced by whatever organisation holds the tenant (see
+// `organisationForTenant`): the URL below is built after `beforeAll` ran.
+let ORG_SLUG = "skincentrix-blocks";
 const RUNTIME_TENANT_ID = "skincentrix";
 const NUMBER = "+19055550188";
 
@@ -23,19 +25,13 @@ test.beforeAll(async ({ browser }) => {
   ownerPage = await browser.newPage();
   await signInOrSignUp({ page: ownerPage, user: agencyAdmin });
 
-  let organizationId: string;
-  const created = await callOperation(ownerPage, "/operations/create-organization", {
+  const org = await organisationForTenant(ownerPage, {
     name: ORG_NAME,
     slug: ORG_SLUG,
     runtimeTenantId: RUNTIME_TENANT_ID,
   });
-  if (created.status === 200) {
-    organizationId = created.body.id;
-  } else {
-    expect(created.status).toBe(409);
-    const mine = await callOperation(ownerPage, "/operations/list-my-organizations");
-    organizationId = mine.body.find((org: { slug: string }) => org.slug === ORG_SLUG).id;
-  }
+  const organizationId = org.id;
+  ORG_SLUG = org.slug;
   const subscribed = await postStripeEvent(
     SERVER_URL,
     checkoutSessionCompleted({

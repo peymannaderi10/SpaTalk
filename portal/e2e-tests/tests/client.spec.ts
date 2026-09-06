@@ -252,9 +252,10 @@ test.describe("the settings page", () => {
       ownerPage.getByRole("heading", { name: "Settings" }),
     ).toBeVisible(FIRST_RENDER);
 
-    const monday = ownerPage.getByTestId("hours-mon-0-start");
-    await expect(monday).toHaveValue("12:00");
-    await monday.fill("09:00");
+    // Thursday: the seeded bundle's Monday is closed (Skincentrix, 2026-09-05), Thursday opens at noon.
+    const thursday = ownerPage.getByTestId("hours-thu-0-start");
+    await expect(thursday).toHaveValue("12:00");
+    await thursday.fill("09:00");
     await ownerPage.getByRole("button", { name: "Save settings" }).click();
 
     await expect(ownerPage.getByTestId("settings-saved")).toBeVisible(
@@ -266,11 +267,11 @@ test.describe("the settings page", () => {
       `/internal/tenants/${RUNTIME_TENANT_ID}/config`,
     );
     expect(config.version).toBe(2);
-    expect(config.config.hours.mon[0][0]).toBe("09:00");
+    expect(config.config.hours.thu[0][0]).toBe("09:00");
   });
 
   test("an invalid configuration is refused with the field named", async () => {
-    await ownerPage.getByTestId("hours-mon-0-start").fill("23:00");
+    await ownerPage.getByTestId("hours-thu-0-start").fill("23:00");
     await ownerPage.getByRole("button", { name: "Save settings" }).click();
 
     await expect(ownerPage.getByTestId("field-error-hours")).toBeVisible(
@@ -295,7 +296,7 @@ test.describe("the settings page", () => {
       `/internal/tenants/${RUNTIME_TENANT_ID}/config`,
     );
     expect(config.version).toBe(3);
-    expect(config.config.hours.mon[0][0]).toBe("12:00");
+    expect(config.config.hours.thu[0][0]).toBe("12:00");
   });
 
   test("the numbers tab is read only", async () => {

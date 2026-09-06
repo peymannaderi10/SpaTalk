@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { checkoutSessionCompleted, postStripeEvent } from "./stripe";
 import {
   agencyAdmin,
-  callOperation,
+  organisationForTenant,
   SERVER_URL,
   signInOrSignUp,
 } from "./utils";
@@ -23,7 +23,9 @@ test.describe.configure({ mode: "serial" });
 const FIRST_RENDER = { timeout: 30_000 };
 
 const ORG_NAME = "Skincentrix Shell";
-const ORG_SLUG = "skincentrix-shell";
+// Asked for, then replaced by whatever organisation holds the tenant (see
+// `organisationForTenant`): every URL below is built after `beforeAll` ran.
+let ORG_SLUG = "skincentrix-shell";
 const RUNTIME_TENANT_ID = "skincentrix";
 
 /**
@@ -45,24 +47,13 @@ test.beforeAll(async ({ browser }) => {
   ownerPage = await browser.newPage();
   await signInOrSignUp({ page: ownerPage, user: agencyAdmin });
 
-  let organizationId: string;
-  const created = await callOperation(
-    ownerPage,
-    "/operations/create-organization",
-    { name: ORG_NAME, slug: ORG_SLUG, runtimeTenantId: RUNTIME_TENANT_ID },
-  );
-  if (created.status === 200) {
-    organizationId = created.body.id;
-  } else {
-    expect(created.status).toBe(409); // left behind by an earlier run
-    const mine = await callOperation(
-      ownerPage,
-      "/operations/list-my-organizations",
-    );
-    organizationId = mine.body.find(
-      (org: { slug: string }) => org.slug === ORG_SLUG,
-    ).id;
-  }
+  const org = await organisationForTenant(ownerPage, {
+    name: ORG_NAME,
+    slug: ORG_SLUG,
+    runtimeTenantId: RUNTIME_TENANT_ID,
+  });
+  const organizationId = org.id;
+  ORG_SLUG = org.slug;
 
   const subscribed = await postStripeEvent(
     SERVER_URL,
@@ -117,11 +108,16 @@ test.describe("the sidebar", () => {
     // Tab from the top of the document and record what the focus lands on.
     await ownerPage.locator("body").click({ position: { x: 2, y: 2 } });
     const focused: string[] = [];
+    // One trip round the document: the sidebar is short since Setup became a
+    // single Settings entry, so thirty tabs would wrap and revisit the top.
     for (let step = 0; step < 30; step += 1) {
       await ownerPage.keyboard.press("Tab");
       const testId = await ownerPage.evaluate(
         () => document.activeElement?.getAttribute("data-testid") ?? "",
       );
+      if (testId && focused.includes(testId)) {
+        break;
+      }
       if (testId) {
         focused.push(testId);
       }
@@ -229,7 +225,7 @@ test.describe("the settings sections", () => {
     await ownerPage.goto(`/app/${ORG_SLUG}/overview`);
     await ownerPage.getByTestId("nav-settings").click();
     await expect(ownerPage).toHaveURL(new RegExp(`/app/${ORG_SLUG}/settings`));
-    await expect(ownerPage.getByTestId("hours-mon-0-start")).toBeVisible(
+    await expect(ownerPage.getByTestId("hours-thu-0-start")).toBeVisible(
       FIRST_RENDER,
     );
     await expect(ownerPage.getByTestId("settings-tab-hours")).toHaveAttribute(
@@ -238,7 +234,7 @@ test.describe("the settings sections", () => {
     );
 
     await ownerPage.goto(`/app/${ORG_SLUG}/settings`);
-    await expect(ownerPage.getByTestId("hours-mon-0-start")).toBeVisible(
+    await expect(ownerPage.getByTestId("hours-thu-0-start")).toBeVisible(
       FIRST_RENDER,
     );
     await expect(ownerPage.getByTestId("nav-settings")).toHaveAttribute(

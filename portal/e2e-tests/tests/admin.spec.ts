@@ -149,7 +149,9 @@ test.describe("the onboarding wizard", () => {
     await adminPage.fill('input[name="organizationSlug"]', WIZARD_ORG_SLUG);
     await adminPage.getByTestId("wizard-next").click();
 
-    // Step 2: the bundle, pasted rather than uploaded from disk.
+    // Step 2: the bundle, pasted rather than uploaded from disk. The basics are
+    // the default since the basics path landed, so the bundle mode is chosen first.
+    await adminPage.getByTestId("wizard-mode-bundle").click();
     for (const [slot, text] of Object.entries(bundle)) {
       await adminPage.fill(`textarea[name="bundle-${slot}"]`, text);
     }

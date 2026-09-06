@@ -244,3 +244,42 @@ export async function serverRequestStatus(
   const { status } = await callOperation(page, path, args);
   return status;
 }
+
+/**
+ * The organisation that holds a runtime tenant, created if there is none.
+ *
+ * `runtimeTenantId` is unique on `Organization`, so a second spec that wants
+ * its own organisation for the seeded `skincentrix` tenant is refused with
+ * 409 and must use the one an earlier spec (or an earlier run) created. The
+ * agency admin sees every organisation in `list-my-organizations`, so the
+ * lookup works whoever created it. Returns the organisation's id and slug;
+ * callers build their URLs from the slug that comes back, never from the one
+ * they asked for.
+ */
+export async function organisationForTenant(
+  page: Page,
+  wanted: { name: string; slug: string; runtimeTenantId: string },
+): Promise<{ id: string; slug: string }> {
+  const created = await callOperation(
+    page,
+    "/operations/create-organization",
+    wanted,
+  );
+  if (created.status === 200) {
+    return { id: created.body.id, slug: created.body.slug ?? wanted.slug };
+  }
+  expect(created.status).toBe(409);
+  const mine = await callOperation(page, "/operations/list-my-organizations");
+  const found = (mine.body as { id: string; slug: string; runtimeTenantId: string }[]).find(
+    (org) =>
+      org.slug === wanted.slug || org.runtimeTenantId === wanted.runtimeTenantId,
+  );
+  if (!found) {
+    throw new Error(
+      `no organisation for tenant ${wanted.runtimeTenantId} is visible to this user, ` +
+        `yet creating one answered 409`,
+    );
+  }
+  return { id: found.id, slug: found.slug };
+}
+

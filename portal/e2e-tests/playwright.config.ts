@@ -5,7 +5,7 @@ import {
   STRIPE_TEST_PRICE_ID,
   STRIPE_TEST_WEBHOOK_SECRET,
 } from "./tests/stripe";
-import { AGENCY_ADMIN_EMAIL } from "./tests/utils";
+import { AGENCY_ADMIN_EMAIL, SERVER_URL } from "./tests/utils";
 
 /**
  * See https://playwright.dev/docs/test-configuration.
@@ -56,6 +56,13 @@ export default defineConfig({
     cwd: "..",
     env: {
       PORTAL_EMAIL_PROVIDER: "Dummy",
+      // The links in every email and invitation carry these hosts, and the
+      // suite drives http://localhost:3000. A developer's `.env.server` may
+      // point them at a tunnel; an invitation opened on that origin parks its
+      // token in another origin's storage and the sign-up round trip never
+      // finds it (2026-09-06).
+      WASP_WEB_CLIENT_URL: "http://localhost:3000",
+      WASP_SERVER_URL: SERVER_URL,
       // Pinned so the organisation tests do not depend on whatever the local
       // .env.server holds: this address signs up as the agency admin.
       ADMIN_EMAILS: AGENCY_ADMIN_EMAIL,
