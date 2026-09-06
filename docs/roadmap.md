@@ -1,6 +1,6 @@
 # Roadmap and competitive map
 
-Last updated 2026-09-02. This page records what SpaTalk has, what is parked with a plan, and what is out of scope, using GoHighLevel's AI page (https://www.gohighlevel.com/ai) as the yardstick because it is the product prospects will compare us with. Nothing here is a commitment; the founder decides what moves.
+Last updated 2026-09-06. The ordered path from the demo to the first onboarded clinic is `docs/onboarding-roadmap.md`. This page records what SpaTalk has, what is parked with a plan, and what is out of scope, using GoHighLevel's AI page (https://www.gohighlevel.com/ai) as the yardstick because it is the product prospects will compare us with. Nothing here is a commitment; the founder decides what moves.
 
 ## What GoHighLevel sells versus what SpaTalk does
 
