@@ -70,6 +70,7 @@ from spatalk.text.textback import schedule_missed_call_textback
 from spatalk.voice.handlers import register_tool_handlers
 # Llm failover plan, Task F2: two vendors behind one place in the pipeline.
 from spatalk.voice.llm_router import LLMRouter
+from spatalk.voice.steps import sync_context
 from spatalk.voice.observers import TurnLatencyObserver, UsageObserver
 from spatalk.voice.processors import FillerProcessor, OutputGuardProcessor, RulesGateProcessor
 from spatalk.voice.resilience import idle_frames, error_frames
@@ -315,6 +316,9 @@ async def run_call(websocket: WebSocket, token: str, ctx) -> None:
         tools=tools_schema(cfg, transfer_enabled=can_transfer),
     )
     session.context = context
+    # The slot engine's first step: the brief rides on the system message and the tool list
+    # is the Q&A set (slot engine design, §6.5).
+    sync_context(session, now)
     user_agg, assistant_agg = LLMContextAggregatorPair(context, user_params=user_turn_params())
     stt, tts = make_stt(settings), make_tts(settings)
     # Two vendors when LLM_MODEL_FALLBACK names one, otherwise exactly the single service

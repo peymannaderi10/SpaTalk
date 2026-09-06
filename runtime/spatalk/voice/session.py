@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Any
 
 from spatalk.brain.capabilities import Capabilities
+from spatalk.brain.flow import Slots
 from spatalk.brain.requests import ConversationRef
 from spatalk.clock import Clock
 from spatalk.tenants.schema import TenantConfig
@@ -27,6 +28,10 @@ class VoiceSession:
     # True only once a Tier A adapter has actually completed something this call.
     has_completed: bool = False
     band: int = 1
+    # The slot engine's record for this call, and whether a tool ran on the current model
+    # turn (a turn with none gets the open question re-asked after the model's words).
+    slots: Slots = field(default_factory=Slots)
+    tool_called_this_turn: bool = False
     ended: bool = False
     guard_blocks: int = 0
     latencies_ms: list[int] = field(default_factory=list)

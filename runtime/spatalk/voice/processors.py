@@ -34,7 +34,8 @@ from spatalk.brain.audio_tags import drop_unknown_tags
 from spatalk.brain.guard import guard
 from spatalk.brain.outcomes import Refused
 from spatalk.brain.renderer import render, render_script
-from spatalk.brain.requests import CaptureRequest, EscalateRequest
+from spatalk.brain.flow import Slots, draft_from
+from spatalk.brain.requests import EscalateRequest
 from spatalk.brain.rules import health_context_mentioned, rules_gate
 from spatalk.voice.echo import scrub_echo
 from spatalk.voice.session import VoiceSession
@@ -218,7 +219,7 @@ class OutputGuardProcessor(FrameProcessor):
             self._s.band = max(self._s.band, 2)
             now = self._s.clock.now()
             try:
-                await self._s.caps.capture(self._s.ref, CaptureRequest(kind="question"))
+                await self._s.caps.capture(self._s.ref, draft_from(Slots(flow="question"), self._s.cfg))
                 spoken = render_script("cannot_complete", self._s.cfg, now, urgent=False)
             except Exception as e:  # noqa: BLE001  ledger down: nothing was filed, promise nothing
                 logger.exception("guard could not file the blocked claim: {}", e)
