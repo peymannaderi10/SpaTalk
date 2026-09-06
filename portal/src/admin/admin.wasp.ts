@@ -6,6 +6,7 @@ import { AnalyticsDashboardPage } from "./dashboards/analytics/AnalyticsDashboar
 import { HealthPage } from "./HealthPage" with { type: "ref" };
 import { NewTenantWizard } from "./NewTenantWizard" with { type: "ref" };
 import {
+  createTenantFromBasics,
   createTenantFromBundle,
   getAgencyRevenue,
   getAgencyTenants,
@@ -69,6 +70,10 @@ export const adminSpec: Spec = [
   // Nor this one: the rates are the runtime's file, not a copy in the portal.
   query(getRates, { entities: [] }),
   action(createTenantFromBundle, {
+    entities: ["Organization", "Membership", "Invitation"],
+  }),
+  // The same tail as the bundle path, so the same entities.
+  action(createTenantFromBasics, {
     entities: ["Organization", "Membership", "Invitation"],
   }),
 ];

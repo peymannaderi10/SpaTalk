@@ -1,6 +1,7 @@
 import { type Organization } from "wasp/entities";
 import { HttpError } from "wasp/server";
 import {
+  type CreateTenantFromBasics,
   type CreateTenantFromBundle,
   type GetAgencyRevenue,
   type GetAgencyTenants,
@@ -302,6 +303,111 @@ export type NewTenant = {
   invitation: { email: string; inviteUrl: string; expiresAt: Date };
 };
 
+/** What the runtime answers when it has taken a tenant: `TenantCreated`. */
+type TenantCreated = { id: string; version: number };
+
+type OrganizationDelegate = {
+  findUnique(args: {
+    where: { runtimeTenantId: string } | { slug: string };
+  }): Promise<Organization | null>;
+  create(args: {
+    data: { name: string; slug: string; runtimeTenantId: string };
+  }): Promise<Organization>;
+};
+
+/** The entities both onboarding paths write: the organisation, then its owner's invitation. */
+type OnboardingEntities = Parameters<
+  typeof createAndSendInvitation
+>[0]["entities"] & { Organization: OrganizationDelegate };
+
+/**
+ * The refusal both paths give when `/app/<slug>` is somebody else's. With
+ * `created` the runtime already holds the tenant (the bundle path checks after
+ * the upload, because the tenant id is inside the bundle); without it nothing
+ * has been made yet (the basics path checks first, because its tenant id is
+ * the slug and an orphan tenant would be the only thing a retry left behind).
+ */
+function addressTaken(
+  slug: string,
+  taken: Organization,
+  created: TenantCreated | null,
+): HttpError {
+  const preface = created
+    ? `${created.id} is now configuration version ${created.version} in the front desk ` +
+      `service, but `
+    : "";
+  const ending = created
+    ? "; the bundle does not have to change."
+    : "; nothing has been created yet.";
+  return new HttpError(
+    409,
+    `${preface}/app/${slug} already belongs to ${taken.name}, whose tenant ` +
+      `is ${taken.runtimeTenantId}. Choose another address and create the ` +
+      `organisation again${ending}`,
+  );
+}
+
+/**
+ * The tail both paths share once the runtime holds the tenant: keep the
+ * organisation that already points at it, or refuse a taken address and
+ * create one, then invite the owner. A re-uploaded bundle is a new version of
+ * a tenant that already has an organisation; that organisation is kept rather
+ * than duplicated, and the name and address typed into the wizard are left
+ * alone.
+ */
+async function organisationAndInvitation({
+  entities,
+  created,
+  name,
+  slug,
+  ownerEmail,
+}: {
+  entities: OnboardingEntities;
+  created: TenantCreated;
+  name: string;
+  slug: string;
+  ownerEmail: string;
+}): Promise<NewTenant> {
+  const existing = await entities.Organization.findUnique({
+    where: { runtimeTenantId: created.id },
+  });
+
+  if (!existing) {
+    const takenSlug = await entities.Organization.findUnique({
+      where: { slug },
+    });
+    if (takenSlug) {
+      throw addressTaken(slug, takenSlug, created);
+    }
+  }
+
+  const org =
+    existing ??
+    (await entities.Organization.create({
+      data: { name, slug, runtimeTenantId: created.id },
+    }));
+
+  const invitation = await createAndSendInvitation({
+    entities,
+    org,
+    email: ownerEmail,
+    role: "OWNER",
+  });
+
+  return {
+    runtimeTenantId: created.id,
+    configVersion: created.version,
+    organizationId: org.id,
+    organizationSlug: org.slug,
+    organizationCreated: existing === null,
+    invitation: {
+      email: invitation.email,
+      inviteUrl: invitation.inviteUrl,
+      expiresAt: invitation.expiresAt,
+    },
+  };
+}
+
 /**
  * The agency's onboarding step, in the order that leaves the least mess: check
  * the name is free, let the runtime decide whether the bundle is a tenant, then
@@ -339,55 +445,108 @@ export const createTenantFromBundle: CreateTenantFromBundle<
     "this bundle",
   );
 
-  // A re-uploaded bundle is a new version of a tenant that already has an
-  // organisation; that organisation is kept rather than duplicated, and the
-  // name and address typed into the wizard are left alone.
-  const existing = await context.entities.Organization.findUnique({
-    where: { runtimeTenantId: created.id },
+  return organisationAndInvitation({
+    entities: context.entities,
+    created,
+    name: args.name,
+    slug: args.slug,
+    ownerEmail: args.ownerEmail,
   });
+};
 
+// --- onboarding a tenant from the basics -----------------------------------
+
+const hoursSpan = z.tuple([z.string(), z.string()]);
+
+const basicsSchema = z.object({
+  timezone: z.string().trim().min(1).max(64),
+  hours: z.record(z.string(), z.array(hoursSpan)),
+  bookingUrl: z
+    .string()
+    .trim()
+    .pipe(z.url({ protocol: /^https?$/ })),
+  publicPhone: z.string().trim().max(20).default(""),
+  assistantName: z.string().trim().min(1).max(40).default("Ava"),
+});
+
+const createFromBasicsSchema = z.object({
+  name: z.string().trim().min(2).max(120),
+  slug: slugSchema,
+  ownerEmail: z.string().trim().toLowerCase().pipe(z.email()),
+  ownerName: z.string().trim().max(120).default(""),
+  basics: basicsSchema,
+});
+
+export type BasicsArgs = z.infer<typeof createFromBasicsSchema>;
+
+/**
+ * The wizard's "start from the basics" path (onboarding roadmap, section 4).
+ *
+ * The runtime renders its starter bundle around the basics and is the only
+ * judge of whether they make a tenant (`POST /internal/tenants/from-basics`);
+ * the tenant's id is the organisation's slug, so `/app/<slug>` and the runtime
+ * agree on the name. The runtime refuses an id that already exists rather than
+ * versioning it, and that refusal is handed on as it is: a form must never
+ * overwrite a configured clinic. The organisation and the owner's invitation
+ * then follow exactly the bundle path's tail.
+ */
+export const createTenantFromBasics: CreateTenantFromBasics<
+  BasicsArgs,
+  NewTenant
+> = async (rawArgs, context) => {
+  requireAdmin(context);
+  const args = ensureArgsSchemaOrThrowHttpError(
+    createFromBasicsSchema,
+    rawArgs,
+  );
+  const actor = actorOf(context);
+
+  // The address is checked before the runtime is asked: the tenant id is the
+  // slug, so a taken address would otherwise leave an orphan tenant behind.
+  const existing = await context.entities.Organization.findUnique({
+    where: { runtimeTenantId: args.slug },
+  });
   if (!existing) {
     const takenSlug = await context.entities.Organization.findUnique({
       where: { slug: args.slug },
     });
     if (takenSlug) {
-      throw new HttpError(
-        409,
-        `${created.id} is now configuration version ${created.version} in the front desk ` +
-          `service, but /app/${args.slug} already belongs to ${takenSlug.name}, whose tenant ` +
-          `is ${takenSlug.runtimeTenantId}. Choose another address and create the ` +
-          `organisation again; the bundle does not have to change.`,
-      );
+      throw addressTaken(args.slug, takenSlug, null);
     }
   }
 
-  const org =
-    existing ??
-    (await context.entities.Organization.create({
-      data: {
-        name: args.name,
-        slug: args.slug,
-        runtimeTenantId: created.id,
-      },
-    }));
-
-  const invitation = await createAndSendInvitation({
-    entities: context.entities,
-    org,
-    email: args.ownerEmail,
-    role: "OWNER",
-  });
-
-  return {
-    runtimeTenantId: created.id,
-    configVersion: created.version,
-    organizationId: org.id,
-    organizationSlug: org.slug,
-    organizationCreated: existing === null,
-    invitation: {
-      email: invitation.email,
-      inviteUrl: invitation.inviteUrl,
-      expiresAt: invitation.expiresAt,
+  const api = runtime(actor);
+  const attempt = api.POST("/internal/tenants/from-basics", {
+    body: {
+      id: args.slug,
+      name: args.name,
+      timezone: args.basics.timezone,
+      hours: args.basics.hours,
+      booking_url: args.basics.bookingUrl,
+      public_phone: args.basics.publicPhone,
+      owner_name: args.ownerName,
+      owner_email: args.ownerEmail,
+      assistant_name: args.basics.assistantName,
+      created_by: actor,
     },
-  };
+  });
+  // `runtimeCall` folds every refusal but 404 and 422 into "the service could
+  // not"; a 409 here is not that, it is the one answer the admin must read.
+  const answer = await attempt.catch(() => null);
+  if (answer?.response.status === 409) {
+    throw new HttpError(
+      409,
+      `${args.slug} already exists in the front desk service, so nothing was created. ` +
+        `Open its organisation's Settings to change it, or upload a bundle to add a version.`,
+    );
+  }
+  const created = await runtimeCall(() => attempt, "the basics");
+
+  return organisationAndInvitation({
+    entities: context.entities,
+    created,
+    name: args.name,
+    slug: args.slug,
+    ownerEmail: args.ownerEmail,
+  });
 };

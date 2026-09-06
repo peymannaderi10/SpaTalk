@@ -8,7 +8,10 @@ import {
 import { useState, type ChangeEvent } from "react";
 import { Link } from "react-router";
 import { type AuthUser } from "wasp/auth";
-import { createTenantFromBundle } from "wasp/client/operations";
+import {
+  createTenantFromBasics,
+  createTenantFromBundle,
+} from "wasp/client/operations";
 import { PageHeader } from "../client/components/page-header";
 import {
   Alert,
@@ -24,10 +27,29 @@ import {
   CardHeader,
   CardTitle,
 } from "../client/components/ui/card";
+import { Checkbox } from "../client/components/ui/checkbox";
 import { Input } from "../client/components/ui/input";
 import { Label } from "../client/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../client/components/ui/select";
 import { Textarea } from "../client/components/ui/textarea";
 import { cn } from "../client/utils";
+import {
+  basicsProblems,
+  CANADIAN_TIMEZONES,
+  DEFAULT_TIMEZONE,
+  defaultBasics,
+  OTHER_TIMEZONE,
+  runtimeHours,
+  WEEKDAYS,
+  type BasicsDraft,
+  type Weekday,
+} from "./basics";
 import {
   BUNDLE_SLOTS,
   emptyBundle,
@@ -41,29 +63,36 @@ import { DefaultLayout } from "./layout/DefaultLayout";
 
 /**
  * Onboarding a client, in the order that leaves the least to undo: name the
- * organisation, give the runtime the bundle it will judge, invite the owner,
- * then read off what still has to be bought and created by hand.
+ * organisation, give the runtime what it will judge, invite the owner, then
+ * read off what still has to be bought and created by hand.
  *
  * Four steps in the kit's form idiom (`src/features/settings/profile` in
  * `satnaing/shadcn-admin`): the registry's label, input and textarea inside
  * one card per step, with the step's buttons in the card's footer.
  *
- * The portal does not read the bundle. The five files go to the runtime whose
- * loader decides whether they are a tenant, so the wizard and
+ * The configuration step is a choice. "Start from the basics" (the default)
+ * asks for a timezone, hours, a booking link, the clinic's number and the
+ * assistant's name; the runtime renders its starter bundle around them
+ * (`POST /internal/tenants/from-basics`). "Upload a bundle" is the five files
+ * as before. Either way the portal does not read the configuration: the
+ * runtime's loader decides whether it is a tenant, so the wizard and
  * `spatalk tenant import` accept exactly the same thing.
  */
 
 /**
- * What the action answers, taken from the action itself so the page never has
- * to import server code to know the shape of its own result.
+ * What the actions answer, taken from the action itself so the page never has
+ * to import server code to know the shape of its own result. Both paths
+ * answer the same shape.
  */
 type NewTenant = Awaited<ReturnType<typeof createTenantFromBundle>>;
 
 type Step = 1 | 2 | 3 | 4;
 
+type Mode = "basics" | "bundle";
+
 const STEPS: { step: Step; title: string }[] = [
   { step: 1, title: "Organisation" },
-  { step: 2, title: "Bundle" },
+  { step: 2, title: "Configuration" },
   { step: 3, title: "Owner" },
   { step: 4, title: "What is left to do" },
 ];
@@ -73,6 +102,9 @@ export function NewTenantWizard({ user }: { user: AuthUser }) {
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
   const [ownerEmail, setOwnerEmail] = useState("");
+  const [ownerName, setOwnerName] = useState("");
+  const [mode, setMode] = useState<Mode>("basics");
+  const [basics, setBasics] = useState<BasicsDraft>(defaultBasics());
   const [bundle, setBundle] = useState<BundleDraft>(emptyBundle());
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
@@ -80,7 +112,15 @@ export function NewTenantWizard({ user }: { user: AuthUser }) {
 
   const organisationReady =
     name.trim().length >= 2 && /^[a-z0-9-]+$/.test(slug);
-  const bundleReady = isCompleteBundle(bundle);
+  const problems = basicsProblems(basics);
+  const configurationReady =
+    mode === "basics" ? problems.length === 0 : isCompleteBundle(bundle);
+  const configurationHint =
+    mode === "basics"
+      ? problems[0]
+      : `Still missing: ${missingSlots(bundle)
+          .map((slot: BundleSlot) => `${slot}`)
+          .join(", ")}.`;
 
   function takeFiles(event: ChangeEvent<HTMLInputElement>) {
     const files = Array.from(event.target.files ?? []);
@@ -119,12 +159,27 @@ export function NewTenantWizard({ user }: { user: AuthUser }) {
     setBusy(true);
     setProblem(null);
     try {
-      const created = await createTenantFromBundle({
-        name: name.trim(),
-        slug,
-        ownerEmail: ownerEmail.trim(),
-        bundle,
-      });
+      const created =
+        mode === "basics"
+          ? await createTenantFromBasics({
+              name: name.trim(),
+              slug,
+              ownerEmail: ownerEmail.trim(),
+              ownerName: ownerName.trim(),
+              basics: {
+                timezone: basics.timezone.trim(),
+                hours: runtimeHours(basics),
+                bookingUrl: basics.bookingUrl.trim(),
+                publicPhone: basics.publicPhone.trim(),
+                assistantName: basics.assistantName.trim(),
+              },
+            })
+          : await createTenantFromBundle({
+              name: name.trim(),
+              slug,
+              ownerEmail: ownerEmail.trim(),
+              bundle,
+            });
       setResult(created);
       setStep(4);
     } catch (caught) {
@@ -166,9 +221,7 @@ export function NewTenantWizard({ user }: { user: AuthUser }) {
               </span>
               <span
                 className={cn(
-                  entry.step === step
-                    ? "font-medium"
-                    : "text-muted-foreground",
+                  entry.step === step ? "font-medium" : "text-muted-foreground",
                 )}
               >
                 {entry.title}
@@ -188,7 +241,9 @@ export function NewTenantWizard({ user }: { user: AuthUser }) {
             <CardHeader>
               <CardTitle>The organisation</CardTitle>
               <CardDescription>
-                What the client signs in to. The slug is the address.
+                What the client signs in to. The slug is the address, and the
+                tenant's name in the front desk service when it starts from the
+                basics.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -229,53 +284,59 @@ export function NewTenantWizard({ user }: { user: AuthUser }) {
         {step === 2 && (
           <Card>
             <CardHeader>
-              <CardTitle>The bundle</CardTitle>
+              <CardTitle>The configuration</CardTitle>
               <CardDescription>
-                The five files of the tenant bundle. Choose them all at once, or
-                paste them. The front desk service decides whether they are
-                valid; the portal does not read them.
+                Start from the basics and let the clinic fill in the rest on its
+                Settings pages, or upload the five files of a tenant bundle. The
+                front desk service decides whether either makes a tenant; the
+                portal does not read them.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              <Input
-                type="file"
-                multiple
-                data-testid="bundle-files"
-                onChange={takeFiles}
-                className="max-w-md"
-              />
+              <ModeChoice mode={mode} onChange={setMode} />
 
-              {BUNDLE_SLOTS.map((spec) => (
-                <Field
-                  key={spec.slot}
-                  label={`${spec.filename} — ${spec.description}`}
-                  htmlFor={`bundle-${spec.slot}`}
-                >
-                  <Textarea
-                    id={`bundle-${spec.slot}`}
-                    name={`bundle-${spec.slot}`}
-                    rows={6}
-                    value={bundle[spec.slot]}
-                    onChange={(event) =>
-                      setBundle({ ...bundle, [spec.slot]: event.target.value })
-                    }
-                    className="font-mono text-xs"
+              {mode === "basics" ? (
+                <BasicsForm draft={basics} onChange={setBasics} />
+              ) : (
+                <div className="space-y-6">
+                  <Input
+                    type="file"
+                    multiple
+                    data-testid="bundle-files"
+                    onChange={takeFiles}
+                    className="max-w-md"
                   />
-                </Field>
-              ))}
+
+                  {BUNDLE_SLOTS.map((spec) => (
+                    <Field
+                      key={spec.slot}
+                      label={`${spec.filename} — ${spec.description}`}
+                      htmlFor={`bundle-${spec.slot}`}
+                    >
+                      <Textarea
+                        id={`bundle-${spec.slot}`}
+                        name={`bundle-${spec.slot}`}
+                        rows={6}
+                        value={bundle[spec.slot]}
+                        onChange={(event) =>
+                          setBundle({
+                            ...bundle,
+                            [spec.slot]: event.target.value,
+                          })
+                        }
+                        className="font-mono text-xs"
+                      />
+                    </Field>
+                  ))}
+                </div>
+              )}
             </CardContent>
             <CardFooter className="gap-4">
               <Back onClick={() => setStep(1)} />
               <Next
-                disabled={!bundleReady}
+                disabled={!configurationReady}
                 onClick={() => setStep(3)}
-                hint={
-                  bundleReady
-                    ? undefined
-                    : `Still missing: ${missingSlots(bundle)
-                        .map((slot: BundleSlot) => `${slot}`)
-                        .join(", ")}.`
-                }
+                hint={configurationReady ? undefined : configurationHint}
               />
             </CardFooter>
           </Card>
@@ -288,9 +349,11 @@ export function NewTenantWizard({ user }: { user: AuthUser }) {
               <CardDescription>
                 They are emailed a single-use invitation that expires in seven
                 days.
+                {mode === "basics" &&
+                  " Requests are emailed to this address until the clinic chooses otherwise."}
               </CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-4">
               <Field label="Owner's email address" htmlFor="ownerEmail">
                 <Input
                   id="ownerEmail"
@@ -299,6 +362,19 @@ export function NewTenantWizard({ user }: { user: AuthUser }) {
                   onChange={(event) => setOwnerEmail(event.target.value)}
                 />
               </Field>
+              {mode === "basics" && (
+                <Field
+                  label="Owner's name (optional; who a breach is escalated to)"
+                  htmlFor="ownerName"
+                >
+                  <Input
+                    id="ownerName"
+                    name="ownerName"
+                    value={ownerName}
+                    onChange={(event) => setOwnerName(event.target.value)}
+                  />
+                </Field>
+              )}
             </CardContent>
             <CardFooter className="gap-4">
               <Back onClick={() => setStep(2)} />
@@ -317,6 +393,242 @@ export function NewTenantWizard({ user }: { user: AuthUser }) {
         {step === 4 && result && <Done result={result} />}
       </div>
     </DefaultLayout>
+  );
+}
+
+/** The two ways to configure a tenant, as a pair of radio buttons. */
+function ModeChoice({
+  mode,
+  onChange,
+}: {
+  mode: Mode;
+  onChange: (mode: Mode) => void;
+}) {
+  const options: { mode: Mode; title: string; description: string }[] = [
+    {
+      mode: "basics",
+      title: "Start from the basics",
+      description:
+        "A timezone, hours, a booking link and a name. The wording, the lexicons and an empty catalogue come from the starter; the clinic adds services, team and knowledge on Settings.",
+    },
+    {
+      mode: "bundle",
+      title: "Upload a bundle",
+      description:
+        "The five files of a tenant bundle, as spatalk tenant import takes them.",
+    },
+  ];
+  return (
+    <div
+      role="radiogroup"
+      aria-label="How to configure the tenant"
+      className="grid grid-cols-1 gap-3 sm:grid-cols-2"
+    >
+      {options.map((option) => (
+        <button
+          key={option.mode}
+          type="button"
+          role="radio"
+          aria-checked={mode === option.mode}
+          data-testid={`wizard-mode-${option.mode}`}
+          onClick={() => onChange(option.mode)}
+          className={cn(
+            "rounded-md border p-4 text-left",
+            mode === option.mode
+              ? "border-primary bg-muted"
+              : "border-border hover:bg-muted/50",
+          )}
+        >
+          <div className="text-sm font-medium">{option.title}</div>
+          <p className="text-muted-foreground mt-1 text-xs">
+            {option.description}
+          </p>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * The basics form. The timezone is a select of Canada's zones with a free-text
+ * fallback for anywhere else; the hours are one row per weekday, open or
+ * closed, with one span when open — the clinic's Hours page takes several
+ * spans and holidays once it is signed in.
+ */
+function BasicsForm({
+  draft,
+  onChange,
+}: {
+  draft: BasicsDraft;
+  onChange: (next: BasicsDraft) => void;
+}) {
+  const known = CANADIAN_TIMEZONES.some(
+    (entry) => entry.zone === draft.timezone,
+  );
+  const [zoneChoice, setZoneChoice] = useState<string>(
+    known ? draft.timezone : OTHER_TIMEZONE,
+  );
+
+  function chooseZone(choice: string) {
+    setZoneChoice(choice);
+    onChange({
+      ...draft,
+      timezone: choice === OTHER_TIMEZONE ? "" : choice,
+    });
+  }
+
+  function setDay(day: Weekday, patch: Partial<BasicsDraft["hours"][Weekday]>) {
+    onChange({
+      ...draft,
+      hours: { ...draft.hours, [day]: { ...draft.hours[day], ...patch } },
+    });
+  }
+
+  return (
+    <div data-testid="basics-form" className="space-y-6">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <Field label="Timezone" htmlFor="basics-timezone">
+          <Select value={zoneChoice} onValueChange={chooseZone}>
+            <SelectTrigger
+              id="basics-timezone"
+              data-testid="basics-timezone"
+              className="w-full"
+            >
+              <SelectValue placeholder={DEFAULT_TIMEZONE} />
+            </SelectTrigger>
+            <SelectContent>
+              {CANADIAN_TIMEZONES.map((entry) => (
+                <SelectItem key={entry.zone} value={entry.zone}>
+                  {entry.label}
+                </SelectItem>
+              ))}
+              <SelectItem value={OTHER_TIMEZONE}>
+                Somewhere else (type the IANA name)
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        </Field>
+        {zoneChoice === OTHER_TIMEZONE && (
+          <Field
+            label="IANA timezone name (e.g. Europe/London)"
+            htmlFor="basics-timezone-other"
+          >
+            <Input
+              id="basics-timezone-other"
+              data-testid="basics-timezone-other"
+              value={draft.timezone}
+              onChange={(event) =>
+                onChange({ ...draft, timezone: event.target.value })
+              }
+            />
+          </Field>
+        )}
+      </div>
+
+      <div className="space-y-2">
+        <span className="text-muted-foreground text-xs uppercase">
+          Opening hours
+        </span>
+        <div className="overflow-hidden rounded-md border">
+          {WEEKDAYS.map(([day, label]) => {
+            const entry = draft.hours[day];
+            return (
+              <div
+                key={day}
+                data-testid={`basics-${day}`}
+                className="flex flex-wrap items-center gap-3 border-b px-3 py-2 last:border-b-0"
+              >
+                <Label
+                  htmlFor={`basics-${day}-open`}
+                  className="flex w-36 items-center gap-2 text-sm"
+                >
+                  <Checkbox
+                    id={`basics-${day}-open`}
+                    data-testid={`basics-${day}-open`}
+                    checked={entry.open}
+                    onCheckedChange={(checked) =>
+                      setDay(day, { open: checked === true })
+                    }
+                  />
+                  {label}
+                </Label>
+                {entry.open ? (
+                  <span className="flex items-center gap-2 text-sm">
+                    <Input
+                      type="time"
+                      className="w-32"
+                      aria-label={`${label} opens`}
+                      data-testid={`basics-${day}-start`}
+                      value={entry.start}
+                      onChange={(event) =>
+                        setDay(day, { start: event.target.value })
+                      }
+                    />
+                    <span className="text-muted-foreground">to</span>
+                    <Input
+                      type="time"
+                      className="w-32"
+                      aria-label={`${label} closes`}
+                      data-testid={`basics-${day}-end`}
+                      value={entry.end}
+                      onChange={(event) =>
+                        setDay(day, { end: event.target.value })
+                      }
+                    />
+                  </span>
+                ) : (
+                  <span className="text-muted-foreground text-sm">Closed</span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <Field
+          label="Online booking link (texted to callers)"
+          htmlFor="basics-booking-url"
+        >
+          <Input
+            id="basics-booking-url"
+            data-testid="basics-booking-url"
+            placeholder="https://clinic.janeapp.com/"
+            value={draft.bookingUrl}
+            onChange={(event) =>
+              onChange({ ...draft, bookingUrl: event.target.value })
+            }
+          />
+        </Field>
+        <Field
+          label="The clinic's own number (optional, +1 and ten digits)"
+          htmlFor="basics-public-phone"
+        >
+          <Input
+            id="basics-public-phone"
+            data-testid="basics-public-phone"
+            placeholder="+19055550123"
+            value={draft.publicPhone}
+            onChange={(event) =>
+              onChange({ ...draft, publicPhone: event.target.value })
+            }
+          />
+        </Field>
+        <Field
+          label="The assistant's name (said in the disclosure)"
+          htmlFor="basics-assistant-name"
+        >
+          <Input
+            id="basics-assistant-name"
+            data-testid="basics-assistant-name"
+            value={draft.assistantName}
+            onChange={(event) =>
+              onChange({ ...draft, assistantName: event.target.value })
+            }
+          />
+        </Field>
+      </div>
+    </div>
   );
 }
 
@@ -447,7 +759,10 @@ function Field({
 }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <Label htmlFor={htmlFor} className="text-muted-foreground text-xs uppercase">
+      <Label
+        htmlFor={htmlFor}
+        className="text-muted-foreground text-xs uppercase"
+      >
         {label}
       </Label>
       {children}

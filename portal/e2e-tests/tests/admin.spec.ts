@@ -34,6 +34,16 @@ const WIZARD_ORG_NAME = "Skincentrix Portal E2E";
 const WIZARD_ORG_SLUG = "skincentrix-portal-e2e";
 const WIZARD_OWNER_EMAIL = "owner@skincentrix-portal-e2e.test";
 
+/**
+ * The tenant the wizard creates from the basics alone: no bundle, the runtime's
+ * starter rendered around a timezone, hours, a booking link and an owner. Its
+ * id is the organisation's slug, which is what the basics path uses.
+ */
+const BASICS_ORG_NAME = "Basics Portal E2E";
+const BASICS_ORG_SLUG = "basics-portal-e2e";
+const BASICS_OWNER_EMAIL = "owner@basics-portal-e2e.test";
+const BASICS_BOOKING_URL = "https://basics-portal-e2e.janeapp.com/";
+
 /** An organisation whose runtime tenant deliberately does not exist. */
 const UNKNOWN_ORG_SLUG = "not-yet-configured";
 const UNKNOWN_TENANT_ID = "tenant-that-does-not-exist";
@@ -107,6 +117,21 @@ test.describe("agency admin area", () => {
         bundle: wizardBundle(),
       }),
     ).toBe(403);
+    expect(
+      await serverRequestStatus(page, "/operations/create-tenant-from-basics", {
+        name: "Nope",
+        slug: "nope",
+        ownerEmail: "nope@spatalk.test",
+        ownerName: "",
+        basics: {
+          timezone: "America/Toronto",
+          hours: { mon: [["09:00", "17:00"]] },
+          bookingUrl: "https://nope.test/",
+          publicPhone: "",
+          assistantName: "Ava",
+        },
+      }),
+    ).toBe(403);
   });
 });
 
@@ -174,6 +199,112 @@ test.describe("the onboarding wizard", () => {
     await expect(checklist).toContainText("spatalk numbers add");
     await expect(checklist).toContainText(WIZARD_TENANT_ID);
     await expect(checklist).toContainText("docs/runbooks/accounts-and-env.md");
+  });
+});
+
+test.describe("the onboarding wizard, from the basics", () => {
+  test("creates a tenant in the runtime from a timezone, hours, a booking link and an owner", async () => {
+    await adminPage.goto("/admin/tenants/new");
+    await expect(
+      adminPage.getByRole("heading", { name: "New tenant" }),
+    ).toBeVisible(FIRST_RENDER);
+
+    // Step 1: the organisation the client signs in to.
+    await adminPage.fill('input[name="organizationName"]', BASICS_ORG_NAME);
+    await adminPage.fill('input[name="organizationSlug"]', BASICS_ORG_SLUG);
+    await adminPage.getByTestId("wizard-next").click();
+
+    // Step 2: the basics, which is the default; Toronto and weekdays nine to
+    // five are already filled in, Saturday is opened here.
+    await expect(adminPage.getByTestId("wizard-mode-basics")).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    await adminPage.getByTestId("basics-sat-open").click();
+    await adminPage.fill('[data-testid="basics-sat-start"]', "10:00");
+    await adminPage.fill('[data-testid="basics-sat-end"]', "14:00");
+    await adminPage.fill(
+      '[data-testid="basics-booking-url"]',
+      BASICS_BOOKING_URL,
+    );
+    await adminPage.fill('[data-testid="basics-public-phone"]', "+19055550199");
+    await adminPage.fill('[data-testid="basics-assistant-name"]', "Mia");
+    await adminPage.getByTestId("wizard-next").click();
+
+    // Step 3: who owns it.
+    await adminPage.fill('input[name="ownerEmail"]', BASICS_OWNER_EMAIL);
+    await adminPage.fill('input[name="ownerName"]', "Dana");
+    await adminPage.getByTestId("wizard-create").click();
+
+    const result = adminPage.getByTestId("wizard-result");
+    await expect(result).toBeVisible({ timeout: 60_000 });
+    await expect(result).toContainText(BASICS_ORG_SLUG);
+    await expect(adminPage.getByTestId("wizard-invitation")).toContainText(
+      BASICS_OWNER_EMAIL,
+    );
+  });
+
+  test("the runtime holds the starter configuration around the basics", async () => {
+    const tenants =
+      await runtimeGet<{ id: string; name: string; version: number }[]>(
+        "/internal/tenants",
+      );
+    const created = tenants.find((tenant) => tenant.id === BASICS_ORG_SLUG);
+    expect(created).toBeDefined();
+    expect(created!.name).toBe(BASICS_ORG_NAME);
+    expect(created!.version).toBe(1);
+
+    const { config } = await runtimeGet<{ version: number; config: any }>(
+      `/internal/tenants/${BASICS_ORG_SLUG}/config`,
+    );
+    expect(config.timezone).toBe("America/Toronto");
+    expect(config.hours.mon).toEqual([["09:00", "17:00"]]);
+    expect(config.hours.sat).toEqual([["10:00", "14:00"]]);
+    expect(config.hours.sun).toEqual([]);
+    expect(config.booking_url_default).toBe(BASICS_BOOKING_URL);
+    expect(config.public_phone).toBe("+19055550199");
+    expect(config.persona.assistant_name).toBe("Mia");
+    expect(config.services).toEqual([]);
+    expect(config.escalation.owner_email).toBe(BASICS_OWNER_EMAIL);
+    expect(config.escalation.owner_name).toBe("Dana");
+    // The staff mobile is named by an environment variable, never written.
+    expect(config.delivery.destinations).toEqual([
+      expect.objectContaining({ kind: "email", address: BASICS_OWNER_EMAIL }),
+      expect.objectContaining({
+        kind: "sms",
+        address_env: "BASICS_PORTAL_E2E_STAFF_SMS",
+      }),
+    ]);
+    // The wording is the starter's, placeholders and all, never a clinic's.
+    expect(config.scripts.disclosure).toContain("{assistant_name}");
+    expect(config.scripts.disclosure).not.toContain("Skincentrix");
+  });
+
+  test("the same address a second time is refused, and the tenant stays at version 1", async () => {
+    const again = await callOperation(
+      adminPage,
+      "/operations/create-tenant-from-basics",
+      {
+        name: BASICS_ORG_NAME,
+        slug: BASICS_ORG_SLUG,
+        ownerEmail: BASICS_OWNER_EMAIL,
+        ownerName: "",
+        basics: {
+          timezone: "America/Toronto",
+          hours: { mon: [["09:00", "17:00"]] },
+          bookingUrl: BASICS_BOOKING_URL,
+          publicPhone: "",
+          assistantName: "Ava",
+        },
+      },
+    );
+    expect(again.status).toBe(409);
+
+    const tenants =
+      await runtimeGet<{ id: string; version: number }[]>("/internal/tenants");
+    expect(
+      tenants.find((tenant) => tenant.id === BASICS_ORG_SLUG)!.version,
+    ).toBe(1);
   });
 });
 
