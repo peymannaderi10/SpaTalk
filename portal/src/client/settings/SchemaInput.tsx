@@ -39,6 +39,7 @@ export function SchemaInput({
   testId,
   long,
   invalid,
+  onBlur,
 }: {
   field: SchemaField;
   value: unknown;
@@ -49,6 +50,8 @@ export function SchemaInput({
   long?: boolean;
   /** The last save was refused for this field: the kit paints it destructive. */
   invalid?: boolean;
+  /** The person moved on from a text control: what a derived value settles on. */
+  onBlur?: () => void;
 }) {
   const id = useId();
   const ariaInvalid = invalid ? true : undefined;
@@ -143,6 +146,7 @@ export function SchemaInput({
           aria-invalid={ariaInvalid}
           maxLength={field.maxLength}
           disabled={disabled}
+          onBlur={onBlur}
           value={String(value ?? "")}
           onChange={(event) => onChange(event.target.value)}
         />
@@ -160,6 +164,7 @@ export function SchemaInput({
         aria-invalid={ariaInvalid}
         maxLength={field.maxLength}
         disabled={disabled}
+        onBlur={onBlur}
         value={String(value ?? "")}
         onChange={(event) =>
           onChange(
