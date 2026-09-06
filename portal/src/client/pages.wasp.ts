@@ -17,6 +17,7 @@ import {
   selectMessengerPage,
   startIntegrationConnect,
   unblockSmsNumber,
+  updateOrganizationBranding,
 } from "./operations" with { type: "ref" };
 import { OverviewPage } from "./OverviewPage" with { type: "ref" };
 import { RequestsPage } from "./RequestsPage" with { type: "ref" };
@@ -74,4 +75,8 @@ export const clientPagesSpec: Spec = [
   action(startIntegrationConnect, orgEntities),
   action(disconnectIntegration, orgEntities),
   action(selectMessengerPage, orgEntities),
+
+  // The clinic's own look, on the organisation row: portal data, owner-only,
+  // and never part of the runtime configuration.
+  action(updateOrganizationBranding, orgEntities),
 ];

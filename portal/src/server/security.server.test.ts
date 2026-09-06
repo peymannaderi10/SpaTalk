@@ -1,5 +1,6 @@
+import { Readable } from "stream";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import type { RequestHandler } from "express";
+import type { Request, RequestHandler, Response } from "express";
 import {
   ACCESS_LOG_MIDDLEWARE,
   contentSecurityPolicy,
@@ -434,6 +435,40 @@ describe("the middleware the portal hands Wasp", () => {
     expect(names.indexOf("rateLimit")).toBe(
       names.indexOf(ACCESS_LOG_MIDDLEWARE) + 1,
     );
+  });
+
+  test("the JSON body parser takes a body the size of a logo upload", async () => {
+    // A 200 KB logo arrives as a ~273 KB base64 string inside the operation's
+    // JSON, well over Express's default 100 KB, so the portal supplies its
+    // own parser with a limit the Branding page fits under.
+    const handler = portalMiddleware(waspDefaults()).get("express.json");
+    if (!handler) throw new Error("no express.json entry");
+
+    const logoDataUrl = `data:image/png;base64,${"A".repeat(280_000)}`;
+    const body = JSON.stringify({ slug: "skincentrix", logoDataUrl });
+    const request = Object.assign(Readable.from([Buffer.from(body)]), {
+      headers: {
+        "content-type": "application/json",
+        "content-length": String(Buffer.byteLength(body)),
+      },
+      method: "POST",
+      url: "/operations/update-organization-branding",
+    }) as unknown as Request;
+    const next = vi.fn();
+
+    await new Promise<void>((resolve) => {
+      handler(request, {} as Response, (error?: unknown) => {
+        next(error);
+        resolve();
+      });
+    });
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(next.mock.calls[0][0]).toBeUndefined();
+    expect(
+      (request as unknown as { body: { logoDataUrl: string } }).body
+        .logoDataUrl,
+    ).toBe(logoDataUrl);
   });
 
   test("Wasp's own middleware is all still there", () => {

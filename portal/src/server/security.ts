@@ -1,11 +1,17 @@
-import type { NextFunction, Request, RequestHandler, Response } from "express";
+import express, {
+  type NextFunction,
+  type Request,
+  type RequestHandler,
+  type Response,
+} from "express";
 import type { MiddlewareConfigFn } from "wasp/server/middleware";
 
 /**
  * The portal's hardening (portal plan, Task C7).
  *
  * Three things live here, and nothing in this module imports Wasp, Prisma or
- * the environment, so all three are ordinary functions a unit test can drive:
+ * the environment (Express is the one import, for its body parser), so all
+ * three are ordinary functions a unit test can drive:
  *
  * 1. the headers every response carries, which say the app may not be framed
  *    and may only load its own code and Stripe's;
@@ -51,7 +57,11 @@ export type ContentSecurityPolicyOptions = {
 export function contentSecurityPolicy(
   options: ContentSecurityPolicyOptions = {},
 ): string {
-  const connect = ["'self'", ...(options.connectOrigins ?? []), STRIPE_API_ORIGIN];
+  const connect = [
+    "'self'",
+    ...(options.connectOrigins ?? []),
+    STRIPE_API_ORIGIN,
+  ];
 
   return [
     "default-src 'self'",
@@ -79,18 +89,21 @@ export function contentSecurityPolicy(
  * The client host has to send the same table for the documents it serves; it
  * is written down once, here, so the two cannot drift.
  */
-export const SECURITY_HEADERS: Readonly<Record<string, string>> = Object.freeze({
-  "Content-Security-Policy": contentSecurityPolicy(),
-  // A year, subdomains included: the portal is only ever served over https.
-  "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
-  "X-Content-Type-Options": "nosniff",
-  "X-Frame-Options": "DENY",
-  "Referrer-Policy": "no-referrer",
-  "Cross-Origin-Opener-Policy": "same-origin",
-  "Cross-Origin-Resource-Policy": "same-site",
-  "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=()",
-  "X-DNS-Prefetch-Control": "off",
-});
+export const SECURITY_HEADERS: Readonly<Record<string, string>> = Object.freeze(
+  {
+    "Content-Security-Policy": contentSecurityPolicy(),
+    // A year, subdomains included: the portal is only ever served over https.
+    "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "no-referrer",
+    "Cross-Origin-Opener-Policy": "same-origin",
+    "Cross-Origin-Resource-Policy": "same-site",
+    "Permissions-Policy":
+      "camera=(), microphone=(), geolocation=(), payment=()",
+    "X-DNS-Prefetch-Control": "off",
+  },
+);
 
 export function securityHeaders(
   headers: Readonly<Record<string, string>> = SECURITY_HEADERS,
@@ -175,7 +188,9 @@ export function countsWhenItSucceeds(
  * arrives at the global middleware as `/email/login`. `originalUrl` is the only
  * thing that still says which endpoint was asked for.
  */
-export function requestPath(request: Pick<Request, "originalUrl" | "url">): string {
+export function requestPath(
+  request: Pick<Request, "originalUrl" | "url">,
+): string {
   const raw = request.originalUrl || request.url || "";
   return normalisePath(raw.split("?")[0]);
 }
@@ -218,7 +233,9 @@ export type RateLimiter = RequestHandler & { reset(): void };
  * infrastructure to run and watch for a limit whose whole job is to make
  * guessing slow.
  */
-export function createRateLimiter(options: RateLimiterOptions = {}): RateLimiter {
+export function createRateLimiter(
+  options: RateLimiterOptions = {},
+): RateLimiter {
   const limit = options.limit ?? RATE_LIMIT_MAX_REQUESTS;
   const windowMs = options.windowMs ?? RATE_LIMIT_WINDOW_MS;
   const paths = options.paths ?? RATE_LIMITED_PATHS;
@@ -277,7 +294,10 @@ export function createRateLimiter(options: RateLimiterOptions = {}): RateLimiter
 
     // The attempt is counted first and given back only once it is answered, so
     // a burst of guesses cannot slip through while the answers are pending.
-    if (!countsWhenItSucceeds(path, alwaysCounted) && typeof response.on === "function") {
+    if (
+      !countsWhenItSucceeds(path, alwaysCounted) &&
+      typeof response.on === "function"
+    ) {
       const counted = window;
       response.on("finish", () => {
         if (response.statusCode < 400 && counted.count > 0) {
@@ -340,22 +360,25 @@ export function scrubSecrets(
 
 function usableSecrets(secrets: Iterable<string>): string[] {
   return [...secrets].filter(
-    (secret) => typeof secret === "string" && secret.length >= SECRET_MIN_LENGTH,
+    (secret) =>
+      typeof secret === "string" && secret.length >= SECRET_MIN_LENGTH,
   );
 }
 
 function safeJson(value: unknown): string {
   const seen = new WeakSet<object>();
   try {
-    return JSON.stringify(value, (_key, entry: unknown) => {
-      if (typeof entry === "object" && entry !== null) {
-        if (seen.has(entry)) {
-          return "[circular]";
+    return (
+      JSON.stringify(value, (_key, entry: unknown) => {
+        if (typeof entry === "object" && entry !== null) {
+          if (seen.has(entry)) {
+            return "[circular]";
+          }
+          seen.add(entry);
         }
-        seen.add(entry);
-      }
-      return entry;
-    }) ?? "";
+        return entry;
+      }) ?? ""
+    );
   } catch {
     return "";
   }
@@ -432,7 +455,10 @@ export function installLogScrubbing(
     (target as unknown as Record<string, unknown>)[method] = (
       ...args: unknown[]
     ) => {
-      original.apply(target, args.map((arg) => scrubLogArgument(arg, secrets)));
+      original.apply(
+        target,
+        args.map((arg) => scrubLogArgument(arg, secrets)),
+      );
     };
   }
 
@@ -458,11 +484,23 @@ export function installLogScrubbing(
 /** The entry the rate limiter is placed after, so a refusal is still logged. */
 export const ACCESS_LOG_MIDDLEWARE = "logger";
 
+/**
+ * The most JSON one request may carry. Express's default is 100 KB, and the
+ * Branding page sends a logo of up to 200 KB as a base64 data URL inside an
+ * operation's arguments — about 273 KB of string — so the portal's parser is
+ * sized for that and a little over; nothing else the portal accepts comes
+ * near it.
+ */
+export const JSON_BODY_LIMIT = "512kb";
+
 export const portalMiddleware: MiddlewareConfigFn = (middlewareConfig) => {
   const rest = new Map(middlewareConfig);
   // helmet's defaults allow same-origin framing and describe a policy that
   // knows nothing about Stripe; the table above replaces it outright.
   rest.delete("helmet");
+  // Wasp's own `express.json()` is the default 100 KB one; the portal's is
+  // sized for a logo upload. Set in place, so the order Wasp chose stands.
+  rest.set("express.json", express.json({ limit: JSON_BODY_LIMIT }));
 
   const limiter = createRateLimiter();
   const ordered = new Map(middlewareConfig);

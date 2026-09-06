@@ -15,14 +15,17 @@ import {
   type SelectMessengerPage,
   type StartIntegrationConnect,
   type UnblockSmsNumber,
+  type UpdateOrganizationBranding,
 } from "wasp/server/operations";
 import * as z from "zod";
+import { type Branding } from "../client/branding/themes";
 import {
   requireOrgAccessBySlug,
   requireOrgOwnerBySlug,
   type OrgAccess,
   type OrgSlugAccessContext,
 } from "../organizations/access";
+import { validateBranding } from "../organizations/branding";
 import {
   organizationIsEntitled,
   SUBSCRIPTION_REQUIRED_STATUS,
@@ -107,7 +110,10 @@ function requireSubscription(context: PageContext, access: OrgAccess): void {
   if (!entitled) {
     throw new HttpError(
       SUBSCRIPTION_REQUIRED_STATUS,
-      subscriptionRequiredMessage(access.org.name, access.org.subscriptionStatus),
+      subscriptionRequiredMessage(
+        access.org.name,
+        access.org.subscriptionStatus,
+      ),
     );
   }
 }
@@ -380,7 +386,8 @@ export const getTenantRequests: GetTenantRequests<
   const { api, tenantId, access } = await session(context, slug);
 
   const items = await itemsInState(api, tenantId, "all");
-  const byDue = (a: Item, b: Item) => Date.parse(a.due_at) - Date.parse(b.due_at);
+  const byDue = (a: Item, b: Item) =>
+    Date.parse(a.due_at) - Date.parse(b.due_at);
 
   return {
     role: access.role,
@@ -463,7 +470,10 @@ export const unblockSmsNumber: UnblockSmsNumber<
   return (await runtimeCall(
     () =>
       api.DELETE("/internal/tenants/{tenant_id}/sms-blocks/{phone}", {
-        params: { path: { tenant_id: tenantId, phone: args.phone }, query: { actor } },
+        params: {
+          path: { tenant_id: tenantId, phone: args.phone },
+          query: { actor },
+        },
       }),
     "that number",
   )) as unknown as { removed: boolean };
@@ -544,10 +554,7 @@ export const saveTenantConfig: SaveTenantConfig<
   SaveArgs,
   { version: number }
 > = async (rawArgs, context) => {
-  const args = ensureArgsSchemaOrThrowHttpError(
-    saveArgs,
-    rawArgs,
-  ) as SaveArgs;
+  const args = ensureArgsSchemaOrThrowHttpError(saveArgs, rawArgs) as SaveArgs;
   const { api, tenantId, actor } = await ownerSession(context, args.slug);
 
   // The whole configuration is stored as the new version: this is a save, not
@@ -583,6 +590,50 @@ export const rollBackTenantConfig: RollBackTenantConfig<
       }),
     "these settings",
   );
+};
+
+// --- branding --------------------------------------------------------------
+
+const brandingArgs = slugArgs.extend({
+  logoDataUrl: z.string().nullable(),
+  themePreset: z.string().nullable(),
+  accentHex: z.string().nullable(),
+});
+
+/**
+ * How the clinic's own dashboard looks: its logo, theme preset and accent.
+ *
+ * The one Setup save that never reaches the runtime. The three fields are
+ * portal data on the `Organization` row, not tenant configuration, so they
+ * are not versioned with the settings and a rollback leaves them alone. The
+ * gate is the same as `saveTenantConfig`'s — an owner of a subscribed
+ * organisation — and `validateBranding` decides what may be written: a
+ * preset from the list, `#rrggbb`, a base64 PNG, SVG or JPEG of at most
+ * 200 KB. What comes back is what was stored, so the page and the shell
+ * (which reads it through `getOrganization`) show the same thing.
+ */
+export const updateOrganizationBranding: UpdateOrganizationBranding<
+  z.infer<typeof brandingArgs>,
+  Branding
+> = async (rawArgs, context) => {
+  const args = ensureArgsSchemaOrThrowHttpError(brandingArgs, rawArgs);
+  const { access } = await ownerSession(context, args.slug);
+
+  const checked = validateBranding(args);
+  if (!checked.ok) {
+    throw new HttpError(400, checked.message);
+  }
+
+  const org = await context.entities.Organization.update({
+    where: { id: access.org.id },
+    data: checked.value,
+  });
+
+  return {
+    logoDataUrl: org.logoDataUrl,
+    themePreset: org.themePreset,
+    accentHex: org.accentHex,
+  };
 };
 
 // --- integrations ----------------------------------------------------------
@@ -631,7 +682,9 @@ export const getTenantIntegrations: GetTenantIntegrations<
  */
 function settingsReturnUrl(slug: string, provider: string): string {
   const base = config.frontendUrl.replace(/\/$/, "");
-  return `${base}/app/${encodeURIComponent(slug)}/settings?connected=${provider}`;
+  return `${base}/app/${encodeURIComponent(
+    slug,
+  )}/settings?connected=${provider}`;
 }
 
 export const startIntegrationConnect: StartIntegrationConnect<
@@ -709,13 +762,10 @@ export const selectMessengerPage: SelectMessengerPage<
 
   await runtimeCall(
     () =>
-      api.POST(
-        "/internal/tenants/{tenant_id}/integrations/messenger/select",
-        {
-          params: { path: { tenant_id: tenantId } },
-          body: { pending: args.pending, page_id: args.pageId },
-        },
-      ),
+      api.POST("/internal/tenants/{tenant_id}/integrations/messenger/select", {
+        params: { path: { tenant_id: tenantId } },
+        body: { pending: args.pending, page_id: args.pageId },
+      }),
     "that Page",
   );
 

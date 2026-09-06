@@ -210,6 +210,7 @@ describe("the sidebar model", () => {
       "Delivery",
       "Numbers",
       "Integrations",
+      "Branding",
       "Versions",
     ]);
     for (const entry of SETTINGS_TABS) {

@@ -10,6 +10,7 @@ import {
   IconHistory,
   IconLayoutDashboard,
   IconMessages,
+  IconPalette,
   IconPhone,
   IconPlugConnected,
   IconQuote,
@@ -87,6 +88,7 @@ export const SETTINGS_TABS = [
   { label: "Delivery", tab: "delivery", icon: IconSend },
   { label: "Numbers", tab: "numbers", icon: IconPhone },
   { label: "Integrations", tab: "integrations", icon: IconPlugConnected },
+  { label: "Branding", tab: "branding", icon: IconPalette },
   { label: "Versions", tab: "versions", icon: IconHistory },
 ] as const satisfies readonly {
   label: string;

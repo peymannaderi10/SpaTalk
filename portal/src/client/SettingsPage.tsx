@@ -6,6 +6,7 @@ import {
   rollBackTenantConfig,
   saveTenantConfig,
   unblockSmsNumber,
+  updateOrganizationBranding,
   useQuery,
 } from "wasp/client/operations";
 import { Alert, AlertDescription, AlertTitle } from "./components/ui/alert";
@@ -13,6 +14,7 @@ import { Button } from "./components/ui/button";
 import { Separator } from "./components/ui/separator";
 import { SETTINGS_TABS, type SettingsTab } from "./nav";
 import { OrgShell, Problem, type Org } from "./OrgShell";
+import { BrandingTab } from "./settings/BrandingTab";
 import { ContentSection } from "./settings/ContentSection";
 import { DeliveryTab } from "./settings/DeliveryTab";
 import { HoursTab } from "./settings/HoursTab";
@@ -33,6 +35,12 @@ import { VersionsPanel } from "./settings/VersionsPanel";
  *
  * Only an owner may save or roll back, and that is enforced by the server
  * operations, not by hiding the button.
+ *
+ * One section is not configuration at all: Branding edits the organisation's
+ * own look, stored on the portal's `Organization` row and saved by its own
+ * operation. It takes the organisation rather than the draft, has its own
+ * save, and the page's save button and version notice step aside while it is
+ * open, so a logo or a colour never rides along into a config version.
  *
  * The page is the kit's settings layout (`src/features/settings/index.tsx` in
  * `satnaing/shadcn-admin`): a title, a rule, a side navigation of sections,
@@ -79,6 +87,10 @@ const SECTIONS: Record<Tab, { description: string }> = {
   },
   Integrations: {
     description: "Instagram and the clinic's Facebook Page.",
+  },
+  Branding: {
+    description:
+      "How this clinic's dashboard looks: its logo, a theme and an accent colour.",
   },
   Versions: {
     description:
@@ -227,6 +239,10 @@ function Body({ org }: { org: Org }) {
     errors: fieldErrors,
   };
 
+  // Branding is the one section that is not the tenant configuration: it has
+  // its own save and its own notices, and the configuration's stay off it.
+  const configuration = tab !== "Branding";
+
   return (
     <>
       <p className="text-muted-foreground text-sm">
@@ -257,6 +273,7 @@ function Body({ org }: { org: Org }) {
             title={tab}
             description={SECTIONS[tab].description}
             actions={
+              configuration &&
               !readOnly && (
                 <Button
                   type="button"
@@ -269,7 +286,7 @@ function Body({ org }: { org: Org }) {
               )
             }
           >
-            {saved !== null && (
+            {configuration && saved !== null && (
               <Alert data-testid="settings-saved">
                 <AlertTitle>Saved as version {saved}</AlertTitle>
                 <AlertDescription>
@@ -278,7 +295,7 @@ function Body({ org }: { org: Org }) {
               </Alert>
             )}
 
-            {fieldErrors.length > 0 && (
+            {configuration && fieldErrors.length > 0 && (
               <Alert variant="destructive">
                 <AlertTitle>
                   The front desk service refused this change
@@ -297,7 +314,7 @@ function Body({ org }: { org: Org }) {
               </Alert>
             )}
 
-            <Problem error={problem} />
+            {configuration && <Problem error={problem} />}
 
             {tab === "Hours" && <HoursTab {...tabProps} />}
             {tab === "Services" && <ServicesTab {...tabProps} />}
@@ -323,6 +340,22 @@ function Body({ org }: { org: Org }) {
             )}
             {tab === "Integrations" && (
               <IntegrationsTab slug={org.slug} readOnly={readOnly} />
+            )}
+            {tab === "Branding" && (
+              <BrandingTab
+                name={org.name}
+                branding={{
+                  logoDataUrl: org.logoDataUrl,
+                  themePreset: org.themePreset,
+                  accentHex: org.accentHex,
+                }}
+                disabled={readOnly}
+                onSave={async (next) => {
+                  // The organisation query is invalidated by the action, so
+                  // the shell re-reads the look without a reload.
+                  await updateOrganizationBranding({ slug: org.slug, ...next });
+                }}
+              />
             )}
             {tab === "Versions" && (
               <VersionsPanel
