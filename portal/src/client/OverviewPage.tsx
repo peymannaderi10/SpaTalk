@@ -1,7 +1,12 @@
 import { IconAlertTriangle, IconClipboardList } from "@tabler/icons-react";
-import { getTenantOverview, useQuery } from "wasp/client/operations";
+import {
+  getFirstRunChecklist,
+  getTenantOverview,
+  useQuery,
+} from "wasp/client/operations";
 import { UsageChart, type UsagePoint } from "./charts/usage-chart";
 import { EmptyState } from "./components/empty-state";
+import { FirstRunCard } from "./FirstRunCard";
 import {
   Card,
   CardContent,
@@ -40,6 +45,9 @@ function Body({ org }: { org: Org }) {
   const { data, isLoading, error } = useQuery(getTenantOverview, {
     slug: org.slug,
   });
+  // The checklist is its own query so a slow or failed read of it never holds
+  // up the numbers; while it is loading, or once it says done, no card.
+  const checklist = useQuery(getFirstRunChecklist, { slug: org.slug });
 
   if (isLoading) {
     return <p className="text-muted-foreground text-sm">Loading…</p>;
@@ -54,6 +62,10 @@ function Body({ org }: { org: Org }) {
         This month so far, from {data.month.from} to {data.month.to}, for{" "}
         {data.tenantId}.
       </p>
+
+      {checklist.data && !checklist.data.done && (
+        <FirstRunCard steps={checklist.data.steps} />
+      )}
 
       <OverviewTiles tiles={overviewTiles(data)} />
 

@@ -5,6 +5,7 @@ import {
   acknowledgeItem,
   blockSmsNumber,
   disconnectIntegration,
+  getFirstRunChecklist,
   getTenantConversations,
   getTenantIntegrations,
   getTenantOverview,
@@ -54,6 +55,8 @@ export const clientPagesSpec: Spec = [
   ),
 
   query(getTenantOverview, orgEntities),
+  // The "Getting set up" card on the overview, gone with the first request.
+  query(getFirstRunChecklist, orgEntities),
   query(getTenantConversations, orgEntities),
   query(getTenantRequests, orgEntities),
   query(getTenantSettings, orgEntities),

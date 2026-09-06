@@ -3,6 +3,7 @@ import {
   type AcknowledgeItem,
   type BlockSmsNumber,
   type DisconnectIntegration,
+  type GetFirstRunChecklist,
   type GetTenantConversations,
   type GetTenantIntegrations,
   type GetTenantOverview,
@@ -34,6 +35,13 @@ import {
 import { runtime, runtimeCall, type RuntimeClient } from "../runtime/api";
 import { type components } from "../runtime/client";
 import { ensureArgsSchemaOrThrowHttpError } from "../server/validation";
+import {
+  firstRunDone,
+  firstRunSteps,
+  type FirstRunConfig,
+  type FirstRunFacts,
+  type FirstRunStep,
+} from "./firstRun";
 
 /**
  * Everything the client pages know about a tenant comes through here.
@@ -292,6 +300,73 @@ export const getTenantOverview: GetTenantOverview<
     latency,
     overdue,
   };
+};
+
+// --- the first-run checklist -----------------------------------------------
+
+export type FirstRunChecklist = {
+  /** True once the first tracked request exists; the card is not shown. */
+  done: boolean;
+  steps: FirstRunStep[];
+};
+
+/**
+ * What is left before the assistant takes real calls (onboarding roadmap,
+ * section 4), decided here from the runtime's own facts: the configuration,
+ * the numbers the agency mapped, and whether a conversation or a request
+ * exists yet. One of each is enough to know, so the two lists are asked for a
+ * single row. Open without a subscription, like the overview it sits on.
+ */
+export const getFirstRunChecklist: GetFirstRunChecklist<
+  z.infer<typeof slugArgs>,
+  FirstRunChecklist
+> = async (rawArgs, context) => {
+  const { slug } = ensureArgsSchemaOrThrowHttpError(slugArgs, rawArgs);
+  const { api, tenantId } = await session(context, slug, {
+    needsSubscription: false,
+  });
+
+  const [current, tenants, conversations, items] = await Promise.all([
+    runtimeCall(
+      () =>
+        api.GET("/internal/tenants/{tenant_id}/config", {
+          params: { path: { tenant_id: tenantId } },
+        }),
+      "the settings",
+    ),
+    runtimeCall(() => api.GET("/internal/tenants", {}), "the tenants"),
+    runtimeCall(
+      () =>
+        api.GET("/internal/tenants/{tenant_id}/conversations", {
+          params: {
+            path: { tenant_id: tenantId },
+            query: { page: 1, page_size: 1 },
+          },
+        }),
+      "conversations",
+    ),
+    runtimeCall(
+      () =>
+        api.GET("/internal/tenants/{tenant_id}/items", {
+          params: {
+            path: { tenant_id: tenantId },
+            query: { state: "all", page: 1, page_size: 1 },
+          },
+        }),
+      "the tracked requests",
+    ),
+  ]);
+
+  const summary = tenants.find((tenant) => tenant.id === tenantId);
+  const facts: FirstRunFacts = {
+    slug,
+    numbers: summary?.numbers ?? [],
+    config: current.config as unknown as FirstRunConfig,
+    hadConversation: conversations.total > 0,
+    hadRequest: items.length > 0,
+  };
+
+  return { done: firstRunDone(facts), steps: firstRunSteps(facts) };
 };
 
 // --- conversations ---------------------------------------------------------
