@@ -11,8 +11,8 @@ Step lists an engineer or QA agent can trace against the code. Each names the mo
 5. Telnyx opens the WebSocket. `/ws/{token}` verifies the token, parses the start frame, builds the Telnyx serializer and transport (`voice/pipeline.py`).
 6. Pipeline: transport in → STT → RulesGateProcessor → user aggregator (VAD, Smart Turn, mute-until-first-bot-complete) → LLM → OutputGuardProcessor → TTS → transport out → assistant aggregator.
 7. On connect, the disclosure script is spoken; the caller cannot interrupt it.
-8. Each final transcription: health-context lexicon sets the flag; rules gate may short-circuit to a band-3 script, file an urgent item, and end the call.
-9. Model turns: text goes through the guard sentence by sentence; tool calls run `dispatch_tool` → capability → rendered wording spoken via `TTSSpeakFrame` with `run_llm=False`.
+8. Each final transcription: health-context lexicon sets the flag; the rules gate may short-circuit. An emergency match speaks the `emergency` script, files an urgent item and ends the call. A clinical match speaks `clinical_offer` and opens the clinical flow of the slot engine (flow 10); the call stays open and nothing is filed until the caller says yes.
+9. Model turns: the system message carries the static prompt plus the open step's brief (`voice/steps.py`), and the context's tool list is the open step's tools. Text goes through the guard sentence by sentence; a turn with no tool call gets the open step's question spoken after it. Tool calls run `run_tool` → `flow.apply` → capability → rendered wording spoken via `TTSSpeakFrame` with `run_llm=False`, then the next fixed question.
 10. `end_conversation` tool or 45 s idle: goodbye, `EndFrame`, Telnyx hangs up via the serializer.
 11. `_finalize`: transcript from context to `messages`; usage events (telephony seconds, STT seconds, TTS chars, tokens); latency list and stage p95; band; health flag. Missed-call text-back decision (B3).
 
@@ -31,14 +31,14 @@ Step lists an engineer or QA agent can trace against the code. Each names the mo
 1. Telnyx POSTs to the edge worker. Signature verified. Forwarded to `/telnyx/sms` with the edge key.
 2. Runtime down: worker auto-replies `scripts.offline_reply` once per message id and queues for replay; cron replays every 5 minutes.
 3. Runtime: dedup by message id; tenant by `To`; STOP/START/HELP handled with fixed wording before anything else; opt-outs never receive sends.
-4. `TextConversationService.handle_inbound`: find or create the conversation (24 h window), history of 20 messages, `Brain.turn` (rules gate, health flag, tools, guard), reply split into at most two SMS, sent from the toll-free number, usage recorded.
+4. `TextConversationService.handle_inbound`: find or create the conversation (24 h window), history of 20 messages, the slot record from `conversations.flow`, `Brain.turn` (rules gate, health flag, the open step's tools, guard, the next fixed question), the record written back, reply split into at most two SMS, sent from the toll-free number, usage recorded.
 5. If the reply asks a question and no item exists, one follow-up is scheduled 2 h later, sent only if the customer stayed silent, never twice.
 6. If a human has taken over, the message is mirrored to the Slack thread and the brain is not called.
 
 ## 4. Web chat (B4)
 
 1. Widget loads config, opens the socket with a Turnstile token; rate limits per IP.
-2. Messages go through the same `TextConversationService`. Booking links render inline (`scripts.link_shown`); contact is asked for when needed since there is no caller id.
+2. Messages go through the same `TextConversationService`. A booking walks the request flow (flow 10) and ends with the link rendered inline (`scripts.link_shown`); the number is asked for outright since there is no caller id.
 3. Socket failure three times → fallback form → `/chat/fallback` (through the worker when configured) → conversation plus a `callback` item; the free text lands in the transcript only.
 
 ## 5. Human takeover (B5)
@@ -71,6 +71,17 @@ Step lists an engineer or QA agent can trace against the code. Each names the mo
 2. SMS: the worker auto-replies and replays.
 3. Chat: the widget falls back to the form through the worker.
 4. Uptime monitor pages the founder; alerts dedupe for 6 hours.
+
+## 10. A request, on every channel (slot engine design, 2026-09-05)
+
+The runtime owns the order and the wording; the model understands one answer at a time. `spatalk/brain/flow.py` is the table, `spatalk/brain/resolve.py` the matching.
+
+1. The model calls `start_request(kind)` from the Q&A step (`new_booking`, `callback`, `reschedule`, `cancel`, `question`, `training_enquiry`), or the rules gate opens the `clinical` flow with `scripts.clinical_offer`.
+2. `next_step` picks the open step from the record: booking and callback ask `ask_returning` → `ask_offers` (new clients; the offers come from the facts) → `ask_practitioner` / `ask_service` (returning clients are asked who first, new clients what first) → `ask_name` → the number (`ask_phone_same` when a caller id is known, `ask_phone` otherwise; SMS skips it) → `ask_window` → `ask_team_note` → on a call with an SMS number, `ask_route`. Reschedule adds the window; cancel, question, training enquiry and clinical need only the name and the number.
+3. The model is offered exactly the open step's tool (`answer`, `choose_practitioner`, `choose_service`, `give_name`, `give_phone`, `choose_window`) plus `change_answer`, `escalate`, `end_conversation`. A tool the step did not offer is ignored and the question is asked again.
+4. `flow.apply` resolves what the caller said against the tenant's lists: exact or ≥ 0.90 stores; 0.60–0.90 asks `confirm_match` ("Did you mean Helen?"); below re-asks once; two misses settle on "any" (practitioner) or offer `ask_service_kind` (treatment). A practitioner who does not do the treatment gets `practitioner_not_service`; a first name that sounds like the practitioner gets `confirm_name_staff`; a number is read back with `confirm_phone`.
+5. The moment the last required slot lands, the record files itself: `draft_from` builds the `ItemDraft` from the record (never from a tool argument), Tier C writes it, and the outcome script is spoken. A booking on a text channel ends with the link inline instead; on a call the route question decides between the link and a callback.
+6. The record is persisted on `conversations.flow` after every turn, so a thread resumed within its window continues at the open step. A second request in the same conversation keeps the name and number and asks the rest again.
 
 ## 9. Nightly and monthly jobs (E3, E4, E5, E9)
 
