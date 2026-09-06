@@ -629,6 +629,13 @@ def step_message(step: Step, slots: Slots, cfg: TenantConfig, channel: str) -> s
             "the new-client offers. Call answer with yes or no and say nothing else: the system "
             "reads the offers itself."
         )
+    if step == Step.PHONE and slots.phone and not slots.misses.get("phone") and slots.pending is None:
+        return (
+            f"{STEP_MARKER} {known_text}The system has just asked whether the number they are calling "
+            "from is the best one. 'Yes' or 'that's fine' is answer with yes; 'no', 'use a different "
+            "one' or a new number is answer with no (the system asks for the digits next). Do not "
+            "call change_answer for this."
+        )
     if step == Step.TEAM_NOTE:
         return (
             f"{STEP_MARKER} {known_text}The system has just asked whether there is anything for the "

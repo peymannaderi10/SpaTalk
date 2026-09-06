@@ -60,10 +60,11 @@ def slot_tool(name: str, cfg: TenantConfig) -> FunctionSchema:
         return FunctionSchema(
             name="start_request",
             description=(
-                "The caller wants something the team has to do: book, be called back, "
-                "reschedule or cancel, ask about a training course, or a question the facts "
-                "do not answer. Call this the moment they say so; the system asks the "
-                "questions from here."
+                "The caller wants something the team has to do. Kinds: new_booking for any wish "
+                "to book, be booked in, or get the booking link; callback for a call from the "
+                "team; reschedule or cancel for an existing appointment; training_enquiry for "
+                "a course; question for anything else the facts do not answer. Call this the "
+                "moment they say so; the system asks the questions from here."
             ),
             properties={"kind": {"type": "string", "enum": REQUEST_KINDS}},
             required=["kind"],
