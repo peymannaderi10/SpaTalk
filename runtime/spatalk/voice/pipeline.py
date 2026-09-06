@@ -87,7 +87,10 @@ from spatalk.voice.transfer import make_transfer, transfer_available
 # is usually fragmentary, so every barge-in cost the caller about three seconds (founder call
 # 2026-09-03). The model stays, so a complete sentence still ends the turn at once; the wait
 # for an unfinished one is capped at what a person tolerates.
-TURN_END_FALLBACK_SECS = 1.0
+# 1.5 s since 2026-09-05: the founder's calls had Ava starting before a sentence was
+# finished. This is the silence Smart Turn falls back on when it is unsure; the analyzer's
+# own end-of-turn calls are unchanged.
+TURN_END_FALLBACK_SECS = 1.5
 TURN_PRE_SPEECH_MS = 300
 # While the assistant is talking, a caller has to say this many words before it yields.
 # Pipecat's default yields on 200 ms of any sound, so a "mm-hm", a cough or a word of
