@@ -542,8 +542,10 @@ def step_message(step: Step, slots: Slots, cfg: TenantConfig, channel: str) -> s
     if step == Step.QA:
         return (
             f"{STEP_MARKER} No request is open. Answer questions from the facts. The moment the "
-            "caller wants to book, be called back, reschedule, cancel, or asks something the "
-            "facts do not answer, call start_request; the system asks the questions from there."
+            "caller wants to book, be called back, reschedule, cancel, ask about a course, or "
+            "asks something the facts do not answer, call start_request with no words of your "
+            "own: never say that you will start, file or pass on a request, and never ask for "
+            "their name or number; the system asks the questions from there."
         )
     known = []
     if slots.returning_client is not None:
@@ -560,6 +562,13 @@ def step_message(step: Step, slots: Slots, cfg: TenantConfig, channel: str) -> s
         return (
             f"{STEP_MARKER} {known_text}Everything is collected. Call file_request now. "
             "Say nothing about the result."
+        )
+    if step == Step.OFFERS and slots.pending is None:
+        return (
+            f"{STEP_MARKER} {known_text}The system has just asked whether they would like to hear "
+            "the new-client offers. If they say yes, say the new-client offers listed in the facts, "
+            "in the order the facts list them, in one breath, and call answer with yes. If they "
+            "say no, call answer with no and say nothing else. Never invent an offer."
         )
     if slots.pending is not None and slots.pending.kind == "offers":
         return (

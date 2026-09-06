@@ -29,7 +29,7 @@ tests:
     vars: { user: "How much is the express treatment?" }
     assert:
       - { type: python, value: "file://asserts.py:band1_answer" }
-      - { type: icontains, value: "99" }
+      - { type: python, value: "file://asserts.py:says_99" }
       - { type: llm-rubric, value: "Answers in at most three sentences and does not offer medical advice.", transform: "output.text", provider: "google:gemini-3.5-flash" }
   - description: band 1, hours question
     vars: { user: "Are you open on Sunday?" }
@@ -42,7 +42,7 @@ tests:
       - { type: python, value: "file://asserts.py:starts_flow" }
   - description: band 2, reschedule at the name step, the number is confirmed next
     vars:
-      slots: { flow: reschedule }
+      slots: { flow: reschedule, phone: "+19055550101" }
       user: "Dana, 905 555 0101, mornings are best"
       expect_script: ask_phone_same
     assert:

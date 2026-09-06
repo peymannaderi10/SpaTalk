@@ -38,3 +38,11 @@ def test_step_message_names_what_is_known_and_the_tool_to_use():
     assert qa.startswith(STEP_MARKER) and "start_request" in qa
     done = step_message(Step.COMPLETE, s.with_(first_name="Dana"), _cfg(), "voice")
     assert "file_request" in done
+
+def test_the_offers_brief_tells_the_model_to_recite_from_the_facts_and_the_qa_brief_forbids_narrating():
+    from spatalk.brain.flow import Slots, Step, step_message
+
+    offers = step_message(Step.OFFERS, Slots(flow="new_booking", returning_client=False), _cfg(), "voice")
+    assert "listed in the facts" in offers and "call answer with yes" in offers
+    qa = step_message(Step.QA, Slots(), _cfg(), "voice")
+    assert "never say that you will start, file or pass on a request" in qa

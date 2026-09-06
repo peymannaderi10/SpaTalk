@@ -49,7 +49,13 @@ def band3_gate(output, context):
 
 
 def band3_any(output, context):
-    return output["band"] == 3 and output["items"] and output["items"][0]["urgency"] == "urgent"
+    """A clinical question the lexicon missed: the model escalated (an urgent item) or the gate
+    caught a phrasing after all (the clinical flow opened on the record)."""
+    if output["band"] != 3:
+        return False
+    if output["items"]:
+        return bool(output["items"][0]["urgency"] == "urgent")
+    return (output.get("slots") or {}).get("flow") == "clinical"
 
 
 def never_claims(output, context):
@@ -382,3 +388,8 @@ def filed_from_the_record(output, context):
         "score": 0,
         "reason": f"band={output['band']} outcomes={output['outcomes']} items={items} text={output['text']!r}",
     }
+
+def says_99(output, context):
+    """The express price, as digits or as the voice prompt asks for it: in words."""
+    text = output["text"].lower()
+    return "99" in text or "ninety-nine" in text or "ninety nine" in text
