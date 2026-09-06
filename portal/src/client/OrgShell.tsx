@@ -38,6 +38,15 @@ export type Org = {
    * and the page only obeys, so the banner and the refusal always agree.
    */
   entitled: boolean;
+  /**
+   * The clinic's branding, from `getOrganization`: the logo the owner uploaded
+   * as a `data:` URL, the theme preset (`clinic` when null) and the accent
+   * that overrides the preset's primary colour. The shell wears it; the
+   * Branding page edits it. Null all round means the kit's own look.
+   */
+  logoDataUrl: string | null;
+  themePreset: string | null;
+  accentHex: string | null;
 };
 
 export function OrgShell({

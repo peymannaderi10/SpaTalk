@@ -79,6 +79,17 @@ export type OrganizationView = OrganizationSummary & {
   members: MemberView[];
   /** Only an owner (or an agency admin) is shown the pending invitations. */
   invitations: InvitationView[] | null;
+  /**
+   * How this clinic's own dashboard looks: the logo the owner uploaded as a
+   * `data:` URL, the theme preset (`clinic` when null) and the accent colour
+   * that overrides the preset's primary. Portal-only data on the organisation,
+   * written by `updateOrganizationBranding`; every clinic page's shell reads
+   * it from here. Only this query carries the logo — `listMyOrganizations`
+   * does not, so the switcher's list stays light.
+   */
+  logoDataUrl: string | null;
+  themePreset: string | null;
+  accentHex: string | null;
 };
 
 export type InvitationSummary = {
@@ -271,6 +282,9 @@ export const getOrganization: GetOrganization<
     isMember: members.some((member) => member.userId === context.user?.id),
     members,
     invitations,
+    logoDataUrl: org.logoDataUrl,
+    themePreset: org.themePreset,
+    accentHex: org.accentHex,
   };
 };
 

@@ -290,7 +290,7 @@ Unique `(day, tenant_id)`: a second run of the same night replaces its verdict.
 | model | fields |
 |---|---|
 | User | id, email unique, username?, isAdmin bool, createdAt (+ Wasp auth tables `Auth`, `AuthIdentity`, `Session`) |
-| Organization | id, name, slug unique, runtimeTenantId unique, stripeCustomerId?, subscriptionStatus?, subscriptionPlan?, createdAt |
+| Organization | id, name, slug unique, runtimeTenantId unique, stripeCustomerId?, subscriptionStatus?, subscriptionPlan?, logoDataUrl? (a `data:` URL of a PNG, SVG or JPEG, at most 200 KB of image), themePreset? (`clinic`, `slate`, `rose`, `sand`, `forest`; `clinic` when null), accentHex? (`#rrggbb`, overrides the preset's primary colour), createdAt. The three branding columns are portal-only: how that clinic's own dashboard looks, never part of the runtime tenant config or its versions |
 | Membership | id, userId, organizationId, role `OWNER` or `STAFF`; unique (userId, organizationId) |
 | Invitation | id, email, organizationId, role, token unique, expiresAt, acceptedAt? |
 | DailyStats, Logs | kept from open-saas for the admin analytics page |

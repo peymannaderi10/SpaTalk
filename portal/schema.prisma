@@ -41,6 +41,16 @@ model Organization {
   subscriptionStatus        String?         // 'active', 'trialing', 'cancel_at_period_end', 'past_due', 'deleted'
   subscriptionPlan          String?         // 'frontdesk'
 
+  // Branding: how this clinic's own dashboard looks. Portal-only data, never
+  // part of the runtime tenant config, so it is not versioned with it. The
+  // logo is a `data:` URL of a PNG, SVG or JPEG the owner uploaded (at most
+  // 200 KB of image, checked in `validateBranding`); the preset is one of
+  // `THEME_PRESETS` in `src/client/branding/themes.ts` ("clinic" when null);
+  // the accent is `#rrggbb` and overrides the preset's primary colour.
+  logoDataUrl               String?
+  themePreset               String?
+  accentHex                 String?
+
   memberships               Membership[]
   invitations               Invitation[]
 }
