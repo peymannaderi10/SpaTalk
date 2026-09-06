@@ -75,7 +75,13 @@ async def _run(vars_: dict) -> dict:
         "ended": r.ended,
         "health_context": r.health_context,
         "items": [
-            {"type": i.type, "urgency": i.urgency, "health_context": i.health_context}
+            {
+                "type": i.type,
+                "urgency": i.urgency,
+                "health_context": i.health_context,
+                "has_name": bool(i.contact.name),
+                "has_phone": bool(i.contact.phone),
+            }
             for i in ledger.items
         ],
         "sms_sent": len(sms.sent),

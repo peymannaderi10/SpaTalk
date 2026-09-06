@@ -134,7 +134,8 @@ def test_the_suite_has_sms_cases_for_price_cancellation_and_clinical():
     flat = {g for gs in graders for g in gs}
     assert len(cases) >= 3, "the plan lists a price, a cancellation and a clinical SMS case"
     assert "band1_answer" in flat and "sms_brevity" in flat
-    assert "band2_captured" in flat
+    # A cancellation on SMS opens the engine's cancel flow (slot engine design, §4.2).
+    assert "starts_flow" in flat
     assert "band3_gate" in flat
     # Every SMS case is graded for length and formatting except the fixed band-3 script,
     # which is the tenant's wording and is not the model's to shorten.
@@ -145,10 +146,12 @@ def test_the_suite_has_chat_cases_for_the_inline_link_and_contact_capture():
     cases = _cases("chat")
     flat = {g for c in cases for g in _asserts(c)}
     assert "chat_link_inline" in flat
-    capture = [c for c in cases if "band2_captured" in _asserts(c)]
+    # Contact capture on chat has no caller id to fall back on: the engine asks for the
+    # number outright after the name (slot engine design, §4.1 step 6). The case seeds the
+    # record at the name step and expects `ask_phone` next.
+    capture = [c for c in cases if "asks_script" in _asserts(c) and c["vars"].get("expect_script") == "ask_phone"]
     assert capture, "the contact-capture chat case is missing"
-    # Contact capture on chat has no caller id to fall back on, so it must span two turns.
-    assert any(len(c["vars"].get("history") or []) >= 2 for c in capture)
+    assert all(c["vars"].get("slots") for c in capture)
 
 
 def test_every_python_assert_in_the_suite_names_a_function_that_exists():

@@ -7,6 +7,8 @@ the assistant claiming an action it did not take.
 """
 
 import re
+from datetime import datetime, timezone
+from pathlib import Path
 
 BANNED =("booked", "confirmed", "is scheduled", "all set", "cancelled your", "rescheduled")
 
@@ -35,12 +37,15 @@ def band2_captured(output, context):
 
 
 def band3_gate(output, context):
+    """The rules gate answered. An emergency or a request for a person files an urgent item
+    at once; a clinical match opens the clinical flow with the offer and files on yes
+    (slot engine design, §4.2), so for it the record is the proof."""
     want = context["vars"].get("expect_reason")
-    return (
-        output["band"] == 3
-        and output["gate_reason"] == want
-        and output["items"][0]["urgency"] == "urgent"
-    )
+    if output["band"] != 3 or output["gate_reason"] != want:
+        return False
+    if output["items"]:
+        return output["items"][0]["urgency"] == "urgent"
+    return want == "clinical" and (output.get("slots") or {}).get("flow") == "clinical"
 
 
 def band3_any(output, context):
@@ -298,3 +303,82 @@ def social_brevity(output, context):
     if not _no_claims(text):
         return {"pass": False, "score": 0, "reason": f"claimed an action: {text!r}"}
     return True
+
+# --- the slot engine (slot engine design, 2026-09-05) --------------------------------------
+# A request is a fixed sequence of questions the runtime asks from the tenant's scripts. Each
+# step case seeds the record through the `slots` var and names the script it expects next.
+
+
+_BUNDLE = Path(__file__).resolve().parents[1] / "tenants" / "skincentrix"
+
+
+def _tenant():
+    from spatalk.tenants.bundle import load_bundle
+
+    return load_bundle(_BUNDLE)
+
+
+def _script(key: str, fills: dict) -> str:
+    from spatalk.brain.renderer import render_script
+
+    return render_script(key, _tenant(), datetime.now(timezone.utc), urgent=False, **fills)
+
+
+def asks_script(output, context):
+    """The turn ends with the script the vars name (`expect_script`, optional `script_fills`),
+    nothing was filed or sent, and nothing was claimed. The model may put one short
+    acknowledgement in front of it."""
+    vars_ = context["vars"]
+    want = _script(vars_["expect_script"], vars_.get("script_fills") or {})
+    text = output["text"].strip()
+    ok = (
+        text.endswith(want)
+        and _no_claims(text)
+        and output["items"] == []
+        and output["sms_sent"] == 0
+    )
+    return ok or {
+        "pass": False,
+        "score": 0,
+        "reason": f"want={want!r} text={text!r} items={output['items']} sms={output['sms_sent']}",
+    }
+
+
+def starts_flow(output, context):
+    """The model opened the request the vars name (`expect_flow`) and the engine asked its
+    first question; nothing filed, nothing claimed."""
+    want = context["vars"]["expect_flow"]
+    slots = output.get("slots") or {}
+    ok = (
+        slots.get("flow") == want
+        and "start_request" in output["tool_calls"]
+        and output["items"] == []
+        and _no_claims(output["text"])
+        and output["text"].strip().endswith("?")
+    )
+    return ok or {
+        "pass": False,
+        "score": 0,
+        "reason": f"flow={slots.get('flow')} tools={output['tool_calls']} text={output['text']!r}",
+    }
+
+
+def filed_from_the_record(output, context):
+    """The last answer landed and the record filed itself: one item of the type the vars name
+    (`expect_type`), with a first name and a number, and the outcome script spoken."""
+    want = context["vars"].get("expect_type", "callback")
+    items = output["items"]
+    ok = (
+        output["band"] == 2
+        and "captured" in output["outcomes"]
+        and len(items) == 1
+        and items[0]["type"] == want
+        and items[0]["has_name"]
+        and items[0]["has_phone"]
+        and _no_claims(output["text"])
+    )
+    return ok or {
+        "pass": False,
+        "score": 0,
+        "reason": f"band={output['band']} outcomes={output['outcomes']} items={items} text={output['text']!r}",
+    }
