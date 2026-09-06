@@ -176,7 +176,9 @@ describe("the compose services", () => {
     expect(portalServer).toMatch(/\.\.\/portal\/\.env\.server/);
     // Inside the Compose network Postgres is `db:5432`; the host mapping on the
     // db service is for the developer machine, and `.env.server` carries it.
-    expect(portalServer).toMatch(/DATABASE_URL:\s*postgresql:\/\/spatalk:spatalk@db:5432\/spatalk/);
+    expect(portalServer).toMatch(
+      /DATABASE_URL:\s*postgresql:\/\/spatalk:\$\{POSTGRES_PASSWORD:-spatalk\}@db:5432\/spatalk/,
+    );
   });
 
   test("wait for the database and come back after a reboot", () => {

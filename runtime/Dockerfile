@@ -11,5 +11,8 @@ RUN uv pip install --system --no-cache .
 # The deployed revision, reported by /healthz so the portal's health page can name it.
 ARG GIT_COMMIT=""
 ENV GIT_COMMIT=$GIT_COMMIT
+# And beside the installed package: Compose's env_file overrides the ENV above with whatever
+# `.env` says, even an empty `GIT_COMMIT=`, and `Settings` falls back to this file.
+RUN python -c "import pathlib, spatalk; pathlib.Path(spatalk.__file__).with_name('GIT_COMMIT').write_text('$GIT_COMMIT')"
 EXPOSE 8000
 CMD ["spatalk", "serve", "--host", "0.0.0.0", "--port", "8000"]

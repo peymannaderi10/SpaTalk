@@ -1,7 +1,11 @@
 import os
+import re
+from collections.abc import Mapping
 from functools import lru_cache
+from pathlib import Path
 from typing import Any
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # --- hermetic settings (QA gate B, finding 1) -------------------------------------------
@@ -17,6 +21,55 @@ _TRUTHY = {"1", "true", "yes", "on"}
 def env_file_disabled() -> bool:
     """True when the environment explicitly forbids reading ``.env``."""
     return os.environ.get(NO_ENV_FILE_VAR, "").strip().lower() in _TRUTHY
+
+
+def export_env_file(path: "str | os.PathLike[str]" = ".env") -> list[str]:
+    """Put the dotenv file's keys into ``os.environ`` without overriding what the process carries.
+
+    ``Settings`` reads the file itself, but parts of the runtime read the environment by name:
+    a delivery destination's address is the *name* of an environment variable (``address_env``),
+    looked up when the job runs. On 2026-09-05 ``SKINCENTRIX_STAFF_SMS`` sat in ``.env``, never
+    reached ``os.environ``, and the staff text went nowhere. ``spatalk serve`` calls this first.
+
+    A no-op when the file is absent (in the container Compose has already injected it), and
+    when ``SPATALK_NO_ENV_FILE`` forbids the file (the test session). Returns the keys exported.
+    """
+    if env_file_disabled():
+        return []
+    file = Path(path)
+    if not file.is_file():
+        return []
+    from dotenv import dotenv_values
+
+    exported: list[str] = []
+    for key, value in dotenv_values(file).items():
+        if value is None or key in os.environ:
+            continue
+        os.environ[key] = value
+        exported.append(key)
+    return exported
+
+
+# A value that is a note: `#` then whitespace or nothing. A colour (`#0f766e`) is a value.
+_NOTE = re.compile(r"^\s*#(\s|$)")
+
+
+def comment_valued(env: Mapping[str, str]) -> list[str]:
+    """The keys whose value is a note, sorted.
+
+    ``KEY=   # note`` is read as the note by python-dotenv and by Docker Compose alike, so an
+    "empty" key carries a sentence and every check against it fails quietly (2026-09-05:
+    ``TELNYX_PUBLIC_KEY`` held its own comment and every Telnyx webhook was rejected). The
+    fix is always the same, a note on its own line, so ``serve`` refuses to start and says so.
+    """
+    return sorted(key for key, value in env.items() if _NOTE.match(value or ""))
+
+
+# The revision the image build wrote beside the package (Dockerfile). `GIT_COMMIT` is also an
+# ENV in the image, but Compose's `env_file` overrides an image ENV with whatever `.env` says,
+# even nothing, and `.env.example` names every setting; so a copied example blanked the commit
+# that /healthz reports (2026-09-06). The file cannot be blanked by an environment line.
+BAKED_COMMIT_FILE = Path(__file__).with_name("GIT_COMMIT")
 
 
 class Settings(BaseSettings):
@@ -65,7 +118,7 @@ class Settings(BaseSettings):
     internal_api_key: str = ""
     # The deployed revision, set by the Dockerfile and reported by /healthz so the agency
     # admin page can say what is running.
-    git_commit: str = ""
+    git_commit: str = ""  # empty outside the image; see BAKED_COMMIT_FILE
 
     # --- human takeover (text-channels plan, Task B5) ---
     # With a bot token, item delivery opens a Slack thread per conversation and staff can
@@ -181,6 +234,20 @@ class Settings(BaseSettings):
         if env_file_disabled():
             values.setdefault("_env_file", None)
         super().__init__(**values)
+
+    @model_validator(mode="after")
+    def _fill_baked_commit(self) -> "Settings":
+        # Validators register at class definition; this cannot be attached from outside.
+        if not self.git_commit:
+            self.git_commit = _baked_commit()
+        return self
+
+
+def _baked_commit() -> str:
+    try:
+        return BAKED_COMMIT_FILE.read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
 
 
 @lru_cache

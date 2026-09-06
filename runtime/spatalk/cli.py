@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import getpass
 import json
+import os
 import re
 from pathlib import Path
 
@@ -165,8 +166,26 @@ def openapi(internal: bool = True, out: str = ""):
 
 @app.command()
 def serve(host: str = "0.0.0.0", port: int = 8000):
+    """Run the runtime.
+
+    `.env` is exported into the process first, because the delivery job reads a staff
+    number by environment-variable name, and a key whose value is a note stops the start:
+    both are 2026-09-05 demo findings (`spatalk.settings.export_env_file`, `comment_valued`).
+    """
     import uvicorn
 
+    from spatalk.settings import comment_valued, export_env_file
+
+    export_env_file()
+    noted = comment_valued(os.environ)
+    if noted:
+        typer.echo(
+            "refusing to start: "
+            + ", ".join(noted)
+            + " hold a note where a value goes (`KEY=   # note` is read as the note). "
+            "Put the note on its own line above the key and start again."
+        )
+        raise typer.Exit(code=2)
     uvicorn.run("spatalk.http.app:create_default_app", host=host, port=port, factory=True)
 
 

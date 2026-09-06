@@ -287,17 +287,20 @@ def test_the_env_example_promises_no_variable_nothing_reads():
     """The other direction: a name in the example that nothing reads is a lie.
 
     The founder pastes the example into the VPS's `.env`; a variable no code and no bundle
-    reads looks configured and does nothing. Three sources are legitimate readers, and only
-    three: `Settings`; the tenant bundles, which carry destination *names* and never the
+    reads looks configured and does nothing. Four sources are legitimate readers, and only
+    four: `Settings`; the tenant bundles, which carry destination *names* and never the
     address itself (CLAUDE.md non-negotiable 5, e.g. `webhook_env: SKINCENTRIX_SLACK_WEBHOOK`);
-    and Caddy, which reads the four host variables out of the same file
-    (`tests/test_deploy_assets.py::test_caddyfile_proxies_both_hosts_to_the_app_container`).
+    Caddy, which reads the four host variables out of the same file
+    (`tests/test_deploy_assets.py::test_caddyfile_proxies_both_hosts_to_the_app_container`);
+    and Compose, which interpolates the database password and bind address out of it
+    (`test_compose_publishes_postgres_on_loopback_and_takes_its_password_from_the_environment`).
     """
     import re
 
     from spatalk.settings import Settings
 
     caddy_only = {"API_HOST", "MEDIA_HOST", "APP_HOST", "APP_API_HOST"}
+    compose_only = {"POSTGRES_PASSWORD", "DB_BIND"}
     read_by_settings = {field.upper() for field in Settings.model_fields}
     bundles = " ".join(
         path.read_text(encoding="utf-8") for path in (RUNTIME / "tenants").rglob("*.yaml")
@@ -308,7 +311,10 @@ def test_the_env_example_promises_no_variable_nothing_reads():
     stray = sorted(
         n
         for n in _declared_in(example)
-        if n not in read_by_settings and n not in caddy_only and n not in named_by_a_bundle
+        if n not in read_by_settings
+        and n not in caddy_only
+        and n not in compose_only
+        and n not in named_by_a_bundle
     )
     assert not stray, f"runtime/.env.example names variables nothing reads: {stray}"
 

@@ -234,8 +234,9 @@ def test_compose_builds_the_database_from_scripts_db_and_takes_walg_env_optional
     # Optional for the same reason `app`'s .env is (QA gate A): a clean checkout has
     # no credentials and `docker compose up -d db` must still work.
     assert db["env_file"] == [{"path": "./scripts/db/walg.env", "required": False}]
-    # The host port and the test-database bootstrap are unchanged.
-    assert db["ports"] == ["5434:5432"]
+    # The host port and the test-database bootstrap are unchanged; the bind address is
+    # loopback unless `.env` widens it (deploy prep, 2026-09-06).
+    assert db["ports"] == ["${DB_BIND:-127.0.0.1}:5434:5432"]
     assert any("init-test-db.sql" in v for v in db["volumes"])
     assert "profiles" not in db, "the database is not a drill-only service"
 

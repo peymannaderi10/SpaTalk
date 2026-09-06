@@ -1,3 +1,12 @@
+# Log rotation for every service. Docker's json-file driver keeps logs forever by
+# default, and a chatty runtime fills an 80 GB disk in a season; five files of 20 MB
+# per container is a week of a busy clinic and nothing to think about.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+
 services:
   db:
     # Postgres 16 plus WAL-G, built from `scripts/db` (operations plan, Task E2).
@@ -8,7 +17,10 @@ services:
     image: spatalk-db:16
     environment:
       POSTGRES_USER: spatalk
-      POSTGRES_PASSWORD: spatalk
+      # From `.env`, which Compose also reads for `${...}`. The default is the
+      # developer machine's. Production sets a real one before the first `up`:
+      # Postgres reads it once, when the data volume is initialised, never again.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-spatalk}
       POSTGRES_DB: spatalk
     # The R2 credentials WAL-G archives with. Optional for the same reason `app`'s
     # `.env` is: a clean checkout has none, and with the file absent the archive
@@ -16,15 +28,24 @@ services:
     env_file:
       - path: ./scripts/db/walg.env
         required: false
-    ports: ["5434:5432"]
+    # Published on loopback only: on a VPS, `5434:5432` is Postgres on the public
+    # internet with the password above. DB_BIND=0.0.0.0 in `.env` widens it, for a
+    # developer machine whose tools run in another VM (WSL reaching Docker Desktop).
+    ports: ["${DB_BIND:-127.0.0.1}:5434:5432"]
     volumes: ["pgdata:/var/lib/postgresql/data", "./scripts/init-test-db.sql:/docker-entrypoint-initdb.d/10-test-db.sql:ro"]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U spatalk"]
       interval: 5s
       timeout: 3s
       retries: 10
+    restart: unless-stopped
+    logging: *logging
   app:
-    build: .
+    build:
+      context: .
+      args:
+        # The deployed revision, reported by /healthz; `scripts/deploy.sh` sets it.
+        GIT_COMMIT: ${GIT_COMMIT:-}
     # Optional so `docker compose config` and `up -d db` work on a clean checkout,
     # before anyone has copied `.env.example` to `.env`.
     env_file:
@@ -33,10 +54,19 @@ services:
     environment:
       # Inside the compose network Postgres is reachable as `db:5432`; the host mapping
       # on the db service (5434) is for the developer machine only.
-      DATABASE_URL: postgresql+asyncpg://spatalk:spatalk@db:5432/spatalk
+      DATABASE_URL: postgresql+asyncpg://spatalk:${POSTGRES_PASSWORD:-spatalk}@db:5432/spatalk
     depends_on:
       db: { condition: service_healthy }
+    healthcheck:
+      # The endpoint the uptime monitor reads (docs/runbooks/monitoring.md). The image
+      # has Python and no curl; urlopen raises on anything but a 2xx.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
     restart: unless-stopped
+    logging: *logging
   # The portal (portal plan, Task C9). Two images built from `../portal`: the
   # Wasp server, and the built client served by a Caddy of its own. Neither
   # publishes a port; the Caddy below is the only way in.
@@ -54,11 +84,20 @@ services:
       # compose network. The runtime owns the `runtime` schema, the portal owns
       # `public`; `.env.server` carries the developer machine's `localhost:5434`
       # form, so it is overridden here exactly as it is for `app`.
-      DATABASE_URL: postgresql://spatalk:spatalk@db:5432/spatalk
+      DATABASE_URL: postgresql://spatalk:${POSTGRES_PASSWORD:-spatalk}@db:5432/spatalk
       PORT: "3001"
     depends_on:
       db: { condition: service_healthy }
+    healthcheck:
+      # Any HTTP answer means the server is up; signed out, /auth/me is a 401. The
+      # start period covers `prisma migrate deploy` running before the server listens.
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/auth/me').then(r => process.exit(r.status < 500 ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
     restart: unless-stopped
+    logging: *logging
   portal-web:
     build:
       context: ../portal
@@ -68,7 +107,14 @@ services:
         # The default is only there to keep `docker compose build` and `config`
         # working on a checkout with no `.env`; production sets APP_API_HOST.
         REACT_APP_API_URL: https://${APP_API_HOST:-app-api.localhost}
+    healthcheck:
+      # Caddy's alpine image carries busybox wget.
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     restart: unless-stopped
+    logging: *logging
   caddy:
     image: caddy:2-alpine
     env_file:
@@ -78,6 +124,7 @@ services:
     volumes: ["./Caddyfile:/etc/caddy/Caddyfile:ro", "caddy_data:/data", "caddy_config:/config"]
     depends_on: [app, portal-web, portal-server]
     restart: unless-stopped
+    logging: *logging
 
   # --- restore drill only (operations plan, Task E2) ---------------------------
   # MinIO stands in for Cloudflare R2 so the backup tooling can be exercised with no

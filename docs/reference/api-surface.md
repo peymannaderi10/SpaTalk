@@ -173,6 +173,7 @@ Runtime `runtime/.env`:
 | variable | plan | required for |
 |---|---|---|
 | DATABASE_URL, TEST_DATABASE_URL | A | always |
+| POSTGRES_PASSWORD, DB_BIND | deploy prep 2026-09-06 | the `db` container: Compose reads them for `${...}`; the password is what the volume is initialised with and what both in-network DATABASE_URLs carry; DB_BIND is the host address Postgres is published on (loopback unless a developer VM needs 0.0.0.0) |
 | PUBLIC_BASE_URL, MEDIA_WS_HOST, API_HOST, MEDIA_HOST, SECRET_KEY | A | always |
 | TELNYX_API_KEY | A | voice, SMS |
 | TELNYX_PUBLIC_KEY | B | SMS without the edge worker |
@@ -197,7 +198,8 @@ Runtime `runtime/.env`:
 | WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_ACCESS_TOKEN, WHATSAPP_APP_SECRET, WHATSAPP_VERIFY_TOKEN, WHATSAPP_TEMPLATE_ITEM, WHATSAPP_TEMPLATE_DIGEST, WHATSAPP_TEMPLATE_LANG | W1 | WhatsApp staff delivery |
 | `<TENANT>_WHATSAPP_STAFF` per tenant | W1 | the staff E.164 a `whatsapp` destination names; never written into a bundle |
 | `<TENANT>_STAFF_SMS` per tenant | S1, S2 | the owner E.164 an `sms` destination names; tracked items and the digest are texted to it from `sms_from_number`, and its replies may acknowledge and resolve; never written into a bundle |
-| OPS_EMAIL, OPS_SMS_NUMBER, SENTRY_DSN, LOG_FORMAT, GIT_COMMIT | E7 | operations |
+| OPS_EMAIL, OPS_SMS_NUMBER, SENTRY_DSN, LOG_FORMAT | E7 | operations |
+| GIT_COMMIT | E7 | reported by `/healthz`; baked in by the image build (`scripts/deploy.sh`), never a `.env` line, because an env_file line overrides the image's value even when empty |
 | R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_ENDPOINT, R2_BUCKET | E2 | backups (WAL-G reads them as AWS_* in `walg.env`) |
 
 Portal `portal/.env.server`: DATABASE_URL, JWT_SECRET, WASP_WEB_CLIENT_URL, WASP_SERVER_URL, ADMIN_EMAILS, SMTP_*, MAIL_FROM, STRIPE_API_KEY, STRIPE_WEBHOOK_SECRET, STRIPE_PRICE_ID_FRONTDESK, STRIPE_CUSTOMER_PORTAL_URL, RUNTIME_INTERNAL_URL, RUNTIME_INTERNAL_KEY, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET. `portal/.env.client`: REACT_APP_API_URL (Wasp sets), nothing secret.

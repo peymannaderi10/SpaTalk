@@ -9,6 +9,8 @@ present, internally consistent, and carry no secrets.
 from __future__ import annotations
 
 import re
+import shutil
+import subprocess
 import tomllib
 from pathlib import Path
 
@@ -57,12 +59,14 @@ def test_compose_has_db_app_and_caddy_wired_together():
         "caddy",
     }
     app = services["app"]
-    assert app["build"] == "."
+    assert app["build"]["context"] == "."
     # `.env` must be optional or `docker compose config` / `up -d db` fail on a clean
     # checkout before anyone has copied `.env.example` (QA gate A, minor finding).
     assert app["env_file"] == [{"path": ".env", "required": False}]
     # Inside the compose network the database is `db:5432`, never the host mapping.
-    assert app["environment"]["DATABASE_URL"] == "postgresql+asyncpg://spatalk:spatalk@db:5432/spatalk"
+    assert app["environment"]["DATABASE_URL"] == (
+        "postgresql+asyncpg://spatalk:${POSTGRES_PASSWORD:-spatalk}@db:5432/spatalk"
+    )
     assert app["depends_on"]["db"]["condition"] == "service_healthy"
     assert app["restart"] == "unless-stopped"
     caddy = services["caddy"]
@@ -110,3 +114,88 @@ def test_deploy_runbook_carries_the_first_call_checklist():
     # One numbered line per check in the plan's step 6.
     assert len(re.findall(r"^\d+\. ", checklist, re.M)) >= 9
     assert "p95" in checklist and "cancelled" in checklist
+
+
+# --- production hardening (2026-09-06, deploy prep) -------------------------------------------
+
+
+def _running_services() -> dict:
+    return {name: svc for name, svc in _compose()["services"].items() if not svc.get("profiles")}
+
+
+def test_compose_keeps_every_log_bounded_and_every_container_restarting():
+    # Docker's json-file driver keeps logs forever by default; a chatty runtime fills an
+    # 80 GB disk in a season. And a database without a restart policy stays down after
+    # the VPS reboots while everything in front of it comes back and fails.
+    for name, svc in _running_services().items():
+        assert svc.get("restart") == "unless-stopped", name
+        assert svc["logging"]["driver"] == "json-file", name
+        options = svc["logging"]["options"]
+        assert options["max-size"] and options["max-file"], name
+
+
+def test_compose_publishes_postgres_on_loopback_and_takes_its_password_from_the_environment():
+    services = _compose()["services"]
+    db = services["db"]
+    # `5434:5432` on a VPS is Postgres on the public internet with the password below.
+    assert db["ports"] == ["${DB_BIND:-127.0.0.1}:5434:5432"]
+    assert db["environment"]["POSTGRES_PASSWORD"] == "${POSTGRES_PASSWORD:-spatalk}"
+    for name, scheme in (("app", "postgresql+asyncpg"), ("portal-server", "postgresql")):
+        assert services[name]["environment"]["DATABASE_URL"] == (
+            f"{scheme}://spatalk:${{POSTGRES_PASSWORD:-spatalk}}@db:5432/spatalk"
+        ), name
+    example = (RUNTIME / ".env.example").read_text(encoding="utf-8")
+    assert re.search(r"^POSTGRES_PASSWORD=", example, re.M)
+    assert re.search(r"^DB_BIND=", example, re.M)
+
+
+def test_compose_health_checks_every_container_caddy_fronts():
+    services = _compose()["services"]
+    app_check = services["app"]["healthcheck"]
+    assert app_check["test"][0] == "CMD" and "healthz" in " ".join(app_check["test"])
+    assert app_check["start_period"]
+    server_check = services["portal-server"]["healthcheck"]
+    assert "auth/me" in " ".join(server_check["test"])
+    assert services["portal-web"]["healthcheck"]["test"][0] == "CMD"
+    # The deployed revision reaches /healthz through the build argument the deploy script sets.
+    assert services["app"]["build"]["args"]["GIT_COMMIT"] == "${GIT_COMMIT:-}"
+    # `env_file` overrides the image's ENV, so the `GIT_COMMIT=` line every copied example
+    # carries would blank what the build baked in (seen 2026-09-06). The image therefore
+    # also writes the revision beside the package, where `Settings` reads it back.
+    dockerfile = (RUNTIME / "Dockerfile").read_text(encoding="utf-8")
+    assert "with_name('GIT_COMMIT')" in dockerfile
+
+
+def test_env_example_never_puts_a_note_where_a_value_goes():
+    # python-dotenv and Compose both read `KEY=   # note` as the note (2026-09-05,
+    # TELNYX_PUBLIC_KEY); the example must not teach the shape, and must say why.
+    example = (RUNTIME / ".env.example").read_text(encoding="utf-8")
+    assert not re.findall(r"^[A-Z_]+=[ 	]*#.*$", example, re.M)
+    assert "own line" in example
+
+
+def test_deploy_script_pulls_builds_migrates_then_restarts_and_waits_for_health():
+    script = RUNTIME / "scripts" / "deploy.sh"
+    text = script.read_text(encoding="utf-8")
+    assert text.startswith("#!/usr/bin/env bash")
+    assert "set -euo pipefail" in text
+    steps = (
+        "git pull --ff-only",
+        "GIT_COMMIT=",
+        "docker compose build",
+        "alembic upgrade head",
+        "docker compose up -d --remove-orphans",
+        "healthz",
+    )
+    positions = [text.index(step) for step in steps]
+    assert positions == sorted(positions), "the deploy runs in the wrong order"
+    # The schema changes before the new code serves, never on start-up.
+    assert "docker compose run --rm" in text
+    # LF only: the VPS runs it, and a CR ends `set -euo pipefail` with a stray character.
+    assert "\r" not in text
+    if shutil.which("bash"):
+        check = subprocess.run(["bash", "-n"], input=text.encode(), capture_output=True)
+        assert check.returncode == 0, check.stderr
+    runbook = (ROOT / "docs" / "runbooks" / "deploy.md").read_text(encoding="utf-8")
+    assert "scripts/deploy.sh" in runbook
+    assert "ufw" in runbook and "POSTGRES_PASSWORD" in runbook
