@@ -1,15 +1,3 @@
-import {
-  IconBook2,
-  IconClock,
-  IconHistory,
-  IconPhone,
-  IconPlugConnected,
-  IconQuote,
-  IconSend,
-  IconSparkles,
-  IconUsers,
-  type TablerIcon,
-} from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
 import {
@@ -23,6 +11,7 @@ import {
 import { Alert, AlertDescription, AlertTitle } from "./components/ui/alert";
 import { Button } from "./components/ui/button";
 import { Separator } from "./components/ui/separator";
+import { SETTINGS_TABS, type SettingsTab } from "./nav";
 import { OrgShell, Problem, type Org } from "./OrgShell";
 import { ContentSection } from "./settings/ContentSection";
 import { DeliveryTab } from "./settings/DeliveryTab";
@@ -52,87 +41,73 @@ import { VersionsPanel } from "./settings/VersionsPanel";
 
 type FieldError = { path: string[]; field: string; message: string };
 
-const TABS = [
-  "Hours",
-  "Services",
-  "Team",
-  "Knowledge",
-  "Scripts",
-  "Delivery",
-  "Numbers",
-  "Integrations",
-  "Versions",
-] as const;
-
-type Tab = (typeof TABS)[number];
+/**
+ * The sections, their order and their icons are `nav.ts`'s `SETTINGS_TABS`,
+ * spelled once for the page, its sub-navigation and the URL.
+ */
+type Tab = SettingsTab;
 
 /** What each section is, in the words the kit's section header wants. */
-const SECTIONS: Record<Tab, { icon: TablerIcon; description: string }> = {
+const SECTIONS: Record<Tab, { description: string }> = {
   Hours: {
-    icon: IconClock,
     description:
       "When the clinic is open, in its own timezone. Every promised time is counted from these spans.",
   },
   Services: {
-    icon: IconSparkles,
     description:
       "The catalog. Only a service on this list can be named, quoted or linked to.",
   },
   Team: {
-    icon: IconUsers,
     description:
       "Who a caller may ask for by name, and which treatments each person performs.",
   },
   Knowledge: {
-    icon: IconBook2,
     description:
       "The prose the assistant may answer from, and the questions it answers in its own words.",
   },
   Scripts: {
-    icon: IconQuote,
     description:
       "The fixed wording. Every sentence the system can say that a model did not write.",
   },
   Delivery: {
-    icon: IconSend,
     description:
       "Where a tracked request goes, who owns it, and how long the team has.",
   },
   Numbers: {
-    icon: IconPhone,
     description:
       "The numbers mapped to this tenant, and the ones it will not answer.",
   },
   Integrations: {
-    icon: IconPlugConnected,
     description: "Instagram and the clinic's Facebook Page.",
   },
   Versions: {
-    icon: IconHistory,
     description:
       "Every save is a version. Rolling back adds a new one; nothing is removed.",
   },
 };
 
 /**
- * The tab is in the URL, not in React state, so the Setup items in the
- * sidebar can each open the one they name. `nav.ts` spells the slugs, and they
- * are the labels lowercased; `tabSlug` and `tabFromSlug` are the only two
- * places that has to be true.
+ * The tab is in the URL, not in React state, so a deep link opens the section
+ * it names and the page's sub-navigation marks it. The sidebar carries one
+ * Settings entry with no `tab`, and `SETTINGS_TABS` in `nav.ts` spells each
+ * section's slug; `tabSlug` and `tabFromSlug` read it from there.
  *
- * A URL with no `tab` — someone's bookmark from before this existed, or a
- * plain click on Settings — opens Hours, which is what the page opened on
+ * A URL with no `tab` — someone's bookmark from before this existed, or the
+ * sidebar's Settings entry — opens Hours, which is what the page opened on
  * before the tab was addressable.
  */
 export const DEFAULT_TAB: Tab = "Hours";
 
 export function tabSlug(tab: Tab): string {
-  return tab.toLowerCase();
+  return (
+    SETTINGS_TABS.find((entry) => entry.label === tab)?.tab ?? tab.toLowerCase()
+  );
 }
 
 export function tabFromSlug(slug: string | null | undefined): Tab {
+  const wanted = slug?.toLowerCase();
   return (
-    TABS.find((tab) => tabSlug(tab) === slug?.toLowerCase()) ?? DEFAULT_TAB
+    SETTINGS_TABS.find((entry) => entry.tab === wanted)?.label ?? DEFAULT_TAB
   );
 }
 
@@ -266,11 +241,11 @@ function Body({ org }: { org: Org }) {
       <div className="flex flex-1 flex-col space-y-2 overflow-hidden lg:flex-row lg:space-y-0 lg:space-x-12">
         <aside className="top-0 lg:sticky lg:w-1/5">
           <SettingsNav
-            items={TABS.map((name) => ({
-              value: name,
-              title: name,
-              icon: SECTIONS[name].icon,
-              testId: `settings-tab-${tabSlug(name)}`,
+            items={SETTINGS_TABS.map((entry) => ({
+              value: entry.label,
+              title: entry.label,
+              icon: entry.icon,
+              testId: `settings-tab-${entry.tab}`,
             }))}
             value={tab}
             onSelect={(next) => setTab(next as Tab)}

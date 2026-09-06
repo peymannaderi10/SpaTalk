@@ -9,6 +9,7 @@ import {
   PLATFORM_SECTIONS,
   platformSections,
   ROUTES_OFF_THE_SIDEBAR,
+  SETTINGS_TABS,
   visibleSections,
 } from "./nav";
 
@@ -147,7 +148,10 @@ describe("the sidebar model", () => {
     }
   });
 
-  it("gives every route it shows exactly one sidebar item, apart from the settings tabs", () => {
+  it("gives every route it shows exactly one sidebar item, the settings page included", () => {
+    // The settings page's sections used to be nine sidebar items differing
+    // by query string. They are the page's own sub-navigation now, so the
+    // page is one item like every other.
     const counts = new Map<string, number>();
     for (const item of allNavItems()) {
       const route = navRoute(item.to);
@@ -155,13 +159,7 @@ describe("the sidebar model", () => {
     }
 
     for (const [route, count] of counts) {
-      if (route === "/app/:orgSlug/settings") {
-        // The settings page holds several tabs, one sidebar item each; they
-        // differ by query string, which is what makes them distinct items.
-        expect(count).toBeGreaterThan(1);
-      } else {
-        expect(count, `${route} appears ${count} times in the sidebar`).toBe(1);
-      }
+      expect(count, `${route} appears ${count} times in the sidebar`).toBe(1);
     }
   });
 
@@ -188,12 +186,22 @@ describe("the sidebar model", () => {
     ]);
   });
 
-  it("lists the Setup pages in the settings page's order, Team among them", () => {
-    // `SettingsPage.TABS` and this list are the two spellings of the same
-    // thing; a tab added to one and not the other is a page nobody can reach
-    // from the sidebar, or a sidebar item that opens the wrong page.
+  it("carries one Settings entry, which opens the page on its default section", () => {
     const setup = NAV_SECTIONS.find((section) => section.title === "Setup");
-    expect(setup?.items.map((item) => item.label)).toEqual([
+    expect(setup?.items.map((item) => item.label)).toEqual(["Settings"]);
+    const settings = setup?.items[0];
+    expect(settings?.to).toBe("/app/:orgSlug/settings");
+    expect(settings?.testId).toBe("nav-settings");
+    expect(
+      allNavItems().filter((item) => item.testId.startsWith("nav-settings")),
+    ).toHaveLength(1);
+  });
+
+  it("spells the settings page's sections in the order its sub-navigation shows them", () => {
+    // `SettingsPage` builds its tabs from this list, so this is the one
+    // spelling of the sections, their order, and the `?tab=` slug each one
+    // answers to. A deep link to a section is `/settings?tab=<slug>`.
+    expect(SETTINGS_TABS.map((entry) => entry.label)).toEqual([
       "Hours",
       "Services",
       "Team",
@@ -204,9 +212,13 @@ describe("the sidebar model", () => {
       "Integrations",
       "Versions",
     ]);
-    const team = setup?.items.find((item) => item.label === "Team");
-    expect(team?.to).toBe("/app/:orgSlug/settings?tab=team");
-    expect(team?.testId).toBe("nav-settings-team");
+    for (const entry of SETTINGS_TABS) {
+      expect(entry.tab).toBe(entry.label.toLowerCase());
+      expect(entry.icon).toBeTruthy();
+    }
+    expect(new Set(SETTINGS_TABS.map((entry) => entry.tab)).size).toBe(
+      SETTINGS_TABS.length,
+    );
   });
 
   it("shows a staff member the front desk and the setup, and nothing else", () => {

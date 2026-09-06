@@ -19,8 +19,10 @@ import { cn } from "../utils";
  *
  * The kit's items are router links because each of its settings tabs is a
  * route. Ours are one route with a `?tab=` on it, and the Playwright suite
- * reaches four of them as buttons, so these are buttons that set the tab —
- * which also writes the query string, so the sidebar item stays lit.
+ * reaches them as buttons, so these are buttons that set the tab — which also
+ * writes the query string, so a deep link and a click end up the same. This is
+ * the only way between sections: the sidebar carries one Settings entry. The
+ * current section says so with `aria-current`, for readers and for the suite.
  */
 export type SettingsNavItem = {
   value: string;
@@ -44,7 +46,10 @@ export function SettingsNav({
     <>
       <div className="p-1 md:hidden">
         <Select value={value} onValueChange={onSelect}>
-          <SelectTrigger className="h-12 sm:w-48" data-testid="settings-tab-select">
+          <SelectTrigger
+            className="h-12 sm:w-48"
+            data-testid="settings-tab-select"
+          >
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -77,6 +82,7 @@ export function SettingsNav({
               key={item.value}
               type="button"
               data-testid={item.testId}
+              aria-current={value === item.value ? "page" : undefined}
               onClick={() => onSelect(item.value)}
               className={cn(
                 buttonVariants({ variant: "ghost" }),

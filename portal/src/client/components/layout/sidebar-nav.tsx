@@ -19,7 +19,8 @@ import {
  * `location.pathname` and `location.search` instead of the kit's single `href`
  * string. The kit's collapsible and collapsed-dropdown branches are gone with
  * the nested items they served: this portal's sidebar model is flat, and the
- * settings tabs that would have been children are their own section.
+ * settings page's sections are its own sub-navigation rather than children
+ * here.
  */
 export function SidebarNav({
   section,
@@ -39,7 +40,12 @@ export function SidebarNav({
           <SidebarMenuItem key={item.testId}>
             <SidebarMenuButton
               asChild
-              isActive={isActive(item, orgSlug, location.pathname, location.search)}
+              isActive={isActive(
+                item,
+                orgSlug,
+                location.pathname,
+                location.search,
+              )}
               tooltip={item.label}
             >
               <Link
@@ -59,9 +65,10 @@ export function SidebarNav({
 }
 
 /**
- * An item is current when the path matches. Where several items share a path
- * and differ only by query — the settings tabs — the query has to match too,
- * and the item with no query is current while the page carries none.
+ * An item is current when the path matches. An item with no query is current
+ * whatever query the page carries — the one Settings entry stays lit on every
+ * `?tab=` — and an item that names a query is current only when the page's
+ * query agrees with it.
  */
 export function isActive(
   item: NavItem,
@@ -72,7 +79,10 @@ export function isActive(
   const href = navPath(item.to, orgSlug);
   const [itemPath, itemQuery = ""] = href.split("?");
 
-  if (pathname !== navPath(navRoute(item.to), orgSlug) && pathname !== itemPath) {
+  if (
+    pathname !== navPath(navRoute(item.to), orgSlug) &&
+    pathname !== itemPath
+  ) {
     return false;
   }
 

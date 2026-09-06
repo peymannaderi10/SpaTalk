@@ -1,6 +1,11 @@
 import { expect, test, type Page } from "@playwright/test";
 import { checkoutSessionCompleted, postStripeEvent } from "./stripe";
-import { agencyAdmin, callOperation, SERVER_URL, signInOrSignUp } from "./utils";
+import {
+  agencyAdmin,
+  callOperation,
+  SERVER_URL,
+  signInOrSignUp,
+} from "./utils";
 
 /**
  * The app shell (reskin plan, Task R1): the sidebar built from `nav.ts`, and
@@ -21,20 +26,15 @@ const ORG_NAME = "Skincentrix Shell";
 const ORG_SLUG = "skincentrix-shell";
 const RUNTIME_TENANT_ID = "skincentrix";
 
-/** The Front desk and Setup items, in the order `nav.ts` puts them. */
+/**
+ * The Front desk, Setup and Account items, in the order `nav.ts` puts them.
+ * Setup is one entry: the settings page's sections are its own sub-navigation.
+ */
 const SIDEBAR_ORDER = [
   "nav-overview",
   "nav-conversations",
   "nav-requests",
-  "nav-settings-hours",
-  "nav-settings-services",
-  "nav-settings-team",
-  "nav-settings-knowledge",
-  "nav-settings-scripts",
-  "nav-settings-delivery",
-  "nav-settings-numbers",
-  "nav-settings-integrations",
-  "nav-settings-versions",
+  "nav-settings",
   "nav-billing",
   "nav-people",
 ];
@@ -130,9 +130,7 @@ test.describe("the sidebar", () => {
     // The organisation switcher comes first, because it is the top of the
     // sidebar, and the navigation follows it in the order `nav.ts` declares.
     expect(focused).toContain("org-switcher");
-    const navOrder = focused.filter((testId) =>
-      SIDEBAR_ORDER.includes(testId),
-    );
+    const navOrder = focused.filter((testId) => SIDEBAR_ORDER.includes(testId));
     expect(navOrder).toEqual(SIDEBAR_ORDER.slice(0, navOrder.length));
     expect(navOrder.length).toBeGreaterThan(3);
     expect(focused.indexOf("org-switcher")).toBeLessThan(
@@ -190,40 +188,60 @@ test.describe("the sidebar", () => {
   });
 });
 
-test.describe("the settings tabs", () => {
-  test("open from the sidebar, and each one has its own URL", async () => {
+test.describe("the settings sections", () => {
+  test("a deep link opens its section, lights the one Settings entry, and marks the section in the page's sub-nav", async () => {
     await ownerPage.goto(`/app/${ORG_SLUG}/settings?tab=numbers`);
     await expect(ownerPage.getByTestId("numbers-tab")).toBeVisible(
       FIRST_RENDER,
     );
-    await expect(ownerPage.getByTestId("nav-settings-numbers")).toHaveAttribute(
+    await expect(ownerPage.getByTestId("nav-settings")).toHaveAttribute(
       "data-active",
       "true",
     );
-    await expect(ownerPage.getByTestId("nav-settings-hours")).toHaveAttribute(
-      "data-active",
-      "false",
+    await expect(ownerPage.getByTestId("settings-tab-numbers")).toHaveAttribute(
+      "aria-current",
+      "page",
     );
+    await expect(
+      ownerPage.getByTestId("settings-tab-hours"),
+    ).not.toHaveAttribute("aria-current", "page");
 
-    await ownerPage.getByTestId("nav-settings-versions").click();
+    // The page's own sub-navigation moves between sections and writes the
+    // same parameter, so the URL and the section never disagree.
+    await ownerPage.getByTestId("settings-tab-versions").click();
     await expect(ownerPage).toHaveURL(/[?&]tab=versions/);
     await expect(ownerPage.getByTestId("config-versions")).toBeVisible(
       FIRST_RENDER,
     );
+    await expect(
+      ownerPage.getByTestId("settings-tab-versions"),
+    ).toHaveAttribute("aria-current", "page");
 
-    // The buttons above the tab content write the same parameter, so the URL
-    // and the tab never disagree about which one is open.
-    await ownerPage.getByRole("button", { name: "Numbers" }).click();
-    await expect(ownerPage).toHaveURL(/[?&]tab=numbers/);
-    await expect(ownerPage.getByTestId("numbers-tab")).toBeVisible();
+    await ownerPage.getByTestId("settings-tab-team").click();
+    await expect(ownerPage).toHaveURL(/[?&]tab=team/);
+    await expect(ownerPage.getByTestId("nav-settings")).toHaveAttribute(
+      "data-active",
+      "true",
+    );
   });
 
-  test("open on hours when the URL says nothing, as they always did", async () => {
+  test("the sidebar's Settings entry opens the page on hours, as a bare URL always did", async () => {
+    await ownerPage.goto(`/app/${ORG_SLUG}/overview`);
+    await ownerPage.getByTestId("nav-settings").click();
+    await expect(ownerPage).toHaveURL(new RegExp(`/app/${ORG_SLUG}/settings`));
+    await expect(ownerPage.getByTestId("hours-mon-0-start")).toBeVisible(
+      FIRST_RENDER,
+    );
+    await expect(ownerPage.getByTestId("settings-tab-hours")).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+
     await ownerPage.goto(`/app/${ORG_SLUG}/settings`);
     await expect(ownerPage.getByTestId("hours-mon-0-start")).toBeVisible(
       FIRST_RENDER,
     );
-    await expect(ownerPage.getByTestId("nav-settings-hours")).toHaveAttribute(
+    await expect(ownerPage.getByTestId("nav-settings")).toHaveAttribute(
       "data-active",
       "true",
     );

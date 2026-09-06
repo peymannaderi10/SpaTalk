@@ -1,5 +1,5 @@
 import {
-  IconBook,
+  IconBook2,
   IconBuildingStore,
   IconChartBar,
   IconClipboardList,
@@ -11,9 +11,10 @@ import {
   IconLayoutDashboard,
   IconMessages,
   IconPhone,
-  IconPlug,
-  IconScript,
+  IconPlugConnected,
+  IconQuote,
   IconSend,
+  IconSettings,
   IconSparkles,
   IconUserCog,
   IconUsers,
@@ -71,21 +72,30 @@ const owners = (ctx: NavContext) => ctx.role === "OWNER";
 const admins = (ctx: NavContext) => ctx.isAdmin;
 
 /**
- * The settings page's tabs, one sidebar item each, in the order the page
- * shows them. The route carries the tab in `?tab=`, which `SettingsPage`
- * reads and writes; the slug is the label lowercased, on both sides.
+ * The settings page's sections, in the order its own sub-navigation shows
+ * them. Not sidebar items: the sidebar carries one Settings entry, and moving
+ * between sections is the page's `SettingsNav`. `SettingsPage` builds its
+ * tabs from this list, so the sections, their order and the `?tab=` slug
+ * each one answers to are spelled once. A deep link is `/settings?tab=<tab>`.
  */
-const SETTINGS_TABS: { label: string; tab: string; icon: TablerIcon }[] = [
+export const SETTINGS_TABS = [
   { label: "Hours", tab: "hours", icon: IconClock },
   { label: "Services", tab: "services", icon: IconSparkles },
   { label: "Team", tab: "team", icon: IconUsers },
-  { label: "Knowledge", tab: "knowledge", icon: IconBook },
-  { label: "Scripts", tab: "scripts", icon: IconScript },
+  { label: "Knowledge", tab: "knowledge", icon: IconBook2 },
+  { label: "Scripts", tab: "scripts", icon: IconQuote },
   { label: "Delivery", tab: "delivery", icon: IconSend },
   { label: "Numbers", tab: "numbers", icon: IconPhone },
-  { label: "Integrations", tab: "integrations", icon: IconPlug },
+  { label: "Integrations", tab: "integrations", icon: IconPlugConnected },
   { label: "Versions", tab: "versions", icon: IconHistory },
-];
+] as const satisfies readonly {
+  label: string;
+  tab: string;
+  icon: TablerIcon;
+}[];
+
+/** The name of one settings section, as its sub-navigation shows it. */
+export type SettingsTab = (typeof SETTINGS_TABS)[number]["label"];
 
 /** The agency's own section, named because the admin shell titles itself with it. */
 export const PLATFORM_SECTION = "Platform";
@@ -120,13 +130,15 @@ export const NAV_SECTIONS: NavSection[] = [
   },
   {
     title: "Setup",
-    items: SETTINGS_TABS.map(({ label, tab, icon }) => ({
-      label,
-      to: `/app/:orgSlug/settings?tab=${tab}`,
-      icon,
-      testId: `nav-settings-${tab}`,
-      visible: anyone,
-    })),
+    items: [
+      {
+        label: "Settings",
+        to: "/app/:orgSlug/settings",
+        icon: IconSettings,
+        testId: "nav-settings",
+        visible: anyone,
+      },
+    ],
   },
   {
     title: "Account",
