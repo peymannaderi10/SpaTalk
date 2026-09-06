@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { fieldsOf, objectFields, rootFields } from "./schemaFields";
+import { fieldsOf, invalidAt, objectFields, rootFields } from "./schemaFields";
 
 /**
  * A trimmed copy of what `GET /internal/schema/tenant-config` serves: pydantic's
@@ -10,7 +10,11 @@ const schema = {
   $defs: {
     Destination: {
       properties: {
-        kind: { enum: ["slack", "email", "webhook"], title: "Kind", type: "string" },
+        kind: {
+          enum: ["slack", "email", "webhook"],
+          title: "Kind",
+          type: "string",
+        },
         webhook_env: {
           anyOf: [{ type: "string" }, { type: "null" }],
           default: null,
@@ -25,8 +29,21 @@ const schema = {
     Escalation: {
       properties: {
         owner_email: { title: "Owner Email", type: "string" },
-        urgent_minutes: { default: 15, title: "Urgent Minutes", type: "integer" },
-        holidays_list: { items: { type: "string" }, title: "Holidays", type: "array" },
+        note: {
+          anyOf: [{ maxLength: 80, type: "string" }, { type: "null" }],
+          default: null,
+          title: "Note",
+        },
+        urgent_minutes: {
+          default: 15,
+          title: "Urgent Minutes",
+          type: "integer",
+        },
+        holidays_list: {
+          items: { type: "string" },
+          title: "Holidays",
+          type: "array",
+        },
       },
       required: ["owner_email"],
       title: "Escalation",
@@ -81,6 +98,14 @@ describe("fieldsOf", () => {
     ).toBe("unsupported");
   });
 
+  test("carries a string's maxLength, through pydantic's anyOf too", () => {
+    const escalation = fieldsOf(schema, "Escalation");
+    expect(escalation.find((f) => f.name === "note")?.maxLength).toBe(80);
+    expect(
+      escalation.find((f) => f.name === "owner_email")?.maxLength,
+    ).toBeUndefined();
+  });
+
   test("is empty for a model the runtime does not define", () => {
     expect(fieldsOf(schema, "NoSuchModel")).toEqual([]);
     expect(objectFields(undefined)).toEqual([]);
@@ -95,12 +120,36 @@ describe("rootFields", () => {
   });
 
   test("drops a field the runtime's schema does not have", () => {
-    expect(rootFields(schema, ["timezone", "invented"]).map((f) => f.name)).toEqual([
-      "timezone",
-    ]);
+    expect(
+      rootFields(schema, ["timezone", "invented"]).map((f) => f.name),
+    ).toEqual(["timezone"]);
   });
 
   test("carries the title the model gave the field", () => {
     expect(rootFields(schema, ["timezone"])[0].title).toBe("Timezone");
+  });
+});
+
+describe("invalidAt", () => {
+  const errors = [{ path: ["faq", "2", "answer"] }, { path: ["hours"] }];
+
+  test("names the field a refused save pointed at, by its path", () => {
+    expect(invalidAt(errors, ["faq", 2, "answer"])).toBe(true);
+    expect(invalidAt(errors, ["faq", 2, "question"])).toBe(false);
+    expect(invalidAt(errors, ["faq", 1, "answer"])).toBe(false);
+  });
+
+  test("marks a container whose contents were refused", () => {
+    expect(invalidAt(errors, ["faq", 2])).toBe(true);
+    expect(invalidAt(errors, ["faq"])).toBe(true);
+  });
+
+  test("marks the fields under a refused container", () => {
+    expect(invalidAt(errors, ["hours", "mon", 0])).toBe(true);
+  });
+
+  test("is false with no errors at all", () => {
+    expect(invalidAt(undefined, ["faq"])).toBe(false);
+    expect(invalidAt([], ["faq"])).toBe(false);
   });
 });

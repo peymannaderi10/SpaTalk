@@ -25,6 +25,8 @@ export type SchemaField = {
   options?: string[];
   required: boolean;
   nullable: boolean;
+  /** Pydantic's `max_length`, so a control can stop at the runtime's bound. */
+  maxLength?: number;
 };
 
 type Json = Record<string, any>;
@@ -32,13 +34,43 @@ type Json = Record<string, any>;
 /** The tenant configuration a form is editing: whatever the runtime last stored. */
 export type Draft = Record<string, any>;
 
+/**
+ * Where a refused save pointed: the runtime's `loc`, as strings, with the
+ * request wrapper dropped — `["faq", "2", "answer"]` for the third row's
+ * answer. `SettingsPage` lists them above the form; a tab marks the controls.
+ */
+export type FieldPathError = { path: string[] };
+
 export type TabProps = {
   config: Draft;
   /** `GET /internal/schema/tenant-config`, verbatim. */
   schema: Json;
   onChange: (next: Draft) => void;
   disabled: boolean;
+  /** What the last save was refused for, if anything. */
+  errors?: FieldPathError[];
 };
+
+/**
+ * Whether a refused save named this path. A field is marked when an error
+ * points at it or at anything inside it, and when an error points at a
+ * container above it: a row whose answer was refused is a refused row, and
+ * every span of a refused day is a refused span.
+ */
+export function invalidAt(
+  errors: FieldPathError[] | undefined,
+  path: (string | number)[],
+): boolean {
+  if (!errors) return false;
+  const want = path.map(String);
+  return errors.some((error) => {
+    const shared = Math.min(error.path.length, want.length);
+    for (let index = 0; index < shared; index += 1) {
+      if (error.path[index] !== want[index]) return false;
+    }
+    return true;
+  });
+}
 
 /** The object schema for one pydantic model inside `$defs`. */
 export function definition(schema: Json, name: string): Json | undefined {
@@ -67,17 +99,27 @@ function kindOf(node: Json): { kind: FieldKind; options?: string[] } {
  * Pydantic writes an optional value as `anyOf: [{…}, {type: "null"}]`, so the
  * shape and the nullability arrive together.
  */
-function resolve(node: Json): { kind: FieldKind; options?: string[]; nullable: boolean } {
+function resolve(node: Json): {
+  kind: FieldKind;
+  options?: string[];
+  nullable: boolean;
+  maxLength?: number;
+} {
   if (Array.isArray(node?.anyOf)) {
     const nullable = node.anyOf.some((branch: Json) => branch?.type === "null");
-    const real = node.anyOf.find((branch: Json) => branch?.type !== "null") ?? {};
-    return { ...kindOf(real), nullable };
+    const real =
+      node.anyOf.find((branch: Json) => branch?.type !== "null") ?? {};
+    return { ...kindOf(real), nullable, maxLength: maxLengthOf(real) };
   }
-  return { ...kindOf(node), nullable: false };
+  return { ...kindOf(node), nullable: false, maxLength: maxLengthOf(node) };
+}
+
+function maxLengthOf(node: Json): number | undefined {
+  return typeof node?.maxLength === "number" ? node.maxLength : undefined;
 }
 
 function fieldFrom(name: string, node: Json, required: string[]): SchemaField {
-  const { kind, options, nullable } = resolve(node ?? {});
+  const { kind, options, nullable, maxLength } = resolve(node ?? {});
   return {
     name,
     title: node?.title ?? name,
@@ -86,6 +128,7 @@ function fieldFrom(name: string, node: Json, required: string[]): SchemaField {
     options,
     required: required.includes(name),
     nullable,
+    maxLength,
   };
 }
 

@@ -3,7 +3,7 @@ import { IconPlus, IconTrash } from "@tabler/icons-react";
 import { EmptyState } from "../components/empty-state";
 import { Button } from "../components/ui/button";
 import { Card, CardContent } from "../components/ui/card";
-import { fieldsOf, type Draft, type TabProps } from "./schemaFields";
+import { fieldsOf, invalidAt, type Draft, type TabProps } from "./schemaFields";
 import { SchemaInput } from "./SchemaInput";
 
 /**
@@ -17,6 +17,7 @@ export function ServicesTab({
   schema,
   onChange,
   disabled,
+  errors,
 }: TabProps) {
   const fields = fieldsOf(schema, "Service");
   const services: Draft[] = config.services ?? [];
@@ -47,6 +48,7 @@ export function ServicesTab({
                   value={service[field.name]}
                   disabled={disabled}
                   long={field.name === "description"}
+                  invalid={invalidAt(errors, ["services", index, field.name])}
                   testId={`service-${index}-${field.name}`}
                   onChange={(value) =>
                     setServices(

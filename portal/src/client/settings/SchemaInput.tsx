@@ -38,6 +38,7 @@ export function SchemaInput({
   disabled,
   testId,
   long,
+  invalid,
 }: {
   field: SchemaField;
   value: unknown;
@@ -46,8 +47,11 @@ export function SchemaInput({
   testId?: string;
   /** Render a string on several lines: knowledge and the fixed scripts. */
   long?: boolean;
+  /** The last save was refused for this field: the kit paints it destructive. */
+  invalid?: boolean;
 }) {
   const id = useId();
+  const ariaInvalid = invalid ? true : undefined;
   const label = (
     <Label htmlFor={id} className="text-muted-foreground text-xs uppercase">
       {field.title}
@@ -61,6 +65,7 @@ export function SchemaInput({
         <Checkbox
           id={id}
           data-testid={testId}
+          aria-invalid={ariaInvalid}
           disabled={disabled}
           checked={Boolean(value)}
           onCheckedChange={(checked) => onChange(checked === true)}
@@ -80,7 +85,12 @@ export function SchemaInput({
           value={current === "" ? UNSET : current}
           onValueChange={(next) => onChange(next === UNSET ? null : next)}
         >
-          <SelectTrigger id={id} data-testid={testId} aria-label={field.title}>
+          <SelectTrigger
+            id={id}
+            data-testid={testId}
+            aria-label={field.title}
+            aria-invalid={ariaInvalid}
+          >
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -105,6 +115,7 @@ export function SchemaInput({
           type="number"
           data-testid={testId}
           aria-label={field.title}
+          aria-invalid={ariaInvalid}
           disabled={disabled}
           value={value === null || value === undefined ? "" : String(value)}
           onChange={(event) => {
@@ -129,6 +140,8 @@ export function SchemaInput({
           rows={3}
           data-testid={testId}
           aria-label={field.title}
+          aria-invalid={ariaInvalid}
+          maxLength={field.maxLength}
           disabled={disabled}
           value={String(value ?? "")}
           onChange={(event) => onChange(event.target.value)}
@@ -144,6 +157,8 @@ export function SchemaInput({
         id={id}
         data-testid={testId}
         aria-label={field.title}
+        aria-invalid={ariaInvalid}
+        maxLength={field.maxLength}
         disabled={disabled}
         value={String(value ?? "")}
         onChange={(event) =>

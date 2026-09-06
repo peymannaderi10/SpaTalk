@@ -122,7 +122,9 @@ export function tabSlug(tab: Tab): string {
 }
 
 export function tabFromSlug(slug: string | null | undefined): Tab {
-  return TABS.find((tab) => tabSlug(tab) === slug?.toLowerCase()) ?? DEFAULT_TAB;
+  return (
+    TABS.find((tab) => tabSlug(tab) === slug?.toLowerCase()) ?? DEFAULT_TAB
+  );
 }
 
 export function SettingsPage() {
@@ -238,6 +240,7 @@ function Body({ org }: { org: Org }) {
     schema: data.schema as Record<string, any>,
     onChange: setDraft,
     disabled: readOnly,
+    errors: fieldErrors,
   };
 
   return (
