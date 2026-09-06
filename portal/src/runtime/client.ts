@@ -46,6 +46,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/internal/tenants/from-basics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Tenant From Basics
+         * @description A tenant from the basics alone: the starter bundle rendered around them.
+         *
+         *     The wizard's "start from the basics" path (onboarding roadmap, section 4). The five
+         *     texts go through `config_from_texts` like an upload would, so the tenant is judged by
+         *     the same rules. Unlike `from-bundle`, which deliberately versions an existing tenant,
+         *     this refuses one that already exists: a form must never overwrite a configured clinic.
+         */
+        post: operations["create_tenant_from_basics_internal_tenants_from_basics_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/internal/tenants/{tenant_id}/config": {
         parameters: {
             query?: never;
@@ -893,6 +918,59 @@ export interface components {
             /** Removed */
             removed: boolean;
         };
+        /** TenantBasicsIn */
+        TenantBasicsIn: {
+            /**
+             * Id
+             * @description tenant id: lowercase letters, digits, hyphens
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /**
+             * Timezone
+             * @description IANA zone, e.g. America/Toronto
+             */
+            timezone: string;
+            /**
+             * Hours
+             * @description mon..sun to [start, end] HH:MM spans; a missing or empty day is closed
+             */
+            hours: {
+                [key: string]: [
+                    string,
+                    string
+                ][];
+            };
+            /**
+             * Booking Url
+             * Format: uri
+             */
+            booking_url: string;
+            /**
+             * Public Phone
+             * @description the clinic's own number, E.164, or empty
+             * @default
+             */
+            public_phone: string;
+            /**
+             * Owner Name
+             * @default
+             */
+            owner_name: string;
+            /** Owner Email */
+            owner_email: string;
+            /**
+             * Assistant Name
+             * @default Ava
+             */
+            assistant_name: string;
+            /**
+             * Created By
+             * @default portal
+             */
+            created_by: string;
+        };
         /** TenantCreated */
         TenantCreated: {
             /** Id */
@@ -1098,6 +1176,41 @@ export interface operations {
         requestBody: {
             content: {
                 "multipart/form-data": components["schemas"]["Body_create_tenant_from_bundle_internal_tenants_from_bundle_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TenantCreated"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_tenant_from_basics_internal_tenants_from_basics_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Actor"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TenantBasicsIn"];
             };
         };
         responses: {

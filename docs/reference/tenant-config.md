@@ -13,6 +13,8 @@ tenants/<id>/
   guard.yaml      lexicon additions
 ```
 
+A tenant can also start from the basics. The runtime ships a starter bundle as package data in `spatalk/tenants/starter/`: `scripts.yaml` and `guard.yaml` are the wording and lexicons Skincentrix went live with, made generic (`{name}`, `{assistant_name}` and the other placeholders in place of the clinic's words); `services.yaml` is `services: []`; `knowledge.md` is a skeleton. `spatalk tenant new <id> --name … --timezone … --owner-email … --booking-url … [--public-phone] [--owner-name] [--assistant-name] [--hours-json] [--out DIR]` writes those five files to `tenants/<id>` (never over an existing directory) with a `tenant.yaml` built from the basics, for editing and then `spatalk tenant import`; `POST /internal/tenants/from-basics` renders the same five texts and imports them through the bundle rules in one step, and refuses (409) an id that already exists. The generated `tenant.yaml` carries the two staff destinations `{kind: email, address: <owner_email>}` and `{kind: sms, address_env: <ID_UPPER>_STAFF_SMS}` (a variable name, never a number), `digest_time_local: "07:30"`, and the `sms_guard` and `social` defaults below.
+
 ## tenant.yaml
 
 | field | type | required | meaning |
@@ -74,7 +76,7 @@ Lists of lowercase phrases added to the built-in lexicons: `human_request`, `eme
 
 ## scripts.yaml, complete, with the authored defaults
 
-Placeholders: `{name}` business name, `{confirm_by}` rendered due wording, `{service}` service name, `{url}` booking link, `{booking_url}` default booking link, `{phone}` public phone, `{sms_number}` toll-free number. Required keys have no default; a bundle must supply them. Keys marked default may be omitted.
+Placeholders: `{name}` business name, `{assistant_name}` the persona's `assistant_name`, `{confirm_by}` rendered due wording, `{service}` service name, `{url}` booking link, `{booking_url}` default booking link, `{phone}` public phone, `{sms_number}` toll-free number. Required keys have no default; a bundle must supply them. Keys marked default may be omitted.
 
 ```yaml
 # Required: the disclosure and the band-3 scripts. These are the ones that end the business if wrong.

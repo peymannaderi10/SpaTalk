@@ -55,6 +55,64 @@ def tenant_export(tenant_id: str, out_dir: Path):
     typer.echo(f"wrote {out_dir}")
 
 
+# `spatalk tenant new` with no --hours-json: weekdays nine to five, so the calendar has
+# something to work with until the clinic's own hours are entered.
+DEFAULT_HOURS = {day: [["09:00", "17:00"]] for day in ("mon", "tue", "wed", "thu", "fri")}
+
+
+@tenant.command("new")
+def tenant_new(
+    tenant_id: str,
+    name: str = typer.Option(..., "--name", help="the clinic's name, as spoken"),
+    timezone: str = typer.Option("America/Toronto", "--timezone", help="IANA zone"),
+    owner_email: str = typer.Option(..., "--owner-email", help="request alerts go here"),
+    booking_url: str = typer.Option(..., "--booking-url", help="the online booking page"),
+    owner_name: str = typer.Option("", "--owner-name", help='default "<name> front desk"'),
+    public_phone: str = typer.Option("", "--public-phone", help="the clinic's own number, E.164"),
+    assistant_name: str = typer.Option("Ava", "--assistant-name"),
+    hours_json: str = typer.Option(
+        "", "--hours-json", help='{"mon": [["09:00", "17:00"]], ...}; weekdays 9-5 if omitted'
+    ),
+    out: Path | None = typer.Option(None, "--out", help="directory to write; default tenants/<id>"),
+):
+    """Write a starter bundle for a new clinic from the basics, without importing it.
+
+    Edit the five files, then `spatalk tenant import <dir>`. An existing directory is
+    never overwritten.
+    """
+    from pydantic import ValidationError
+
+    from spatalk.tenants.bundle import FILES
+    from spatalk.tenants.starter import TenantBasics, render_starter
+
+    out_dir = out if out is not None else Path("tenants") / tenant_id
+    if out_dir.exists():
+        typer.echo(f"{out_dir} already exists; edit it, or choose another --out")
+        raise typer.Exit(1)
+    try:
+        hours = json.loads(hours_json) if hours_json else DEFAULT_HOURS
+        basics = TenantBasics(
+            id=tenant_id,
+            name=name,
+            timezone=timezone,
+            hours=hours,
+            booking_url=booking_url,
+            public_phone=public_phone,
+            owner_name=owner_name,
+            owner_email=owner_email,
+            assistant_name=assistant_name,
+        )
+    except (ValidationError, ValueError) as e:
+        typer.echo(f"not a tenant: {e}")
+        raise typer.Exit(1)
+    texts = render_starter(basics)
+    out_dir.mkdir(parents=True)
+    for filename in FILES:
+        (out_dir / filename).write_text(texts[filename], encoding="utf-8", newline="\n")
+    typer.echo(f"wrote {out_dir}: {', '.join(FILES)}")
+    typer.echo(f"edit the files, then: spatalk tenant import {out_dir}")
+
+
 @numbers.command("add")
 def numbers_add(number: str, tenant_id: str, kind: str = "voice"):
     ctx = _ctx()

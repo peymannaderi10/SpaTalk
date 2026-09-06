@@ -162,6 +162,71 @@
         }
       }
     },
+    "/internal/tenants/from-basics": {
+      "post": {
+        "tags": [
+          "internal"
+        ],
+        "summary": "Create Tenant From Basics",
+        "description": "A tenant from the basics alone: the starter bundle rendered around them.\n\nThe wizard's \"start from the basics\" path (onboarding roadmap, section 4). The five\ntexts go through `config_from_texts` like an upload would, so the tenant is judged by\nthe same rules. Unlike `from-bundle`, which deliberately versions an existing tenant,\nthis refuses one that already exists: a form must never overwrite a configured clinic.",
+        "operationId": "create_tenant_from_basics_internal_tenants_from_basics_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-Actor",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Actor"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TenantBasicsIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantCreated"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/internal/tenants/{tenant_id}/config": {
       "get": {
         "tags": [
@@ -2845,6 +2910,93 @@
           "removed"
         ],
         "title": "SmsBlockRemoved"
+      },
+      "TenantBasicsIn": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9-]{2,40}$",
+            "title": "Id",
+            "description": "tenant id: lowercase letters, digits, hyphens"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 2,
+            "title": "Name"
+          },
+          "timezone": {
+            "type": "string",
+            "title": "Timezone",
+            "description": "IANA zone, e.g. America/Toronto"
+          },
+          "hours": {
+            "additionalProperties": {
+              "items": {
+                "prefixItems": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "string"
+                  }
+                ],
+                "type": "array",
+                "maxItems": 2,
+                "minItems": 2
+              },
+              "type": "array"
+            },
+            "type": "object",
+            "title": "Hours",
+            "description": "mon..sun to [start, end] HH:MM spans; a missing or empty day is closed"
+          },
+          "booking_url": {
+            "type": "string",
+            "maxLength": 2083,
+            "minLength": 1,
+            "format": "uri",
+            "title": "Booking Url"
+          },
+          "public_phone": {
+            "type": "string",
+            "title": "Public Phone",
+            "description": "the clinic's own number, E.164, or empty",
+            "default": ""
+          },
+          "owner_name": {
+            "type": "string",
+            "maxLength": 120,
+            "title": "Owner Name",
+            "default": ""
+          },
+          "owner_email": {
+            "type": "string",
+            "title": "Owner Email"
+          },
+          "assistant_name": {
+            "type": "string",
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Assistant Name",
+            "default": "Ava"
+          },
+          "created_by": {
+            "type": "string",
+            "title": "Created By",
+            "default": "portal"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "timezone",
+          "hours",
+          "booking_url",
+          "owner_email"
+        ],
+        "title": "TenantBasicsIn"
       },
       "TenantCreated": {
         "properties": {

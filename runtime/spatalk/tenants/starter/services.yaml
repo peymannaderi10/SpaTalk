@@ -1,0 +1,3 @@
+# The catalogue. Empty to start: the team adds treatments on the portal's Services page,
+# or here, one entry per service (see docs/reference/tenant-config.md).
+services: []

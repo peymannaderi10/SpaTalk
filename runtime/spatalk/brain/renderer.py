@@ -37,6 +37,9 @@ def _values(cfg: TenantConfig, now: datetime, urgent: bool, **extra) -> dict[str
         "service": "",
         "url": "",
         "name": cfg.name,
+        # The persona's name, so a starter script can say "I'm {assistant_name}" and a
+        # tenant that renames the assistant is not still introduced by the old name.
+        "assistant_name": cfg.persona.assistant_name,
         "phone": cfg.public_phone or "the clinic's usual number",
         "booking_url": cfg.booking_url_default,
         "sms_number": cfg.sms_from_number or cfg.public_phone or "the clinic",

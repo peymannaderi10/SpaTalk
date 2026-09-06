@@ -33,6 +33,8 @@ def test_the_generated_document_covers_every_endpoint_the_portal_needs():
     assert {
         "/internal/tenants",
         "/internal/tenants/from-bundle",
+        # The wizard's "start from the basics" path (onboarding roadmap, section 4).
+        "/internal/tenants/from-basics",
         "/internal/tenants/{tenant_id}/config",
         "/internal/tenants/{tenant_id}/config/versions",
         "/internal/tenants/{tenant_id}/config/rollback",

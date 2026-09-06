@@ -57,6 +57,7 @@ from spatalk.ledger.summary import preferred_text, summarize_item
 from spatalk.rates import estimate_cad, load_rates
 from spatalk.tenants.bundle import config_from_texts
 from spatalk.tenants.schema import TenantConfig
+from spatalk.tenants.starter import TenantBasics, render_starter
 from spatalk.text import flood
 from spatalk.text.staff import staff_numbers
 
@@ -509,6 +510,41 @@ async def create_tenant_from_bundle(
         raise _validation_error(["body", "bundle"], str(e))
     version = await _save_config(
         ctx, cfg, created_by, portal_actor(x_actor, created_by), "config_save"
+    )
+    return TenantCreated(id=cfg.id, version=version)
+
+
+class TenantBasicsIn(TenantBasics):
+    created_by: str = "portal"
+
+
+@router.post("/tenants/from-basics", response_model=TenantCreated)
+async def create_tenant_from_basics(
+    request: Request, body: TenantBasicsIn, x_actor: ActorHeader = None
+):
+    """A tenant from the basics alone: the starter bundle rendered around them.
+
+    The wizard's "start from the basics" path (onboarding roadmap, section 4). The five
+    texts go through `config_from_texts` like an upload would, so the tenant is judged by
+    the same rules. Unlike `from-bundle`, which deliberately versions an existing tenant,
+    this refuses one that already exists: a form must never overwrite a configured clinic.
+    """
+    ctx = _ctx(request)
+    try:
+        await ctx.registry.get(body.id)
+    except KeyError:
+        pass
+    else:
+        raise HTTPException(
+            status_code=409,
+            detail=f"tenant {body.id} already exists; edit it on its Settings page instead",
+        )
+    try:
+        cfg = config_from_texts(render_starter(body), source="starter")
+    except ValueError as e:
+        raise _validation_error(["body", "basics"], str(e))
+    version = await _save_config(
+        ctx, cfg, body.created_by, portal_actor(x_actor, body.created_by), "config_save"
     )
     return TenantCreated(id=cfg.id, version=version)
 
