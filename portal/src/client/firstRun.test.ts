@@ -39,6 +39,7 @@ function facts(overrides: Partial<FirstRunFacts> = {}): FirstRunFacts {
     },
     hadConversation: false,
     hadRequest: false,
+    slackConnected: false,
     ...overrides,
   };
 }
@@ -138,7 +139,7 @@ describe("firstRunSteps", () => {
     ).toEqual(["knowledge"]);
   });
 
-  it("ticks delivery for an email address, an email variable or a staff SMS variable, not for Slack alone", () => {
+  it("ticks delivery for an email address, an email variable or a staff SMS variable, not for a Slack destination that only names an environment variable", () => {
     const destinations = (list: object[]) =>
       doneKeys(facts({ config: config({ delivery: { destinations: list } }) }));
     expect(
@@ -154,6 +155,17 @@ describe("firstRunSteps", () => {
       destinations([{ kind: "sms", address_env: "NORTH_STAFF_SMS" }]),
     ).toEqual(["delivery"]);
     expect(destinations([{ kind: "email", address: "" }])).toEqual([]);
+  });
+
+  it("ticks delivery for a Slack workspace the clinic connected from the Integrations tab", () => {
+    // A connected workspace is a real place requests land, unlike an env-named webhook
+    // the portal cannot see into; it satisfies the step on its own.
+    expect(doneKeys(facts({ slackConnected: true }))).toEqual(["delivery"]);
+    expect(
+      firstRunSteps(facts({ slackConnected: true })).find(
+        (step) => step.key === "delivery",
+      )?.label,
+    ).toMatch(/Slack/);
   });
 
   it("ticks the conversation and the request from what the runtime has seen", () => {

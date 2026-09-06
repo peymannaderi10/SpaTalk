@@ -26,6 +26,7 @@ function facts(overrides: Partial<FirstRunFacts> = {}): FirstRunFacts {
     },
     hadConversation: false,
     hadRequest: false,
+    slackConnected: false,
     ...overrides,
   };
 }

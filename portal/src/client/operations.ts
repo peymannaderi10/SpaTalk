@@ -313,9 +313,11 @@ export type FirstRunChecklist = {
 /**
  * What is left before the assistant takes real calls (onboarding roadmap,
  * section 4), decided here from the runtime's own facts: the configuration,
- * the numbers the agency mapped, and whether a conversation or a request
- * exists yet. One of each is enough to know, so the two lists are asked for a
- * single row. Open without a subscription, like the overview it sits on.
+ * the numbers the agency mapped, whether a Slack workspace is connected (a
+ * real place requests land, which the configuration alone cannot show), and
+ * whether a conversation or a request exists yet. One of each is enough to
+ * know, so the two lists are asked for a single row. Open without a
+ * subscription, like the overview it sits on.
  */
 export const getFirstRunChecklist: GetFirstRunChecklist<
   z.infer<typeof slugArgs>,
@@ -326,36 +328,44 @@ export const getFirstRunChecklist: GetFirstRunChecklist<
     needsSubscription: false,
   });
 
-  const [current, tenants, conversations, items] = await Promise.all([
-    runtimeCall(
-      () =>
-        api.GET("/internal/tenants/{tenant_id}/config", {
-          params: { path: { tenant_id: tenantId } },
-        }),
-      "the settings",
-    ),
-    runtimeCall(() => api.GET("/internal/tenants", {}), "the tenants"),
-    runtimeCall(
-      () =>
-        api.GET("/internal/tenants/{tenant_id}/conversations", {
-          params: {
-            path: { tenant_id: tenantId },
-            query: { page: 1, page_size: 1 },
-          },
-        }),
-      "conversations",
-    ),
-    runtimeCall(
-      () =>
-        api.GET("/internal/tenants/{tenant_id}/items", {
-          params: {
-            path: { tenant_id: tenantId },
-            query: { state: "all", page: 1, page_size: 1 },
-          },
-        }),
-      "the tracked requests",
-    ),
-  ]);
+  const [current, tenants, conversations, items, integrations] =
+    await Promise.all([
+      runtimeCall(
+        () =>
+          api.GET("/internal/tenants/{tenant_id}/config", {
+            params: { path: { tenant_id: tenantId } },
+          }),
+        "the settings",
+      ),
+      runtimeCall(() => api.GET("/internal/tenants", {}), "the tenants"),
+      runtimeCall(
+        () =>
+          api.GET("/internal/tenants/{tenant_id}/conversations", {
+            params: {
+              path: { tenant_id: tenantId },
+              query: { page: 1, page_size: 1 },
+            },
+          }),
+        "conversations",
+      ),
+      runtimeCall(
+        () =>
+          api.GET("/internal/tenants/{tenant_id}/items", {
+            params: {
+              path: { tenant_id: tenantId },
+              query: { state: "all", page: 1, page_size: 1 },
+            },
+          }),
+        "the tracked requests",
+      ),
+      runtimeCall(
+        () =>
+          api.GET("/internal/tenants/{tenant_id}/integrations", {
+            params: { path: { tenant_id: tenantId } },
+          }),
+        "the connected accounts",
+      ),
+    ]);
 
   const summary = tenants.find((tenant) => tenant.id === tenantId);
   const facts: FirstRunFacts = {
@@ -364,6 +374,9 @@ export const getFirstRunChecklist: GetFirstRunChecklist<
     config: current.config as unknown as FirstRunConfig,
     hadConversation: conversations.total > 0,
     hadRequest: items.length > 0,
+    slackConnected: integrations.some(
+      (row) => row.provider === "slack" && row.connected,
+    ),
   };
 
   return { done: firstRunDone(facts), steps: firstRunSteps(facts) };
@@ -714,12 +727,14 @@ export const updateOrganizationBranding: UpdateOrganizationBranding<
 // --- integrations ----------------------------------------------------------
 
 /**
- * Instagram and Facebook Page connections (instagram plan, Task D4).
+ * Instagram, Facebook Page and Slack connections (instagram plan, Task D4;
+ * Slack one-click connect, onboarding roadmap section 3).
  *
- * The portal stores nothing about them and never speaks to Meta: it reads the
- * status from the runtime, and a Connect is a runtime-signed authorisation URL
- * the browser is sent to. No token, encrypted or otherwise, crosses this
- * boundary — the runtime does not return one and this page has no use for one.
+ * The portal stores nothing about them and never speaks to Meta or Slack: it
+ * reads the status from the runtime, and a Connect is a runtime-signed
+ * authorisation URL the browser is sent to. No token, encrypted or otherwise,
+ * crosses this boundary — nor, for Slack, the webhook URL or the channel id —
+ * the runtime does not return them and this page has no use for them.
  */
 export type Integration = Schema["IntegrationOut"];
 
@@ -729,7 +744,7 @@ export type Integrations = {
 };
 
 const providerArgs = slugArgs.extend({
-  provider: z.enum(["instagram", "messenger"]),
+  provider: z.enum(["instagram", "messenger", "slack"]),
 });
 
 export const getTenantIntegrations: GetTenantIntegrations<
@@ -751,7 +766,7 @@ export const getTenantIntegrations: GetTenantIntegrations<
 };
 
 /**
- * Where Meta sends the browser once the account is connected: this
+ * Where Meta or Slack sends the browser once the account is connected: this
  * organisation's own settings page, built here rather than taken from the
  * client, so the only address the runtime will ever sign is one of ours.
  */

@@ -1,6 +1,7 @@
 import {
   IconBrandFacebook,
   IconBrandInstagram,
+  IconBrandSlack,
   type TablerIcon,
 } from "@tabler/icons-react";
 import { useState } from "react";
@@ -17,20 +18,24 @@ import { Card, CardContent } from "../components/ui/card";
 import { formatDateTime } from "../formatting";
 
 /**
- * Instagram and Facebook Page connections (instagram plan, Task D4).
+ * Instagram, Facebook Page and Slack connections (instagram plan, Task D4;
+ * Slack one-click connect, onboarding roadmap section 3).
  *
  * Everything on this tab is the runtime's: the portal keeps no record of a
- * connection and never calls Meta (CLAUDE.md non-negotiable 7). Connect asks
- * the runtime for an authorisation URL carrying a signed state — which is what
- * brings the browser back here afterwards — and Disconnect asks the runtime to
- * unsubscribe the app and delete the token. No token is ever sent to this page.
+ * connection and never calls Meta or Slack (CLAUDE.md non-negotiable 7).
+ * Connect asks the runtime for an authorisation URL carrying a signed state —
+ * which is what brings the browser back here afterwards — and Disconnect asks
+ * the runtime to unsubscribe the app (or revoke the Slack token) and delete
+ * the row. No token, webhook URL or channel id is ever sent to this page.
  */
 
 type Integrations = Awaited<ReturnType<typeof getTenantIntegrations>>;
 type Integration = Integrations["integrations"][number];
 
+type Provider = "instagram" | "messenger" | "slack";
+
 type Connection = {
-  provider: "instagram" | "messenger";
+  provider: Provider;
   name: string;
   /** What the tenant is connecting, in the words the owner would use. */
   what: string;
@@ -49,6 +54,12 @@ const CARDS: Connection[] = [
     name: "Facebook Page",
     what: "Messenger conversations and comments on the clinic's Facebook Page.",
     icon: IconBrandFacebook,
+  },
+  {
+    provider: "slack",
+    name: "Slack",
+    what: "Requests land in a channel of the clinic's own workspace, each with Acknowledge and Resolve buttons, and staff can reply to the customer from the thread.",
+    icon: IconBrandSlack,
   },
 ];
 
@@ -88,7 +99,10 @@ export function IntegrationsTab({
 
   if (isLoading || !data) {
     return (
-      <p className="text-muted-foreground text-sm" data-testid="integrations-tab">
+      <p
+        className="text-muted-foreground text-sm"
+        data-testid="integrations-tab"
+      >
         {error ? (error as { message?: string }).message : "Loading…"}
       </p>
     );
@@ -157,7 +171,8 @@ export function IntegrationsTab({
         The assistant answers Instagram and Facebook from the same knowledge
         base as calls and texts. What it says about comments — which ones it
         replies to, and whether it replies publicly — is on the Scripts and
-        Delivery tabs.
+        Delivery tabs. Slack is the other direction: where the team receives
+        what the assistant could not finish.
       </p>
 
       {problem && (
@@ -197,7 +212,7 @@ export function IntegrationsTab({
         </Card>
       )}
 
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {CARDS.map((card) => (
           <IntegrationCard
             key={card.provider}
@@ -282,10 +297,26 @@ function IntegrationCard({
           </p>
           {connected && (
             <p className="text-muted-foreground mt-1 text-xs">
-              {status?.token_expires_at
-                ? `The connection is renewed automatically; it would expire ${formatDateTime(status.token_expires_at)}.`
-                : "The connection is renewed automatically."}
-              {status?.connected_by ? ` Connected by ${status.connected_by}.` : ""}
+              {card.provider === "slack"
+                ? "The workspace stays connected until you disconnect it here or remove the app in Slack."
+                : status?.token_expires_at
+                  ? `The connection is renewed automatically; it would expire ${formatDateTime(
+                      status.token_expires_at,
+                    )}.`
+                  : "The connection is renewed automatically."}
+              {status?.connected_by
+                ? ` Connected by ${status.connected_by}.`
+                : ""}
+            </p>
+          )}
+          {connected && card.provider === "slack" && (
+            <p
+              data-testid="integration-slack-invite"
+              className="text-muted-foreground mt-2 text-xs"
+            >
+              In that channel, type <code>/invite @Front Desk</code> once, so
+              each request gets its own thread. Until then requests still
+              arrive, without threads.
             </p>
           )}
           {connected && status?.needs_reconnect && (

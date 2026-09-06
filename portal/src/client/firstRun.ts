@@ -6,9 +6,10 @@
  *
  * The facts are the runtime's own: the configuration as `GET
  * /internal/tenants/{id}/config` serves it, the numbers the agency mapped,
- * and whether a conversation or a request exists yet. This module only reads
- * them, and reads them tolerantly, because the configuration is JSON the
- * runtime owns and a field may be absent on an older version.
+ * whether a Slack workspace is connected on the Integrations tab, and whether
+ * a conversation or a request exists yet. This module only reads them, and
+ * reads them tolerantly, because the configuration is JSON the runtime owns
+ * and a field may be absent on an older version.
  */
 
 export const FIRST_RUN_KEYS = [
@@ -56,6 +57,12 @@ export type FirstRunFacts = {
   config: FirstRunConfig;
   hadConversation: boolean;
   hadRequest: boolean;
+  /**
+   * A Slack workspace the clinic connected from the Integrations tab
+   * (onboarding roadmap, section 3): `GET /internal/tenants/{id}/integrations`
+   * lists it as `slack`, `connected`.
+   */
+  slackConnected: boolean;
 };
 
 /**
@@ -69,7 +76,13 @@ function nonEmpty(value: string | null | undefined): boolean {
   return typeof value === "string" && value.trim().length > 0;
 }
 
-/** A destination a request can reach a person through: email, or the staff SMS. */
+/**
+ * A destination a request can reach a person through: email, or the staff SMS.
+ * A `slack` destination only names an environment variable the portal cannot
+ * see into, so it does not count here; a workspace connected from the
+ * Integrations tab does (`slackConnected`), because the runtime holds its
+ * channel and token itself.
+ */
 function reachesStaff(destination: {
   kind?: string;
   address?: string | null;
@@ -100,7 +113,7 @@ export function firstRunSteps(facts: FirstRunFacts): FirstRunStep[] {
     team: (config.team?.length ?? 0) > 0,
     knowledge:
       knowledge.length >= KNOWLEDGE_MIN_CHARS || (config.faq?.length ?? 0) > 0,
-    delivery: destinations.some(reachesStaff),
+    delivery: destinations.some(reachesStaff) || facts.slackConnected,
     conversation: facts.hadConversation,
     request: facts.hadRequest,
   };
@@ -133,7 +146,8 @@ export function firstRunSteps(facts: FirstRunFacts): FirstRunStep[] {
     },
     {
       key: "delivery",
-      label: "Requests reach the team: a staff email or text",
+      label:
+        "Requests reach the team: a staff email or text, or a connected Slack",
       to: `${base}/settings?tab=delivery`,
     },
     {
