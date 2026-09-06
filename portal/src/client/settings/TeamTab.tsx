@@ -1,9 +1,19 @@
-import { IconPlus, IconTrash, IconUsers } from "@tabler/icons-react";
+import {
+  IconChevronDown,
+  IconPlus,
+  IconTrash,
+  IconUsers,
+} from "@tabler/icons-react";
 
 import { EmptyState } from "../components/empty-state";
 import { Button } from "../components/ui/button";
 import { Card, CardContent } from "../components/ui/card";
 import { Checkbox } from "../components/ui/checkbox";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "../components/ui/collapsible";
 import { Label } from "../components/ui/label";
 import { fieldsOf, invalidAt, type Draft, type TabProps } from "./schemaFields";
 import { SchemaInput } from "./SchemaInput";
@@ -20,6 +30,12 @@ import { SchemaInput } from "./SchemaInput";
  * Helen doesn't do X", so the tick boxes are the tenant's own catalog, grouped
  * the way the Services page groups it, and nothing off that page can be
  * ticked.
+ *
+ * A catalog of a dozen treatments times a team of six is too many boxes to
+ * read, so each category is one bar (the kit's `Collapsible`, shut until
+ * opened): the category, how many of its services this person does, and a
+ * select-all box that ticks or clears the whole category without opening it.
+ * The individual boxes are inside.
  *
  * Name and role are the schema's fields; the services list is a shape
  * `SchemaInput` has no control for, so it is drawn here as the kit's
@@ -48,13 +64,12 @@ export function TeamTab({
     );
   }
 
-  function tick(index: number, serviceId: string, on: boolean) {
+  /** Tick or clear `ids` for one member, keeping the order already stored. */
+  function tick(index: number, ids: string[], on: boolean) {
     const current = performed(team[index]);
     const services = on
-      ? current.includes(serviceId)
-        ? current
-        : [...current, serviceId]
-      : current.filter((id) => id !== serviceId);
+      ? [...current, ...ids.filter((id) => !current.includes(id))]
+      : current.filter((id) => !ids.includes(id));
     setMember(index, { services });
   }
 
@@ -112,34 +127,18 @@ export function TeamTab({
                   </p>
                 ) : (
                   catalog.map((group) => (
-                    <div key={group.category} className="space-y-1.5">
-                      <p className="text-sm font-medium">{group.category}</p>
-                      <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
-                        {group.services.map((service) => {
-                          const id = `team-${index}-service-${service.id}`;
-                          return (
-                            <div
-                              key={service.id}
-                              className="flex items-center gap-2"
-                            >
-                              <Checkbox
-                                id={id}
-                                data-testid={id}
-                                disabled={disabled}
-                                aria-invalid={servicesInvalid || undefined}
-                                checked={selected.includes(service.id)}
-                                onCheckedChange={(checked) =>
-                                  tick(index, service.id, checked === true)
-                                }
-                              />
-                              <Label htmlFor={id} className="font-normal">
-                                {service.name}
-                              </Label>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
+                    <CategoryBar
+                      key={group.category}
+                      group={group}
+                      selected={selected}
+                      disabled={disabled}
+                      invalid={servicesInvalid}
+                      testId={`team-${index}-category-${group.category}`}
+                      onTick={(ids, on) => tick(index, ids, on)}
+                      boxId={(serviceId) =>
+                        `team-${index}-service-${serviceId}`
+                      }
+                    />
                   ))
                 )}
               </div>
@@ -187,6 +186,91 @@ export function TeamTab({
         </Button>
       )}
     </div>
+  );
+}
+
+/**
+ * One category of the catalog for one person: a bar that says the category
+ * and "n of m", with a box that ticks or clears the whole category, and the
+ * services themselves behind the bar. The bar's box is mixed while some but
+ * not all of the category is ticked; a click on it then ticks the rest, which
+ * is what the kit's checkbox does with a mixed state.
+ */
+function CategoryBar({
+  group,
+  selected,
+  disabled,
+  invalid,
+  testId,
+  onTick,
+  boxId,
+}: {
+  group: ServiceGroup;
+  selected: string[];
+  disabled: boolean;
+  invalid: boolean;
+  testId: string;
+  onTick: (ids: string[], on: boolean) => void;
+  boxId: (serviceId: string) => string;
+}) {
+  const ids = group.services.map((service) => service.id);
+  const ticked = ids.filter((id) => selected.includes(id)).length;
+  const state: boolean | "indeterminate" =
+    ticked === 0 ? false : ticked === ids.length ? true : "indeterminate";
+
+  return (
+    <Collapsible>
+      <div
+        className="border-input flex items-center gap-3 rounded-md border px-3 py-2"
+        data-testid={`${testId}-bar`}
+      >
+        <Checkbox
+          data-testid={`${testId}-all`}
+          aria-label={`Select all ${group.category}`}
+          disabled={disabled}
+          aria-invalid={invalid || undefined}
+          checked={state}
+          onCheckedChange={(checked) => onTick(ids, checked === true)}
+        />
+        <CollapsibleTrigger asChild>
+          <button
+            type="button"
+            data-testid={`${testId}-toggle`}
+            className="group flex flex-1 items-center justify-between gap-2 text-left text-sm"
+          >
+            <span className="font-medium">{group.category}</span>
+            <span className="text-muted-foreground flex items-center gap-2">
+              {ticked} of {ids.length}
+              <IconChevronDown className="size-4 transition-transform group-data-[state=open]:rotate-180" />
+            </span>
+          </button>
+        </CollapsibleTrigger>
+      </div>
+      <CollapsibleContent>
+        <div className="grid grid-cols-1 gap-1.5 px-3 py-2 sm:grid-cols-2 lg:grid-cols-3">
+          {group.services.map((service) => {
+            const id = boxId(service.id);
+            return (
+              <div key={service.id} className="flex items-center gap-2">
+                <Checkbox
+                  id={id}
+                  data-testid={id}
+                  disabled={disabled}
+                  aria-invalid={invalid || undefined}
+                  checked={selected.includes(service.id)}
+                  onCheckedChange={(checked) =>
+                    onTick([service.id], checked === true)
+                  }
+                />
+                <Label htmlFor={id} className="font-normal">
+                  {service.name}
+                </Label>
+              </div>
+            );
+          })}
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
 
