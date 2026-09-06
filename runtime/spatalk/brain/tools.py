@@ -5,10 +5,20 @@ from pipecat.adapters.schemas.tools_schema import ToolsSchema
 
 from spatalk.tenants.schema import TenantConfig
 
+# The closed tools of the slot engine (slot engine design, §6.2). One slot tool per step,
+# offered only at that step by `spatalk.brain.flow.step_tools`; `file_request` and
+# `send_link` take no arguments, so nothing on an item can come from a model argument.
 TOOL_NAMES = (
-    "send_booking_link",
-    "capture_request",
-    "request_appointment_change",
+    "start_request",
+    "answer",
+    "choose_practitioner",
+    "choose_service",
+    "give_name",
+    "give_phone",
+    "choose_window",
+    "change_answer",
+    "file_request",
+    "send_link",
     "escalate",
     "end_conversation",
 )
@@ -36,114 +46,108 @@ WINDOW = {
     },
 }
 
+ONLY_WHAT_THEY_SAID = " Only what the caller said in answer to the question just asked; never a guess."
 
-def _lead_context(cfg: TenantConfig) -> dict:
-    """The three qualification answers, as closed values (lead context plan, Task L1).
+SLOT_NAMES = ["returning_client", "practitioner", "service", "name", "phone", "window"]
 
-    Still no notes parameter and still no free string: a boolean, the team by name plus
-    "any", and the tenant's own concern list. Everything optional; the model fills only
-    what the caller actually said.
-    """
-    return {
-        "returning_client": {
-            "type": "boolean",
-            "description": (
-                "True if the caller has been to the clinic before, false if they are new. "
-                "Omit unless they said."
-            ),
-        },
-        "practitioner": {
-            "type": "string",
-            "enum": cfg.practitioner_names(),
-            "description": (
-                "Who the caller would like to see. 'any' when they were asked and have no "
-                "preference. Omit if it never came up."
-            ),
-        },
-        "concern": {
-            "type": "string",
-            "enum": list(cfg.concerns),
-            "description": (
-                "The closest of the listed concerns to what the caller says they want "
-                "help with. Omit unless they said."
-            ),
-        },
-    }
+REQUEST_KINDS = ["new_booking", "callback", "reschedule", "cancel", "question"]
 
 
-def _contact() -> dict:
-    # name/phone/email are the only free strings the model may fill; they are contact details,
-    # not notes. There is no notes parameter anywhere in this file, by design (spec §5).
-    return {
-        "type": "object",
-        "description": (
-            "Contact details the caller gave. Leave phone empty on voice; the caller id is used."
-        ),
-        "properties": {
-            "name": {
-                "type": "string",
-                "description": "The caller's first name. A booking, callback or appointment change is refused without one.",
-            },
-            "phone": {"type": "string"},
-            "email": {"type": "string"},
-        },
-    }
-
-
-def build_tools(cfg: TenantConfig, transfer_enabled: bool = False) -> list[FunctionSchema]:
-    """The tools the model may call on this turn.
-
-    `transfer_enabled` is decided per call from the calendar state (E10), which is why the
-    tool list is built here rather than cached on the tenant.
-    """
-    service_ids = [s.id for s in cfg.services]
-    lead = _lead_context(cfg)
-    tools = [
-        FunctionSchema(
-            name="send_booking_link",
+def slot_tool(name: str, cfg: TenantConfig) -> FunctionSchema:
+    """One of the slot engine's tools by name. The three transient strings (`said`,
+    `first_name`, `digits`) are resolved in code before anything is stored."""
+    if name == "start_request":
+        return FunctionSchema(
+            name="start_request",
             description=(
-                "Text the caller the online booking link for one service. Only after the "
-                "caller has said they want to book AND has agreed to receive the link by text. "
-                "Never on a price, hours or information question: answer those in words."
+                "The caller wants something the team has to do: book, be called back, "
+                "reschedule or cancel, or a question the facts do not answer. Call this the "
+                "moment they say so; the system asks the questions from here."
             ),
-            properties={
-                "service_id": {"type": "string", "enum": service_ids},
-                "contact": _contact(),
-                **lead,
-            },
-            required=["service_id"],
-        ),
-        FunctionSchema(
-            name="capture_request",
-            description=(
-                "File a request for the team to complete. Use for callbacks, help booking, "
-                "questions the knowledge base does not answer, and training-course enquiries."
-            ),
-            properties={
-                "kind": {
-                    "type": "string",
-                    "enum": ["new_booking", "callback", "question", "training_enquiry"],
-                },
-                "service_id": {"type": "string", "enum": service_ids},
-                "contact": _contact(),
-                "preferred_window": WINDOW,
-                **lead,
-            },
+            properties={"kind": {"type": "string", "enum": REQUEST_KINDS}},
             required=["kind"],
-        ),
-        FunctionSchema(
-            name="request_appointment_change",
+        )
+    if name == "answer":
+        return FunctionSchema(
+            name="answer",
+            description="The caller's yes or no to the question just asked." + ONLY_WHAT_THEY_SAID,
+            properties={"value": {"type": "string", "enum": ["yes", "no", "unsure"]}},
+            required=["value"],
+        )
+    if name == "choose_practitioner":
+        return FunctionSchema(
+            name="choose_practitioner",
             description=(
-                "File a reschedule or cancellation request for an existing appointment. "
-                "The team completes it and confirms with the caller; you never confirm it yourself."
+                "Who the caller said they would like to see, in their words, or 'anyone'."
+                + ONLY_WHAT_THEY_SAID
             ),
-            properties={
-                "kind": {"type": "string", "enum": ["reschedule", "cancel"]},
-                "contact": _contact(),
-                "preferred_window": WINDOW,
-            },
-            required=["kind", "contact"],
-        ),
+            properties={"said": {"type": "string"}},
+            required=["said"],
+        )
+    if name == "choose_service":
+        return FunctionSchema(
+            name="choose_service",
+            description="The treatment the caller named, in their words." + ONLY_WHAT_THEY_SAID,
+            properties={"said": {"type": "string"}},
+            required=["said"],
+        )
+    if name == "give_name":
+        return FunctionSchema(
+            name="give_name",
+            description="The caller's first name, as they gave it." + ONLY_WHAT_THEY_SAID,
+            properties={"first_name": {"type": "string"}},
+            required=["first_name"],
+        )
+    if name == "give_phone":
+        return FunctionSchema(
+            name="give_phone",
+            description="The phone number the caller gave, as digits." + ONLY_WHAT_THEY_SAID,
+            properties={"digits": {"type": "string"}},
+            required=["digits"],
+        )
+    if name == "choose_window":
+        return FunctionSchema(
+            name="choose_window",
+            description="When the caller would like to come in." + ONLY_WHAT_THEY_SAID,
+            properties=dict(WINDOW["properties"]),
+            required=[],
+        )
+    if name == "change_answer":
+        return FunctionSchema(
+            name="change_answer",
+            description=(
+                "The caller changed their mind about an earlier answer. "
+                "The system asks that question again."
+            ),
+            properties={"slot": {"type": "string", "enum": SLOT_NAMES}},
+            required=["slot"],
+        )
+    if name == "file_request":
+        return FunctionSchema(
+            name="file_request",
+            description=(
+                "Send the request to the team. Say nothing about it yourself; "
+                "the system speaks the result."
+            ),
+            properties={},
+            required=[],
+        )
+    if name == "send_link":
+        return FunctionSchema(
+            name="send_link",
+            description=(
+                "Text the caller the booking link now. Say nothing about it yourself; "
+                "the system speaks the result."
+            ),
+            properties={},
+            required=[],
+        )
+    raise ValueError(name)
+
+
+def always_tools(cfg: TenantConfig, transfer_enabled: bool = False) -> list[FunctionSchema]:
+    """The tools offered at every step: escalate, end, and the transfer when it is staffed."""
+    tools = [
         FunctionSchema(
             name="escalate",
             description=(
@@ -189,6 +193,11 @@ def build_tools(cfg: TenantConfig, transfer_enabled: bool = False) -> list[Funct
             )
         )
     return tools
+
+
+def build_tools(cfg: TenantConfig, transfer_enabled: bool = False) -> list[FunctionSchema]:
+    """The Q&A tool set. The per-step sets are `spatalk.brain.flow.step_tools`."""
+    return [slot_tool("start_request", cfg)] + always_tools(cfg, transfer_enabled)
 
 
 def tools_schema(cfg: TenantConfig, transfer_enabled: bool = False) -> ToolsSchema:

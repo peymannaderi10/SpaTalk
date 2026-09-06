@@ -9,10 +9,12 @@ from __future__ import annotations
 from enum import Enum
 from typing import Literal
 
+from pipecat.adapters.schemas.function_schema import FunctionSchema
 from pydantic import BaseModel, Field
 
 from spatalk.brain.requests import PreferredWindow
 from spatalk.brain.resolve import first_name_of, spoken_digits, typed_digits
+from spatalk.brain.tools import always_tools, slot_tool
 from spatalk.tenants.schema import TenantConfig
 
 Flow = Literal["new_booking", "callback", "reschedule", "cancel", "question", "clinical"]
@@ -176,3 +178,49 @@ def step_question(
     if step == Step.ROUTE:
         return "ask_route", {}
     return None
+
+
+# The slot tool each step offers. PHONE and COMPLETE are decided in `step_tools` itself.
+STEP_TOOL = {
+    Step.RETURNING: "answer",
+    Step.OFFERS: "answer",
+    Step.PRACTITIONER: "choose_practitioner",
+    Step.SERVICE: "choose_service",
+    Step.NAME: "give_name",
+    Step.WINDOW: "choose_window",
+    Step.TEAM_NOTE: "answer",
+    Step.ROUTE: "answer",
+}
+
+
+def step_tools(
+    step: Step, slots: Slots, cfg: TenantConfig, channel: str, transfer_enabled: bool = False
+) -> list[FunctionSchema]:
+    """The tools the model may call at this step: the step's own slot tool, `answer` while a
+    confirmation is pending, `change_answer` once a flow is open, and the always-on tools.
+    `file_request` and `send_link` exist only where every required slot is filled (§3.1)."""
+    tools: list[FunctionSchema] = []
+    if step == Step.QA:
+        tools.append(slot_tool("start_request", cfg))
+    elif step == Step.PHONE:
+        if slots.pending is not None and slots.pending.kind == "phone":
+            tools.append(slot_tool("answer", cfg))
+        elif channel == "voice" and not slots.misses.get("phone"):
+            tools.append(slot_tool("answer", cfg))
+        else:
+            tools.append(slot_tool("give_phone", cfg))
+    elif step == Step.COMPLETE:
+        tools.append(slot_tool("file_request", cfg))
+    else:
+        tools.append(slot_tool(STEP_TOOL[step], cfg))
+        if slots.pending is not None and STEP_TOOL[step] != "answer":
+            tools.append(slot_tool("answer", cfg))
+        if step == Step.NAME and slots.flow == "clinical" and not slots.misses.get("name"):
+            tools.append(slot_tool("answer", cfg))  # the clinical offer is answered yes/no first
+        if step == Step.ROUTE:
+            tools.append(slot_tool("file_request", cfg))
+            if cfg.sms_from_number and slots.phone and slots.phone_confirmed:
+                tools.append(slot_tool("send_link", cfg))
+    if step != Step.QA:
+        tools.append(slot_tool("change_answer", cfg))
+    return tools + always_tools(cfg, transfer_enabled)

@@ -38,13 +38,27 @@ def test_no_tool_schema_has_a_notes_parameter():
     """The model still has nowhere to put free text on a tracked item."""
     from pathlib import Path as _Path
 
-    from spatalk.brain.tools import build_tools
+    from spatalk.brain.flow import Slots, Step, step_tools
     from spatalk.tenants.bundle import load_bundle
 
     cfg = load_bundle(_Path(RUNTIME) / "tenants" / "skincentrix")
-    for tool in build_tools(cfg):
-        assert "notes" not in tool.properties, f"{tool.name} exposes a notes parameter"
-        assert "notes" not in tool.required
+    for step in Step:
+        for tool in step_tools(step, Slots(flow="new_booking"), cfg, "voice", transfer_enabled=True):
+            assert "notes" not in tool.properties, f"{tool.name} exposes a notes parameter"
+            assert "notes" not in tool.required
+
+
+def test_file_request_takes_no_arguments():
+    """The item is built from the runtime's record, never from a tool argument (§3.2)."""
+    from pathlib import Path as _Path
+
+    from spatalk.brain.flow import Slots, Step, step_tools
+    from spatalk.tenants.bundle import load_bundle
+
+    cfg = load_bundle(_Path(RUNTIME) / "tenants" / "skincentrix")
+    tools = step_tools(Step.COMPLETE, Slots(flow="callback"), cfg, "voice")
+    tool = next(t for t in tools if t.name == "file_request")
+    assert tool.properties == {} and tool.required == []
 
 
 def test_the_notes_live_on_the_conversation_and_nowhere_else():
