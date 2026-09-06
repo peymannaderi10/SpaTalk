@@ -28,6 +28,7 @@ const SIDEBAR_ORDER = [
   "nav-requests",
   "nav-settings-hours",
   "nav-settings-services",
+  "nav-settings-team",
   "nav-settings-knowledge",
   "nav-settings-scripts",
   "nav-settings-delivery",

@@ -71,14 +71,14 @@ const owners = (ctx: NavContext) => ctx.role === "OWNER";
 const admins = (ctx: NavContext) => ctx.isAdmin;
 
 /**
- * The eight tabs the settings page holds in React state today. They become
- * eight sidebar items, so the route carries the tab in `?tab=`; wiring
- * `SettingsPage` to read and write that parameter is Task R1's, and until it
- * does, every one of these opens the page on its first tab.
+ * The settings page's tabs, one sidebar item each, in the order the page
+ * shows them. The route carries the tab in `?tab=`, which `SettingsPage`
+ * reads and writes; the slug is the label lowercased, on both sides.
  */
 const SETTINGS_TABS: { label: string; tab: string; icon: TablerIcon }[] = [
   { label: "Hours", tab: "hours", icon: IconClock },
   { label: "Services", tab: "services", icon: IconSparkles },
+  { label: "Team", tab: "team", icon: IconUsers },
   { label: "Knowledge", tab: "knowledge", icon: IconBook },
   { label: "Scripts", tab: "scripts", icon: IconScript },
   { label: "Delivery", tab: "delivery", icon: IconSend },

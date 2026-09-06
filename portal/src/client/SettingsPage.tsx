@@ -7,6 +7,7 @@ import {
   IconQuote,
   IconSend,
   IconSparkles,
+  IconUsers,
   type TablerIcon,
 } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
@@ -33,6 +34,7 @@ import { type Draft } from "./settings/schemaFields";
 import { ScriptsTab } from "./settings/ScriptsTab";
 import { ServicesTab } from "./settings/ServicesTab";
 import { SettingsNav } from "./settings/SettingsNav";
+import { TeamTab } from "./settings/TeamTab";
 import { VersionsPanel } from "./settings/VersionsPanel";
 
 /**
@@ -53,6 +55,7 @@ type FieldError = { path: string[]; field: string; message: string };
 const TABS = [
   "Hours",
   "Services",
+  "Team",
   "Knowledge",
   "Scripts",
   "Delivery",
@@ -75,9 +78,15 @@ const SECTIONS: Record<Tab, { icon: TablerIcon; description: string }> = {
     description:
       "The catalog. Only a service on this list can be named, quoted or linked to.",
   },
+  Team: {
+    icon: IconUsers,
+    description:
+      "Who a caller may ask for by name, and which treatments each person performs.",
+  },
   Knowledge: {
     icon: IconBook2,
-    description: "The prose the assistant may answer from, verbatim.",
+    description:
+      "The prose the assistant may answer from, and the questions it answers in its own words.",
   },
   Scripts: {
     icon: IconQuote,
@@ -106,7 +115,7 @@ const SECTIONS: Record<Tab, { icon: TablerIcon; description: string }> = {
 };
 
 /**
- * The tab is in the URL, not in React state, so the eight Setup items in the
+ * The tab is in the URL, not in React state, so the Setup items in the
  * sidebar can each open the one they name. `nav.ts` spells the slugs, and they
  * are the labels lowercased; `tabSlug` and `tabFromSlug` are the only two
  * places that has to be true.
@@ -317,6 +326,7 @@ function Body({ org }: { org: Org }) {
 
             {tab === "Hours" && <HoursTab {...tabProps} />}
             {tab === "Services" && <ServicesTab {...tabProps} />}
+            {tab === "Team" && <TeamTab {...tabProps} />}
             {tab === "Knowledge" && <KnowledgeTab {...tabProps} />}
             {tab === "Scripts" && <ScriptsTab {...tabProps} />}
             {tab === "Delivery" && <DeliveryTab {...tabProps} />}

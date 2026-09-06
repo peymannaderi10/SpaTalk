@@ -35,7 +35,10 @@ const PORTAL_ROOT = findPortalRoot();
  * without anyone remembering to edit a list.
  */
 function declaredRoutes(): string[] {
-  const specs = [join(PORTAL_ROOT, "main.wasp.ts"), ...waspSpecsUnder(join(PORTAL_ROOT, "src"))];
+  const specs = [
+    join(PORTAL_ROOT, "main.wasp.ts"),
+    ...waspSpecsUnder(join(PORTAL_ROOT, "src")),
+  ];
   const routes = new Set<string>();
 
   for (const spec of specs) {
@@ -46,7 +49,11 @@ function declaredRoutes(): string[] {
     let match: RegExpExecArray | null;
     while ((match = pattern.exec(source)) !== null) {
       const path = match[1];
-      if (path.startsWith("/app/:orgSlug") || path === "/admin" || path.startsWith("/admin/")) {
+      if (
+        path.startsWith("/app/:orgSlug") ||
+        path === "/admin" ||
+        path.startsWith("/admin/")
+      ) {
         routes.add(path);
       }
     }
@@ -114,7 +121,11 @@ describe("the sidebar model", () => {
       ].filter(Boolean);
       expect(
         shells,
-        `${route} is in ${shells.length === 0 ? "no shell and no ROUTES_OFF_THE_SIDEBAR entry" : `several places: ${shells.join(", ")}`}`,
+        `${route} is in ${
+          shells.length === 0
+            ? "no shell and no ROUTES_OFF_THE_SIDEBAR entry"
+            : `several places: ${shells.join(", ")}`
+        }`,
       ).toHaveLength(1);
     }
 
@@ -129,9 +140,10 @@ describe("the sidebar model", () => {
 
   it("invents no route the Wasp spec does not declare", () => {
     for (const item of allNavItems()) {
-      expect(declared, `${item.testId} points at a route nothing declares`).toContain(
-        navRoute(item.to),
-      );
+      expect(
+        declared,
+        `${item.testId} points at a route nothing declares`,
+      ).toContain(navRoute(item.to));
     }
   });
 
@@ -176,13 +188,45 @@ describe("the sidebar model", () => {
     ]);
   });
 
+  it("lists the Setup pages in the settings page's order, Team among them", () => {
+    // `SettingsPage.TABS` and this list are the two spellings of the same
+    // thing; a tab added to one and not the other is a page nobody can reach
+    // from the sidebar, or a sidebar item that opens the wrong page.
+    const setup = NAV_SECTIONS.find((section) => section.title === "Setup");
+    expect(setup?.items.map((item) => item.label)).toEqual([
+      "Hours",
+      "Services",
+      "Team",
+      "Knowledge",
+      "Scripts",
+      "Delivery",
+      "Numbers",
+      "Integrations",
+      "Versions",
+    ]);
+    const team = setup?.items.find((item) => item.label === "Team");
+    expect(team?.to).toBe("/app/:orgSlug/settings?tab=team");
+    expect(team?.testId).toBe("nav-settings-team");
+  });
+
   it("shows a staff member the front desk and the setup, and nothing else", () => {
-    const sections = visibleSections({ orgSlug: "skincentrix", role: "STAFF", isAdmin: false });
-    expect(sections.map((section) => section.title)).toEqual(["Front desk", "Setup"]);
+    const sections = visibleSections({
+      orgSlug: "skincentrix",
+      role: "STAFF",
+      isAdmin: false,
+    });
+    expect(sections.map((section) => section.title)).toEqual([
+      "Front desk",
+      "Setup",
+    ]);
   });
 
   it("shows an owner billing and people as well", () => {
-    const sections = visibleSections({ orgSlug: "skincentrix", role: "OWNER", isAdmin: false });
+    const sections = visibleSections({
+      orgSlug: "skincentrix",
+      role: "OWNER",
+      isAdmin: false,
+    });
     expect(sections.map((section) => section.title)).toEqual([
       "Front desk",
       "Setup",
@@ -227,9 +271,9 @@ describe("the sidebar model", () => {
     expect(pricing, "no sidebar item carries nav-pricing").toBeDefined();
     expect(pricing?.label).toBe("Pricing");
     expect(pricing?.to).toBe("/admin/pricing");
-    expect(pricing?.visible({ orgSlug: "", role: "OWNER", isAdmin: false })).toBe(
-      false,
-    );
+    expect(
+      pricing?.visible({ orgSlug: "", role: "OWNER", isAdmin: false }),
+    ).toBe(false);
   });
 
   it("gives the admin shell nothing at all for someone who is not an admin", () => {
@@ -239,7 +283,9 @@ describe("the sidebar model", () => {
   });
 
   it("fills the organisation into a path and leaves the query alone", () => {
-    expect(navPath("/app/:orgSlug/overview", "skincentrix")).toBe("/app/skincentrix/overview");
+    expect(navPath("/app/:orgSlug/overview", "skincentrix")).toBe(
+      "/app/skincentrix/overview",
+    );
     expect(navPath("/app/:orgSlug/settings?tab=hours", "skincentrix")).toBe(
       "/app/skincentrix/settings?tab=hours",
     );
