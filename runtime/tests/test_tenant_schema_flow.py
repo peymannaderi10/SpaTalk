@@ -59,3 +59,11 @@ def test_faq_rows_are_bounded_facts_the_bundle_ships():
         FaqItem(question="", answer="x")
     with pytest.raises(ValidationError):
         FaqItem(question="q", answer="a" * 601)
+
+
+def test_a_service_category_is_stored_lowercase_however_it_was_typed():
+    from spatalk.tenants.schema import Service
+
+    svc = Service(id="gold_facial", name="Gold Facial", category=" Facial ", booking_url="https://x.test/")
+    assert svc.category == "facial"
+

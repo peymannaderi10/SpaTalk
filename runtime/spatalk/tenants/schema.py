@@ -33,6 +33,13 @@ class Service(BaseModel, frozen=True):
     clinical: bool = False
     description: str = ""
 
+    @field_validator("category", mode="before")
+    @classmethod
+    def _lowercase_category(cls, v):
+        """The category is matched lowercase against a caller's words ("a facial" -> facial),
+        so whatever the portal saves is stored lowercase; the portal displays it capitalized."""
+        return str(v).strip().lower() if v is not None else v
+
 
 class TeamMember(BaseModel, frozen=True):
     """One person a caller may ask for by name (lead context plan, Task L1).
