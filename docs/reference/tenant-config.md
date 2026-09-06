@@ -54,6 +54,8 @@ tenants/<id>/
 | social.comment_keywords | list | default [] | [D2] |
 | social.public_reply_enabled | bool | default false | [D2] |
 
+Each `team[]` entry may carry `services: [service_id, …]`, the treatments that person performs; empty or absent means every service. The slot engine reads it for "unfortunately Helen doesn't do X" (slot engine design, §4.3).
+
 ## services.yaml
 
 `services:` list of: `id` (slug), `name`, `category`, `price_text`, `duration_minutes` (optional), `booking_url`, `consult_required` (bool), `clinical` (bool), `description`. The service ids become the enum the model may use; nothing outside this list can be referenced by a tool call.
@@ -75,8 +77,8 @@ Placeholders: `{name}` business name, `{confirm_by}` rendered due wording, `{ser
 ```yaml
 # Required: the disclosure and the band-3 scripts. These are the ones that end the business if wrong.
 disclosure: "Hi, thanks for calling {name}. I'm {name}'s AI assistant. I can answer questions about services, pricing and hours, and take a message for the team. How can I help?"
-clinical: "That's one for our clinical team rather than me, so I won't guess. I've passed it to them as an urgent request and someone will call you back at this number as soon as possible. Is there anything else I can help with?"
-clinical_text: "That's one for our clinical team rather than me, so I won't guess. I've passed it to them as an urgent request and someone will contact you as soon as possible. Is there anything else I can help with?"   # text channels; default exists
+clinical: "I've passed that to our clinical team as an urgent request, and someone will call you back at this number as soon as possible. Is there anything else I can help with?"
+clinical_text: "I've passed that to our clinical team as an urgent request; someone will call you as soon as possible. Anything else I can help with?"   # text channels; default exists
 emergency: "If this is an emergency, please hang up and call 911 right now. Otherwise I've sent an urgent request to our clinical team and someone will call you back at this number as soon as possible."   # the emergency lexicon only; the one script that says 911; default exists
 emergency_text: "If this is an emergency, please call 911 right now. Otherwise I've sent an urgent request to our clinical team and someone will contact you as soon as possible."   # text channels; default exists
 human_request: "Of course. I'm sending a request to the team now, and someone will call you back at this number as soon as they're free."
@@ -98,6 +100,35 @@ refuse_no_name: "Before I pass that to the team, could I get your first name?"
 refuse_unknown_service: "I don't have that treatment on the list. Could you tell me a bit more about what you're looking for?"
 refuse_out_of_scope: "That's not something I can help with from here. The clinic can, at {phone} during opening hours."
 refuse_unavailable: "I'm having trouble saving that right now, so please don't count on me for it. Please call the clinic directly at {phone}."
+
+# Slot engine: the questions the runtime asks, in order (slot engine design, §7). Defaults exist.
+ask_returning: "Have you been in to see us before?"
+ask_offers: "Would you like to hear our new-client offers?"
+ask_after_offers: "What did you have in mind?"
+ask_practitioner: "Is there someone in particular you'd like to see, or whoever's available?"
+ask_practitioner_again: "Sorry, who would you like to see? Anyone's fine too."
+practitioner_any: "No problem, I'll leave it as whoever's available."
+practitioner_not_service: "Unfortunately {practitioner} doesn't do {service}. I can suggest someone, if you don't have anyone else in mind?"
+practitioner_suggest: "{names} can do {service}. Would one of them work?"
+practitioner_else: "Who else did you have in mind?"
+ask_service: "What would you like to come in for?"
+ask_service_kind: "I can run through two or three options, or {consultation} can help you pick — which would you prefer?"
+ask_service_again: "Sorry, which treatment did you have in mind?"
+confirm_match: "Did you mean {value}?"
+confirm_which: "Did you mean {first} or {second}?"
+ask_name: "Could I get your first name?"
+ask_name_again: "Just a first name is fine — it's so the team knows who to ask for."
+no_name: "No problem — you can reach the clinic at {phone} during opening hours. Is there anything else I can help with?"
+confirm_name_staff: "Just to check, your first name is {name} as well?"
+ask_phone_same: "Is the number you're calling from the best one to reach you on?"
+ask_phone: "What's the best number to reach you on?"
+confirm_phone: "That's {digits} — is that right?"
+phone_fallback: "No problem, I'll use the number you're calling from."
+ask_window: "Which day or time of day suits you best for the visit? Any is fine."
+ask_team_note: "Is there anything you'd like the team to know before they call?"
+ask_route: "I can text you the booking link now, or have the team call you to book — which do you prefer?"
+clinical_offer: "That's one for our clinical team rather than me — would you like me to have them reach out to you?"
+clinical_declined: "No problem. Is there anything else I can help with?"
 followup: "Just checking in from {name}: still want a hand with that? Reply here anytime, or book online: {booking_url}"      # sent at most once
 missed_call_text: "Hi, this is {name}'s assistant. You just called us. Reply here and I can help, or book online: {booking_url}"
 offline_reply: "Thanks for texting {name}. We'll reply shortly. To book now: {booking_url}"                                   # sent by the edge worker when the platform is down

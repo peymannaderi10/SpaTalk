@@ -48,6 +48,9 @@ class TeamMember(BaseModel, frozen=True):
 
     name: str = Field(max_length=80)
     role: str = ""
+    # The services this person performs, by `services[].id`. Empty means every service
+    # (slot engine design, §4.3): the "Helen doesn't do X" line needs a list to be true.
+    services: list[str] = Field(default_factory=list)
 
 
 # The cosmetic concern taxonomy behind `items.concern`. It is deliberately not medical:
@@ -110,6 +113,49 @@ class Scripts(BaseModel, frozen=True):
         "I'm having trouble saving that right now, so please don't count on me for it. "
         "Please call the clinic directly at {phone}."
     )
+    # --- slot engine: the questions the runtime asks (slot engine design, §7) ---------
+    ask_returning: str = "Have you been in to see us before?"
+    ask_offers: str = "Would you like to hear our new-client offers?"
+    ask_after_offers: str = "What did you have in mind?"
+    ask_practitioner: str = "Is there someone in particular you'd like to see, or whoever's available?"
+    ask_practitioner_again: str = "Sorry, who would you like to see? Anyone's fine too."
+    practitioner_any: str = "No problem, I'll leave it as whoever's available."
+    practitioner_not_service: str = (
+        "Unfortunately {practitioner} doesn't do {service}. I can suggest someone, if you "
+        "don't have anyone else in mind?"
+    )
+    practitioner_suggest: str = "{names} can do {service}. Would one of them work?"
+    practitioner_else: str = "Who else did you have in mind?"
+    ask_service: str = "What would you like to come in for?"
+    ask_service_kind: str = (
+        "I can run through two or three options, or {consultation} can help you pick — which "
+        "would you prefer?"
+    )
+    ask_service_again: str = "Sorry, which treatment did you have in mind?"
+    confirm_match: str = "Did you mean {value}?"
+    confirm_which: str = "Did you mean {first} or {second}?"
+    ask_name: str = "Could I get your first name?"
+    ask_name_again: str = "Just a first name is fine — it's so the team knows who to ask for."
+    no_name: str = (
+        "No problem — you can reach the clinic at {phone} during opening hours. Is there "
+        "anything else I can help with?"
+    )
+    confirm_name_staff: str = "Just to check, your first name is {name} as well?"
+    ask_phone_same: str = "Is the number you're calling from the best one to reach you on?"
+    ask_phone: str = "What's the best number to reach you on?"
+    confirm_phone: str = "That's {digits} — is that right?"
+    phone_fallback: str = "No problem, I'll use the number you're calling from."
+    ask_window: str = "Which day or time of day suits you best for the visit? Any is fine."
+    ask_team_note: str = "Is there anything you'd like the team to know before they call?"
+    ask_route: str = (
+        "I can text you the booking link now, or have the team call you to book — which do "
+        "you prefer?"
+    )
+    clinical_offer: str = (
+        "That's one for our clinical team rather than me — would you like me to have them "
+        "reach out to you?"
+    )
+    clinical_declined: str = "No problem. Is there anything else I can help with?"
     followup: str = (
         "Just checking in from {name}: still want a hand with that? "
         "Reply here anytime, or book online: {booking_url}"
@@ -148,9 +194,8 @@ class Scripts(BaseModel, frozen=True):
     # The clinical script for text channels: "call you back at this number" makes no sense in
     # a chat window (QA gate C). Same promise, no 911 line: that belongs to `emergency`.
     clinical_text: str = (
-        "That's one for our clinical team rather than me, so I won't guess. I've passed it to "
-        "them as an urgent request and someone will contact you as soon as possible. Is there "
-        "anything else I can help with?"
+        "I've passed that to our clinical team as an urgent request; someone will call you as "
+        "soon as possible. Anything else I can help with?"
     )
 
     # The only scripts that say 911 (founder decision 2026-09-05). A rash or an aftercare
@@ -380,6 +425,25 @@ class TenantConfig(BaseModel, frozen=True):
                     f"({sorted(offending)[0]!r}); concerns are cosmetic only"
                 )
         return self
+
+    @model_validator(mode="after")
+    def check_team_services(self):
+        """A team member's service list names services the tenant has (slot engine, §6.7)."""
+        ids = {s.id for s in self.services}
+        for member in self.team:
+            unknown = [s for s in member.services if s not in ids]
+            if unknown:
+                raise ValueError(f"team member {member.name} lists unknown services {unknown}")
+        return self
+
+    def member_does(self, name: str, service_id: str) -> bool:
+        member = next((m for m in self.team if m.name == name), None)
+        if member is None:
+            return False
+        return not member.services or service_id in member.services
+
+    def team_for_service(self, service_id: str) -> list[TeamMember]:
+        return [m for m in self.team if not m.services or service_id in m.services]
 
     def service(self, service_id: str) -> Service | None:
         return next((s for s in self.services if s.id == service_id), None)

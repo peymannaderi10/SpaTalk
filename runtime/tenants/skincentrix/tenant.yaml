@@ -46,26 +46,36 @@ persona:
 team:
   - name: Sabah Shaikh
     role: founder and aesthetician, leads the facial and skin programs
+    services: [virtual_consultation, skin_assessment, facial, mesojet_facial, mirapeel_facial, purecarbon_facial, lift_sculpt_facial, buccal_reset, hydrabrasion_facial, hydrationfix_facial, acne_facial, skinc_pilates, recovery_wellness, classic_facial, scalp_facial, express_treatment, express_sculpt_drain, express_skinc_pilates, express_acnefix, express_lift, laser_hair_removal, laser_hair_xsmall, laser_hair_small, laser_hair_medium, laser_hair_large, laser_facial, fractional_resurfacing, tattoo_removal, microchanneling, microchanneling_dna, microchanneling_vamp, microchanneling_exosome, xerf_skin_tightening, acne_program, body_contouring]
   - name: Amanda Coutts
     role: clinical manager and medical aesthetician
   - name: Faisal Rohile
     role: BScN RN, master injector
+    services: [virtual_consultation, skin_assessment, prp_face, prp_face_channeling, prp_undereye, prp_hair, neuromodulators, dermal_fillers, biostimulators]
   - name: Anne Perez
     role: RPN, injectables and PRP
+    services: [virtual_consultation, skin_assessment, prp_face, prp_face_channeling, prp_undereye, prp_hair, neuromodulators, dermal_fillers, biostimulators]
   - name: Ruru Ahlam
     role: aesthetician
+    services: [virtual_consultation, skin_assessment, facial, mesojet_facial, mirapeel_facial, purecarbon_facial, lift_sculpt_facial, buccal_reset, hydrabrasion_facial, hydrationfix_facial, acne_facial, skinc_pilates, recovery_wellness, classic_facial, scalp_facial, express_treatment, express_sculpt_drain, express_skinc_pilates, express_acnefix, express_lift, laser_hair_removal, laser_hair_xsmall, laser_hair_small, laser_hair_medium, laser_hair_large, laser_facial, fractional_resurfacing, tattoo_removal, microchanneling, microchanneling_dna, microchanneling_vamp, microchanneling_exosome, xerf_skin_tightening, acne_program, body_contouring]
   - name: Helen Courbetis
     role: aesthetician
+    services: [virtual_consultation, skin_assessment, facial, mesojet_facial, mirapeel_facial, purecarbon_facial, lift_sculpt_facial, buccal_reset, hydrabrasion_facial, hydrationfix_facial, acne_facial, skinc_pilates, recovery_wellness, classic_facial, scalp_facial, express_treatment, express_sculpt_drain, express_skinc_pilates, express_acnefix, express_lift, laser_hair_removal, laser_hair_xsmall, laser_hair_small, laser_hair_medium, laser_hair_large, laser_facial, fractional_resurfacing, tattoo_removal, microchanneling, microchanneling_dna, microchanneling_vamp, microchanneling_exosome, xerf_skin_tightening, acne_program, body_contouring]
   - name: Alexandra Debski
     role: aesthetician
+    services: [virtual_consultation, skin_assessment, facial, mesojet_facial, mirapeel_facial, purecarbon_facial, lift_sculpt_facial, buccal_reset, hydrabrasion_facial, hydrationfix_facial, acne_facial, skinc_pilates, recovery_wellness, classic_facial, scalp_facial, express_treatment, express_sculpt_drain, express_skinc_pilates, express_acnefix, express_lift, laser_hair_removal, laser_hair_xsmall, laser_hair_small, laser_hair_medium, laser_hair_large, laser_facial, fractional_resurfacing, tattoo_removal, microchanneling, microchanneling_dna, microchanneling_vamp, microchanneling_exosome, xerf_skin_tightening, acne_program, body_contouring]
   - name: Sanober Ijaz
     role: aesthetician
+    services: [virtual_consultation, skin_assessment, facial, mesojet_facial, mirapeel_facial, purecarbon_facial, lift_sculpt_facial, buccal_reset, hydrabrasion_facial, hydrationfix_facial, acne_facial, skinc_pilates, recovery_wellness, classic_facial, scalp_facial, express_treatment, express_sculpt_drain, express_skinc_pilates, express_acnefix, express_lift, laser_hair_removal, laser_hair_xsmall, laser_hair_small, laser_hair_medium, laser_hair_large, laser_facial, fractional_resurfacing, tattoo_removal, microchanneling, microchanneling_dna, microchanneling_vamp, microchanneling_exosome, xerf_skin_tightening, acne_program, body_contouring]
   - name: Mariam Khaizaran
     role: aesthetician
+    services: [virtual_consultation, skin_assessment, facial, mesojet_facial, mirapeel_facial, purecarbon_facial, lift_sculpt_facial, buccal_reset, hydrabrasion_facial, hydrationfix_facial, acne_facial, skinc_pilates, recovery_wellness, classic_facial, scalp_facial, express_treatment, express_sculpt_drain, express_skinc_pilates, express_acnefix, express_lift, laser_hair_removal, laser_hair_xsmall, laser_hair_small, laser_hair_medium, laser_hair_large, laser_facial, fractional_resurfacing, tattoo_removal, microchanneling, microchanneling_dna, microchanneling_vamp, microchanneling_exosome, xerf_skin_tightening, acne_program, body_contouring]
   - name: Hala Saeed
     role: aesthetician
+    services: [virtual_consultation, skin_assessment, facial, mesojet_facial, mirapeel_facial, purecarbon_facial, lift_sculpt_facial, buccal_reset, hydrabrasion_facial, hydrationfix_facial, acne_facial, skinc_pilates, recovery_wellness, classic_facial, scalp_facial, express_treatment, express_sculpt_drain, express_skinc_pilates, express_acnefix, express_lift, laser_hair_removal, laser_hair_xsmall, laser_hair_small, laser_hair_medium, laser_hair_large, laser_facial, fractional_resurfacing, tattoo_removal, microchanneling, microchanneling_dna, microchanneling_vamp, microchanneling_exosome, xerf_skin_tightening, acne_program, body_contouring]
   - name: Emma Walker
     role: aesthetician
+    services: [virtual_consultation, skin_assessment, facial, mesojet_facial, mirapeel_facial, purecarbon_facial, lift_sculpt_facial, buccal_reset, hydrabrasion_facial, hydrationfix_facial, acne_facial, skinc_pilates, recovery_wellness, classic_facial, scalp_facial, express_treatment, express_sculpt_drain, express_skinc_pilates, express_acnefix, express_lift, laser_hair_removal, laser_hair_xsmall, laser_hair_small, laser_hair_medium, laser_hair_large, laser_facial, fractional_resurfacing, tattoo_removal, microchanneling, microchanneling_dna, microchanneling_vamp, microchanneling_exosome, xerf_skin_tightening, acne_program, body_contouring]
 escalation:
   owner_name: Skincentrix front desk
   owner_email: info@skincentrix.com
