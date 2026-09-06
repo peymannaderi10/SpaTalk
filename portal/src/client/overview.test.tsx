@@ -31,30 +31,27 @@ function overview(viewerIsAgencyAdmin: boolean): OverviewCards {
   };
 }
 
-function mount(viewerIsAgencyAdmin: boolean, internal = false) {
+function mount(viewerIsAgencyAdmin: boolean) {
   return render(
-    <OverviewTiles
-      tiles={overviewTiles(overview(viewerIsAgencyAdmin), internal)}
-    />,
+    <OverviewTiles tiles={overviewTiles(overview(viewerIsAgencyAdmin))} />,
   );
 }
 
 describe("the overview cards", () => {
-  it("shows the agency what its providers charged, in internal view only", () => {
-    const { unmount } = mount(true);
-    expect(screen.queryByTestId("tile-est-cost")).toBeNull();
-    unmount();
-    mount(true, true);
+  it("shows the agency what its providers charged, and the reply time", () => {
+    mount(true);
     expect(screen.getByTestId("tile-est-cost")).toHaveTextContent("1.23");
+    expect(screen.getByTestId("tile-p95-latency")).toHaveTextContent("420 ms");
   });
 
-  it("shows a clinic no provider cost at all, internal view or not", () => {
-    mount(false, true);
+  it("shows a clinic neither the provider cost nor the reply time", () => {
+    mount(false);
+    expect(screen.queryByTestId("tile-p95-latency")).toBeNull();
     expect(screen.queryByTestId("tile-est-cost")).toBeNull();
     expect(screen.queryByText("Estimated cost")).toBeNull();
   });
 
-  it("keeps the clinic's own cards for everyone, and reply time off them", () => {
+  it("keeps the clinic's own cards for everyone", () => {
     for (const isAdmin of [true, false]) {
       const { unmount } = mount(isAdmin);
       expect(screen.getByTestId("tile-calls")).toHaveTextContent("2");
@@ -63,20 +60,17 @@ describe("the overview cards", () => {
       expect(screen.getByTestId("tile-chats")).toHaveTextContent("1");
       expect(screen.getByTestId("tile-open-items")).toHaveTextContent("3");
       expect(screen.getByTestId("tile-overdue-items")).toHaveTextContent("1");
-      expect(screen.queryByTestId("tile-p95-latency")).toBeNull();
       unmount();
     }
   });
 
-  it("counts the cards: six for everyone, eight for the agency in internal view", () => {
+  it("counts the cards: six for a clinic, eight for the agency", () => {
     expect(overviewTiles(overview(false))).toHaveLength(6);
-    expect(overviewTiles(overview(true))).toHaveLength(6);
-    expect(overviewTiles(overview(false), true)).toHaveLength(6);
-    expect(overviewTiles(overview(true), true)).toHaveLength(8);
+    expect(overviewTiles(overview(true))).toHaveLength(8);
   });
 
   it("says nothing about reply time until there is a day to say it about", () => {
-    const tiles = overviewTiles({ ...overview(true), latency: [] }, true);
+    const tiles = overviewTiles({ ...overview(true), latency: [] });
     const latency = tiles.find((tile) => tile.id === "p95-latency");
     expect(latency?.value).toBe("—");
   });

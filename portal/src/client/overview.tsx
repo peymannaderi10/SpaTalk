@@ -19,11 +19,10 @@ import { formatCad, formatMinutes } from "./formatting";
  * Two cards are not for the clinic. "Estimated cost" is what the providers
  * charged the *agency* to answer this phone — a cost of goods, not a bill, and
  * an order of magnitude below what the clinic pays. "Reply time" is the
- * agency's engineering figure. Both are on the page only in internal view —
- * an agency admin has pressed the three dots — and never for a clinic, whose
- * dashboard is often on a screen a client is looking at. Who is an admin is
- * `viewerIsAgencyAdmin`, which the server puts in `getTenantOverview`'s answer;
- * a client-side guess about who is looking would be a guess.
+ * agency's engineering figure. Both are on the page for an agency admin and
+ * never for a clinic user. Who is an admin is `viewerIsAgencyAdmin`, which the
+ * server puts in `getTenantOverview`'s answer; a client-side guess about who is
+ * looking would be a guess.
  *
  * Everything else on the row is the clinic's own: its calls, its minutes, its
  * open work.
@@ -54,10 +53,7 @@ export type OverviewCards = {
   latency: { p95_ms: number }[];
 };
 
-export function overviewTiles(
-  data: OverviewCards,
-  internal = false,
-): OverviewTile[] {
+export function overviewTiles(data: OverviewCards): OverviewTile[] {
   const { totals } = data.month;
   const latest = data.latency[data.latency.length - 1];
 
@@ -106,7 +102,7 @@ export function overviewTiles(
     },
   ];
 
-  if (internal && data.viewerIsAgencyAdmin) {
+  if (data.viewerIsAgencyAdmin) {
     tiles.push(
       {
         id: "p95-latency",
