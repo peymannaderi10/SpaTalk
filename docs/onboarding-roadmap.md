@@ -56,11 +56,11 @@ Today a tenant is created by hand: a YAML bundle on disk, `spatalk tenant import
 
 | Step | Exists | Missing | Size |
 |---|---|---|---|
-| Agency creates the clinic: name, timezone, hours, owner's email | CLI + bundle | A "New clinic" form in the admin that writes the configuration through `/internal` and creates the organisation and the owner invitation in one go | Agent 2 days |
+| Agency creates the clinic: name, timezone, hours, owner's email | Built: `POST /internal/tenants/from-basics` and `spatalk tenant new` render the starter bundle around the basics (`bf4cfb9`); the wizard's "Start from the basics" writes the configuration, the organisation and the owner invitation in one go, beside the bundle upload (`7f6e375`) | — | — |
 | Owner signs up from the invitation, verifies email, lands on Setup | Built (needs real email) | — | — |
 | Owner fills Services (or imports from the website), Team, Knowledge and FAQ, Scripts review | Built this week | A services importer from a URL would save an hour per clinic; optional | Agent 1 day, optional |
-| Phone: a number assigned, the clinic forwards its line (TELUS steps in `accounts-and-env.md` "What to tell the clinic") | Runbook | Numbers page shows the assigned number and the forwarding instructions for the clinic's carrier | Agent half a day |
-| Test call and test text with the clinic on the line, then the first-run checklist ticked | Manual | A checklist card on the overview until the first real request lands | Agent half a day |
+| Phone: a number assigned, the clinic forwards its line (TELUS steps in `accounts-and-env.md` "What to tell the clinic") | Built: the Numbers page shows the assigned voice number with a copy button and the runbook's forwarding instructions, once the agency has mapped one (`4d8c076`) | — | — |
+| Test call and test text with the clinic on the line, then the first-run checklist ticked | Built: a "Getting set up" card on the overview, eight steps each linking to where it is done, gone once the first tracked request lands (`c89cfa4`) | — | — |
 | Billing: subscription from the quote | Stripe wired, test mode | Live Stripe products and prices; the quote page's number becomes the checkout amount | Founder 1 h + agent 1 day |
 | Branding: logo, theme preset, accent | Designed, not built | Three fields on the organisation, a Branding tab, the shell reading them | Agent 1–2 days |
 
