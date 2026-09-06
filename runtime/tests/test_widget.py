@@ -435,30 +435,6 @@ async def test_the_fallback_form_is_404_for_an_unknown_tenant(sf, registry, fixe
 # ----- booking links on chat ------------------------------------------------------------
 
 
-async def test_a_booking_link_on_chat_is_shown_inline_and_never_texted(sf, registry, fixed_clock):
-    app, ctx = await _build(
-        sf,
-        registry,
-        fixed_clock,
-        _llm_tool(
-            "send_booking_link",
-            {"service_id": "facial", "contact": {"phone": "+19055550101"}},
-        ),
-    )
-    ws = await _open(app)
-    try:
-        await ws.receive()
-        await ws.send({"type": "message", "text": "Can I book a facial?"})
-        await ws.receive()  # typing
-        reply = await ws.receive()
-    finally:
-        await ws.__aexit__()
-    assert reply["type"] == "reply"
-    assert "https://skincentrix.janeapp.com" in reply["text"]
-    assert "texted" not in reply["text"]
-    assert ctx.sms.sent == []
-
-
 async def test_a_booking_link_on_sms_is_still_texted(sf, registry, fixed_clock):
     from spatalk.brain.ports import MemoryLedger, MemorySms
     from spatalk.brain.requests import BookingLinkRequest, ContactInfo, ConversationRef
@@ -478,3 +454,47 @@ async def test_a_booking_link_on_sms_is_still_texted(sf, registry, fixed_clock):
         ref, BookingLinkRequest(service_id="facial", contact=ContactInfo())
     )
     assert out.kind == "link_sent" and len(sms.sent) == 1
+
+
+async def test_a_booking_on_chat_walks_the_engine_and_ends_with_the_link_never_texted(sf, registry, fixed_clock):
+    """The slot record persists on the conversation, so nine messages walk one booking."""
+    from spatalk.brain.driver import FakeLLM, LLMResponse, ToolCall
+
+    calls = [
+        ("start_request", {"kind": "new_booking"}),
+        ("answer", {"value": "yes"}),
+        ("choose_practitioner", {"said": "anyone is fine"}),
+        ("choose_service", {"said": "classic facial"}),
+        ("give_name", {"first_name": "Dana"}),
+        ("give_phone", {"digits": "416 555 0199"}),
+        ("answer", {"value": "yes"}),
+        ("choose_window", {"date": "any", "part_of_day": "any"}),
+        ("answer", {"value": "no"}),
+    ]
+    llm = FakeLLM([LLMResponse(text=None, tool_calls=[ToolCall(n, a)]) for n, a in calls])
+    app, ctx = await _build(sf, registry, fixed_clock, llm)
+    cfg = await registry.get("skincentrix")
+    texts = ["Can I book a facial?", "yes", "anyone is fine", "the classic facial", "Dana",
+             "416 555 0199", "yes", "any day", "no"]
+    replies = []
+    ws = await _open(app)
+    try:
+        await ws.receive()
+        for text in texts:
+            await ws.send({"type": "message", "text": text})
+            await ws.receive()  # typing
+            replies.append(await ws.receive())
+    finally:
+        await ws.__aexit__()
+    assert [r["type"] for r in replies] == ["reply"] * 9
+    said = [r["text"] for r in replies]
+    assert said[0] == cfg.scripts.ask_returning
+    assert said[1] == cfg.scripts.ask_practitioner
+    assert said[2] == cfg.scripts.ask_service
+    assert said[3] == cfg.scripts.ask_name
+    assert said[4] == cfg.scripts.ask_phone                      # chat: asked outright
+    assert said[5] == cfg.scripts.confirm_phone.format(digits="416-555-0199")
+    assert said[6] == cfg.scripts.ask_window
+    assert said[7] == cfg.scripts.ask_team_note
+    assert "https://skincentrix.janeapp.com" in said[8] and "texted" not in said[8]
+    assert ctx.sms.sent == []

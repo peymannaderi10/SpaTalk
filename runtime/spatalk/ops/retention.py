@@ -120,7 +120,7 @@ async def _sweep_tenant(sf: async_sessionmaker, tenant_id: str, now: datetime, d
         await s.execute(
             update(Conversation)
             .where(Conversation.id.in_(expired))
-            .values(caller=None, latency_ms=None, stage_ms=None)
+            .values(caller=None, latency_ms=None, stage_ms=None, flow=None)
         )
         # The drafted notes are a view of the transcript, so they go with it. Counted
         # separately, and only where there was something to clear, so a second sweep the

@@ -31,6 +31,7 @@ from spatalk.brain.driver import Brain, LLMClient, TurnResult
 from spatalk.brain.hours import BusinessCalendar
 from spatalk.brain.renderer import render_script
 from spatalk.brain.requests import ConversationRef
+from spatalk.brain.flow import Slots
 from spatalk.brain.outcomes import Captured
 from spatalk.conversations import append_message, queue_call_notes, record_usage
 from spatalk.models import Conversation, InboundMessage, Item, Job, Message, SmsOptout
@@ -232,8 +233,10 @@ class TextConversationService:
             caller_phone=conv.caller,
             health_context=conv.health_context,
         )
+        # The slot engine's record follows the thread between messages (slot engine, §6.3).
+        slots = Slots.model_validate(conv.flow) if conv.flow else Slots()
         turn = await Brain(self._llm, caps, ctx.clock).turn(
-            ref, await self.history(conv.id), text
+            ref, await self.history(conv.id), text, slots
         )
         # A tag meant for a voice is never something a customer reads.
         replies = self._segments(strip_audio_tags(turn.reply), channel)
@@ -276,7 +279,7 @@ class TextConversationService:
 
     async def _finish_turn(self, cfg, conv: Conversation, turn: TurnResult) -> None:
         now = self._ctx.clock.now()
-        values: dict = {"last_message_at": now}
+        values: dict = {"last_message_at": now, "flow": turn.slots.model_dump(mode="json")}
         if turn.health_context:
             values["health_context"] = True
         if turn.band is not None:

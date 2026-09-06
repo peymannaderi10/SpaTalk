@@ -89,6 +89,10 @@ class Conversation(Base):
     # E3 needs the column now because retention nulls it alongside latency_ms when the
     # transcript goes (docs/reference/data-model.md, conversations.stage_ms).
     stage_ms: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # The slot engine's record of the open request (slot engine design, §6.3): written after
+    # every turn on every channel, so a text thread resumed hours later picks up at the open
+    # step. Closed values only; nulled with the transcript by the retention job.
+    flow: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     # --- call notes (call-notes plan, Task N1) ---
     # A few sentences drafted from this conversation's own transcript, for the person who
     # picks up the request card. It is a derived view of the transcript, so it lives next to

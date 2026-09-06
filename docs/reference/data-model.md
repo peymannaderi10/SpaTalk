@@ -81,6 +81,7 @@ Index: unique `(tenant_id, provider)`; `(provider, external_id)` for webhook res
 | band | int null | 1, 2, 3 at end |
 | latency_ms | jsonb null | list of per-turn ms |
 | stage_ms | jsonb null | `{stt, llm, tts}` p95 for the call [E5] |
+| flow | jsonb null | the slot engine's record of the open request: the flow, the filled slots, the pending confirmation (slot engine design §6.3). Closed values only; written after every turn; nulled with the transcript |
 | started_at | timestamptz | default now |
 | last_message_at | timestamptz null | [B2] |
 | ended_at | timestamptz null | |

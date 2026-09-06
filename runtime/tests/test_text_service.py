@@ -270,3 +270,24 @@ async def test_a_message_the_rules_gate_answers_is_stored_before_the_fixed_reply
     assert msgs[0].text == "I have a rash after my laser session"
     assert all(m.role == "assistant" for m in msgs[1:])
     assert "clinical team" in " ".join(m.text for m in msgs[1:])
+
+
+async def test_the_slot_record_survives_between_texts(ctx, sf):
+    """The engine's record follows the thread: the second text lands in the open step."""
+    from sqlalchemy import select
+
+    from spatalk.brain.driver import FakeLLM, LLMResponse, ToolCall
+    from spatalk.models import Conversation
+
+    llm = FakeLLM([
+        LLMResponse(text=None, tool_calls=[ToolCall("start_request", {"kind": "callback"})]),
+        LLMResponse(text=None, tool_calls=[ToolCall("answer", {"value": "yes"})]),
+    ])
+    svc = _service(ctx, llm)
+    await _inbound(svc, "call me please", "m1")
+    second = await _inbound(svc, "yes", "m2")
+    async with sf() as s:
+        conv = await s.scalar(select(Conversation).where(Conversation.id == second.conversation_id))
+    assert conv.flow["flow"] == "callback" and conv.flow["returning_client"] is True
+    cfg = await ctx.registry.get("skincentrix")
+    assert second.replies[0] == cfg.scripts.ask_practitioner
