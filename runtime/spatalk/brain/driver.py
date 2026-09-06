@@ -438,8 +438,9 @@ def first_sentence(text: str) -> str:
 
 async def run_tool(
     caps: Capabilities, ref: ConversationRef, slots: Slots, name: str, args: dict, now: datetime
-) -> tuple[Slots, list[str], Outcome | None, bool]:
-    """One tool call through the engine. Returns (slots, spoken lines, outcome, ended).
+) -> tuple[Slots, list[str], Outcome | None, bool, bool]:
+    """One tool call through the engine. Returns (slots, spoken lines, outcome, ended,
+    model_speaks): the last is True when the model's own words are the turn's content.
 
     Spoken lines are tenant scripts, never model text. A tool the step did not offer is
     ignored: nothing is said and nothing is written.
@@ -448,7 +449,7 @@ async def run_tool(
     applied = apply(slots, name, args or {}, cfg, ref.channel, ref.caller_phone)
     if applied.ignored:
         logger.warning("tool {} ignored at this step with args {}", name, args)
-        return slots, [], None, False
+        return slots, [], None, False, False
     spoken = [render_script(key, cfg, now, urgent=False, **fills) for key, fills in applied.say]
     outcome: Outcome | None = None
     ended = applied.end
@@ -471,12 +472,12 @@ async def run_tool(
             spoken.append(render(outcome, cfg, now, channel=ref.channel))
     except (ValueError, TypeError) as e:  # bad enum values or shapes from the model
         logger.warning("tool {} rejected args {}: {}", name, args, e)
-        return slots, [], None, False
+        return slots, [], None, False, False
     except Exception as e:  # noqa: BLE001  ledger, SMS or database failure: nothing was saved
         logger.exception("tool {} failed: {}", name, e)
         outcome = Refused(reason="unavailable")
         spoken.append(render(outcome, cfg, now, channel=ref.channel))
-    return applied.slots, spoken, outcome, ended
+    return applied.slots, spoken, outcome, ended, applied.model_speaks
 
 
 @dataclass
@@ -543,12 +544,13 @@ class Brain:
         said: list[str] = []
         outcomes: list[Outcome] = []
         names: list[str] = []
-        ended, band = False, 1
+        ended, band, model_speaks = False, 1, False
         for tc in resp.tool_calls:
             names.append(tc.name)
-            slots, spoken, out, did_end = await run_tool(
+            slots, spoken, out, did_end, speaks = await run_tool(
                 self._caps, ref, slots, tc.name, tc.arguments, now
             )
+            model_speaks = model_speaks or speaks
             said.extend(spoken)
             if out is not None:
                 outcomes.append(out)
@@ -572,7 +574,7 @@ class Brain:
                 band = max(band, 2)
                 logger.warning("guard blocked model text ({}): {!r}", g.matched, resp.text)
             else:
-                ack = first_sentence(g.text) if names else g.text
+                ack = g.text if (model_speaks or not names) else first_sentence(g.text)
         question = ""
         if not ended and slots.flow and not slots.ended_flow:
             q = step_question(next_step(slots, cfg, ref.channel), slots, cfg, ref.channel)

@@ -23,10 +23,12 @@ from spatalk.brain.resolve import (
     spoken_digits,
     typed_digits,
 )
-from spatalk.brain.tools import always_tools, slot_tool
+from spatalk.brain.tools import REQUEST_KINDS, always_tools, slot_tool
 from spatalk.tenants.schema import TenantConfig
 
-Flow = Literal["new_booking", "callback", "reschedule", "cancel", "question", "clinical"]
+Flow = Literal[
+    "new_booking", "callback", "reschedule", "cancel", "question", "training_enquiry", "clinical"
+]
 NAME_REQUIRED_FLOWS = ("new_booking", "callback", "reschedule", "cancel", "question", "clinical")
 BOOKING_LIKE = ("new_booking", "callback")
 
@@ -174,7 +176,10 @@ def step_question(
         key = "ask_practitioner_again" if slots.misses.get("practitioner") else "ask_practitioner"
         return key, {}
     if step == Step.SERVICE:
-        return ("ask_service_again" if slots.misses.get("service") else "ask_service"), {}
+        if slots.misses.get("service"):
+            return "ask_service_again", {}
+        fresh_client = slots.returning_client is False and slots.offers_done
+        return ("ask_after_offers" if fresh_client else "ask_service"), {}
     if step == Step.NAME:
         return ("ask_name_again" if slots.misses.get("name") else "ask_name"), {}
     if step == Step.PHONE:
@@ -246,6 +251,9 @@ class Applied(BaseModel, frozen=True):
     send_link: bool = False
     end: bool = False
     ignored: bool = False
+    # True when the model's own words are the content of the turn (the offers, two or three
+    # options from the facts) rather than a one-line acknowledgement.
+    model_speaks: bool = False
 
 
 def _tool_allowed(name: str, step: Step, slots: Slots, cfg: TenantConfig, channel: str) -> bool:
@@ -307,7 +315,7 @@ def _apply(
     args = args or {}
     if name == "start_request":
         kind = args.get("kind")
-        if kind not in ("new_booking", "callback", "reschedule", "cancel", "question"):
+        if kind not in REQUEST_KINDS:
             return Applied(slots=slots, ignored=True)
         return Applied(slots=_open(kind, slots, channel, caller_phone))
     if name == "change_answer":
@@ -380,7 +388,7 @@ def _answer(
         if p.kind == "offers":
             # yes = hear options (the model names two or three from the facts); no = the consultation
             if yes:
-                return Applied(slots=slots.with_(pending=None))
+                return Applied(slots=slots.with_(pending=None), model_speaks=True)
             consult = next((s for s in cfg.services if s.category == "consultation"), None)
             if consult is None:
                 return Applied(slots=slots.with_(pending=None))
@@ -395,8 +403,9 @@ def _answer(
     if step == Step.RETURNING:
         return Applied(slots=slots.with_(returning_client=yes))
     if step == Step.OFFERS:
-        say = (("ask_after_offers", {}),) if yes else ()
-        return Applied(slots=slots.with_(offers_done=True), say=say)
+        # After the offers the treatment question is "What did you have in mind?" (the
+        # SERVICE step asks it that way for a new client); the model's recital comes whole.
+        return Applied(slots=slots.with_(offers_done=True), model_speaks=yes)
     if step == Step.PHONE:
         if yes and slots.phone:
             return Applied(slots=slots.with_(phone_confirmed=True))
@@ -507,6 +516,7 @@ ITEM_TYPE = {
     "reschedule": "reschedule",
     "cancel": "cancel",
     "question": "question",
+    "training_enquiry": "training_enquiry",
     "clinical": "escalation_clinical",
 }
 

@@ -794,7 +794,7 @@ async def test_the_spoken_outcome_says_nothing_about_the_lead_fields(fixed_clock
     slots = Slots(flow="callback", returning_client=False, offers_done=True, practitioner="Sabah Shaikh",
                   service_id="mirapeel_facial", first_name="Dana", phone="+19055550101",
                   phone_confirmed=True, preferred_window=PreferredWindow(), team_note_asked=True)
-    _slots, spoken, _outcome, _ended = await run_tool(caps, ref, slots, "file_request", {}, fixed_clock.now())
+    _slots, spoken, _outcome, _ended, _speaks = await run_tool(caps, ref, slots, "file_request", {}, fixed_clock.now())
     low = " ".join(spoken).lower()
     for leaked in ("sabah", "pigmentation", "new client", "returning"):
         assert leaked not in low, f"the caller was told {leaked!r}"

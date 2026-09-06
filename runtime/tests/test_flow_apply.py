@@ -223,3 +223,13 @@ def test_a_booking_on_a_text_channel_ends_with_the_link_and_a_call_without_sms_f
     no_sms = _cfg().model_copy(update={"sms_from_number": None})
     call = apply(booking, "answer", {"value": "no"}, no_sms, "voice", "+19055550101")
     assert call.file and not call.send_link
+
+
+def test_a_training_enquiry_is_a_request_too():
+    from spatalk.brain.flow import Slots, Step, draft_from, next_step
+
+    a = _apply(Slots(), "start_request", {"kind": "training_enquiry"}, caller=None)
+    assert a.slots.flow == "training_enquiry" and next_step(a.slots, _cfg(), "voice") == Step.NAME
+    done = a.slots.with_(first_name="Dana", phone="+19055550101", phone_confirmed=True)
+    assert draft_from(done, _cfg()).type == "training_enquiry"
+

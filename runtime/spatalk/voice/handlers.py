@@ -37,7 +37,7 @@ def _make_handler(session: VoiceSession):
     async def handler(params: FunctionCallParams):
         now = session.clock.now()
         session.tool_called_this_turn = True
-        slots, spoken, outcome, ended = await run_tool(
+        slots, spoken, outcome, ended, _speaks = await run_tool(
             session.caps,
             session.ref,
             session.slots,

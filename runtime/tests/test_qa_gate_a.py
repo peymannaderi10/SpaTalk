@@ -101,7 +101,7 @@ async def test_ledger_failure_on_the_voice_gate_refuses_instead_of_promising_a_c
     down, _ = await run_test(
         RulesGateProcessor(session),
         frames_to_send=[
-            TranscriptionFrame(text="I have a rash after my laser", user_id="u", timestamp="t")
+            TranscriptionFrame(text="I can't breathe", user_id="u", timestamp="t")
         ],
         expected_down_frames=[TTSSpeakFrame],
         # pipecat's default start_timeout is 1 s, which a cold first run can exceed.

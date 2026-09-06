@@ -50,7 +50,7 @@ ONLY_WHAT_THEY_SAID = " Only what the caller said in answer to the question just
 
 SLOT_NAMES = ["returning_client", "practitioner", "service", "name", "phone", "window"]
 
-REQUEST_KINDS = ["new_booking", "callback", "reschedule", "cancel", "question"]
+REQUEST_KINDS = ["new_booking", "callback", "reschedule", "cancel", "question", "training_enquiry"]
 
 
 def slot_tool(name: str, cfg: TenantConfig) -> FunctionSchema:
@@ -61,8 +61,9 @@ def slot_tool(name: str, cfg: TenantConfig) -> FunctionSchema:
             name="start_request",
             description=(
                 "The caller wants something the team has to do: book, be called back, "
-                "reschedule or cancel, or a question the facts do not answer. Call this the "
-                "moment they say so; the system asks the questions from here."
+                "reschedule or cancel, ask about a training course, or a question the facts "
+                "do not answer. Call this the moment they say so; the system asks the "
+                "questions from here."
             ),
             properties={"kind": {"type": "string", "enum": REQUEST_KINDS}},
             required=["kind"],

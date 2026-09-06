@@ -136,3 +136,14 @@ async def test_an_emergency_still_files_at_once(fixed_clock):
     brain, ref, ledger, llm, cfg = _world(fixed_clock, [LLMResponse(text="x", tool_calls=[])])
     r = await brain.turn(ref, [], "I can't breathe", Slots())
     assert "911" in r.reply and ledger.items[0].type == "escalation_emergency" and r.ended
+
+async def test_the_offers_are_recited_whole_when_the_caller_says_yes(fixed_clock):
+    """The model's words are the content of that turn, not an acknowledgement to trim."""
+    from spatalk.brain.driver import LLMResponse, ToolCall
+    from spatalk.brain.flow import Slots
+
+    offers = "We have a $50 credit toward a first advanced facial. There is a free virtual consultation. And a free underarm laser trial."
+    resp = LLMResponse(text=offers, tool_calls=[ToolCall("answer", {"value": "yes"})])
+    brain, ref, ledger, llm, cfg = _world(fixed_clock, [resp])
+    r = await brain.turn(ref, [], "yes please", Slots(flow="new_booking", returning_client=False))
+    assert r.reply == offers + " " + cfg.scripts.ask_after_offers
