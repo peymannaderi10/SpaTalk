@@ -54,20 +54,26 @@ Index: unique `(tenant_id, version)`.
 | tenant_id | text FK | |
 | kind | text | `voice` or `sms` |
 
-### tenant_integrations [instagram plan, D1]
+### tenant_integrations [instagram plan, D1; Slack columns by onboarding §3, migration 0014]
 | id | serial PK | |
 | tenant_id | text FK | |
-| provider | text | `instagram` or `messenger`; unique with tenant_id |
-| external_id | text | IG user id or Page id |
-| display_name | text | @username or page name |
-| access_token_enc | text | Fernet-encrypted |
-| token_expires_at | timestamptz null | |
+| provider | text | `instagram`, `messenger` or `slack`; unique with tenant_id |
+| external_id | text | IG user id, Page id, or Slack team id |
+| display_name | text | @username, page name, or `workspace · #channel` |
+| access_token_enc | text | Fernet-encrypted: the Meta long-lived token, or the Slack bot token |
+| token_expires_at | timestamptz null | null for a Page or a Slack workspace (neither expires on its own) |
 | scopes | text[] | |
 | needs_reconnect | bool | default false |
 | connected_by | text | |
 | created_at, updated_at | timestamptz | |
+| channel_id | text null | Slack only: the channel the workspace chose at install; a thread per conversation is opened there with the row's own token |
+| webhook_url_enc | text null | Slack only: that channel's incoming-webhook URL, Fernet-encrypted exactly like the token (whoever holds it can post). Used when the bot cannot open a thread |
 
 Index: unique `(tenant_id, provider)`; `(provider, external_id)` for webhook resolution.
+
+A `slack` row replaces the tenant's bundle `slack` destination: delivery reads the row, never
+`.env`, and a tenant with both gets one post. Neither the token nor the webhook URL leaves the
+runtime; `/internal/tenants/{id}/integrations` reports the display name and the team id only.
 
 ### conversations [Task 7; columns added by B2, B5, E5, N1]
 | id | uuid PK | |

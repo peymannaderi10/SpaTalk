@@ -12,7 +12,7 @@ from spatalk import jobs
 from spatalk.brain import breaker  # per-vendor LLM circuit breaker (llm failover plan, F1)
 from spatalk.clock import SystemClock
 from spatalk.db import make_engine, make_session_factory
-from spatalk.http import actions, internal, slack, slack_events
+from spatalk.http import actions, internal, slack, slack_connect, slack_events
 from spatalk.http.ratelimit import install_rate_limits
 from spatalk.ledger.delivery import make_delivery, schedule_item_delivery
 from spatalk.ledger.items import PgLedger
@@ -105,6 +105,7 @@ def create_app(ctx: jobs.JobContext, start_background: bool = True) -> FastAPI:
     attach_router(app, actions.router)
     attach_router(app, slack.router)
     attach_router(app, slack_events.router)  # human takeover (Task B5)
+    attach_router(app, slack_connect.router)  # slack one-click connect (onboarding roadmap §3)
     attach_router(app, text_sms.router)   # text channels (Task B2)
     attach_router(app, text_chat.router)  # web chat widget (Task B4)
     attach_router(app, internal.router)   # the portal's only way in (portal plan, Task C3)

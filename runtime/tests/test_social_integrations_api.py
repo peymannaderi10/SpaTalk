@@ -36,6 +36,9 @@ def _settings(**overrides):
         instagram_app_secret="ig-app-secret",
         facebook_app_id="FB_APP_ID",
         facebook_app_secret="fb-app-secret",
+        # Slack joined the list with one-click connect (onboarding roadmap, section 3).
+        slack_client_id="SLACK_CLIENT_ID",
+        slack_client_secret="slack-client-secret",
         meta_token_encryption_key=Fernet.generate_key().decode(),
     )
     values.update(overrides)
@@ -100,13 +103,38 @@ async def client(app_ctx):
 # ----- status ------------------------------------------------------------------------------
 
 
-async def test_both_providers_are_listed_as_not_connected_before_anyone_connects(client):
+async def test_every_provider_is_listed_as_not_connected_before_anyone_connects(client):
     body = (await client.get("/internal/tenants/skincentrix/integrations")).json()
 
-    assert [row["provider"] for row in body] == ["instagram", "messenger"]
+    assert [row["provider"] for row in body] == ["instagram", "messenger", "slack"]
     assert all(row["connected"] is False for row in body)
     assert all(row["display_name"] is None for row in body)
     assert all(row["configured"] is True for row in body)
+
+
+async def test_the_provider_list_is_the_integration_providers_constant():
+    from spatalk.http.internal import INTEGRATION_PROVIDERS, SOCIAL_PROVIDERS
+
+    assert INTEGRATION_PROVIDERS == ("instagram", "messenger", "slack")
+    # The old name stays importable for anything that still uses it.
+    assert SOCIAL_PROVIDERS == INTEGRATION_PROVIDERS
+
+
+async def test_slack_is_reported_as_unconfigured_without_the_app_credentials(
+    sf, registry, fixed_clock
+):
+    app, _ = await _build(
+        sf, registry, fixed_clock, settings=_settings(slack_client_id="", slack_client_secret="")
+    )
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://runtime",
+        headers={"X-Internal-Key": INTERNAL_KEY, "X-Actor": ACTOR},
+    ) as client:
+        body = (await client.get("/internal/tenants/skincentrix/integrations")).json()
+
+    assert next(row for row in body if row["provider"] == "slack")["configured"] is False
+    assert next(row for row in body if row["provider"] == "instagram")["configured"] is True
 
 
 async def test_a_connected_account_is_reported_with_its_name_expiry_and_scopes(

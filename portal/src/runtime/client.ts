@@ -434,7 +434,7 @@ export interface paths {
         };
         /**
          * Tenant Integrations
-         * @description One row per provider, connected or not, so the page can draw both cards.
+         * @description One row per provider, connected or not, so the page can draw every card.
          */
         get: operations["tenant_integrations_internal_tenants__tenant_id__integrations_get"];
         put?: never;
@@ -454,12 +454,12 @@ export interface paths {
         };
         /**
          * Integration Connect Url
-         * @description The Meta authorisation URL, with a signed state carrying the tenant and `return_to`.
+         * @description The provider's authorisation URL, with a signed state carrying the tenant and `return_to`.
          *
-         *     The state is what makes this safe to hand out: `/instagram/callback` will only store an
-         *     account against the tenant this key-holder named, and will only bounce the browser back
-         *     to the address signed here. It is minted per click, because it is good for fifteen
-         *     minutes and a settings page can sit open for longer than that.
+         *     The state is what makes this safe to hand out: `/instagram/callback` (or `/messenger/`,
+         *     `/slack/`) will only store an account against the tenant this key-holder named, and will
+         *     only bounce the browser back to the address signed here. It is minted per click, because
+         *     it is good for fifteen minutes and a settings page can sit open for longer than that.
          */
         get: operations["integration_connect_url_internal_tenants__tenant_id__integrations__provider__connect_url_get"];
         put?: never;
@@ -482,11 +482,11 @@ export interface paths {
         post?: never;
         /**
          * Disconnect Integration
-         * @description Disconnect: Meta stops sending, then the row and its token go.
+         * @description Disconnect: the provider is told to stop, then the row and its token go.
          *
-         *     The order matters. Unsubscribing needs the token, so it happens first; it is best
-         *     effort, and a Meta that refuses does not trap a tenant in a connection they have asked
-         *     to end. The answer says which of the two happened.
+         *     The order matters. Meta's unsubscribe and Slack's `auth.revoke` both need the token, so
+         *     they happen first; each is best effort, and a provider that refuses does not trap a
+         *     tenant in a connection they have asked to end. The answer says which of the two happened.
          */
         delete: operations["disconnect_integration_internal_tenants__tenant_id__integrations__provider__delete"];
         options?: never;
@@ -697,10 +697,12 @@ export interface components {
         };
         /**
          * IntegrationOut
-         * @description What the portal may know about a connected Meta account.
+         * @description What the portal may know about a connected Meta account or Slack workspace.
          *
          *     Never the token: not the plaintext, not the ciphertext, not its length. The portal has
-         *     no use for it and no way to keep it as safely as the runtime does.
+         *     no use for it and no way to keep it as safely as the runtime does. For Slack the same
+         *     goes for the incoming-webhook URL and the channel id; `display_name` already names the
+         *     channel in words.
          */
         IntegrationOut: {
             /** Provider */
@@ -732,7 +734,11 @@ export interface components {
         };
         /**
          * IntegrationRemoved
-         * @description `disconnected` is the row; `unsubscribed` is whether Meta agreed to stop sending.
+         * @description `disconnected` is the row; `unsubscribed` is whether the provider agreed to stop.
+         *
+         *     For a Meta account that is the webhook unsubscribe; for a Slack workspace it is Slack
+         *     confirming the bot token was revoked (`auth.revoke`). Both are best effort, and the row
+         *     goes either way, so the portal can say which of the two happened.
          */
         IntegrationRemoved: {
             /** Provider */

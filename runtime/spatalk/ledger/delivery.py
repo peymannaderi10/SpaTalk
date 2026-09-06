@@ -392,7 +392,11 @@ def whatsapp_port(ctx: jobs.JobContext) -> WhatsAppPort:
 
 
 class DeliveryPort(Protocol):
-    async def send_slack(self, webhook_url: str, blocks: list[dict], text: str) -> None: ...
+    # `token` is a connected workspace's own bot token (slack one-click connect); None is
+    # the global token, and a webhook URL needs none at all.
+    async def send_slack(
+        self, webhook_url: str, blocks: list[dict], text: str, token: str | None = None
+    ) -> None: ...
 
     async def send_email(self, to: str, subject: str, body: str) -> None: ...
 
@@ -401,7 +405,11 @@ class HttpSlackEmailDelivery:
     def __init__(self, settings, http: httpx.AsyncClient | None = None):
         self._settings, self._http = settings, http or httpx.AsyncClient(timeout=10)
 
-    async def send_slack(self, webhook_url: str, blocks: list[dict], text: str) -> None:
+    async def send_slack(
+        self, webhook_url: str, blocks: list[dict], text: str, token: str | None = None
+    ) -> None:
+        # A webhook carries its own authority; the token exists so every delivery object
+        # speaks the same signature.
         r = await self._http.post(webhook_url, json={"text": text, "blocks": blocks})
         r.raise_for_status()
 
@@ -429,6 +437,9 @@ class SlackBotDelivery(HttpSlackEmailDelivery):
     def __init__(self, settings, http: httpx.AsyncClient | None = None, client=None):
         super().__init__(settings, http)
         self._client = client
+        # One Web API client per bot token: the global one above, and one per workspace a
+        # clinic connected from the portal (slack one-click connect). Built on first use.
+        self._clients: dict[str, object] = {}
 
     @property
     def client(self):
@@ -438,29 +449,59 @@ class SlackBotDelivery(HttpSlackEmailDelivery):
             self._client = AsyncWebClient(token=self._settings.slack_bot_token)
         return self._client
 
-    async def send_slack(self, webhook_url: str, blocks: list[dict], text: str) -> None:
+    def client_for(self, token: str | None):
+        """The client speaking with a workspace's own token; the global client for None."""
+        if not token:
+            return self.client
+        client = self._clients.get(token)
+        if client is None:
+            from slack_sdk.web.async_client import AsyncWebClient
+
+            client = self._clients[token] = AsyncWebClient(token=token)
+        return client
+
+    async def send_slack(
+        self, webhook_url: str, blocks: list[dict], text: str, token: str | None = None
+    ) -> None:
         if webhook_url.startswith("http"):
             await super().send_slack(webhook_url, blocks, text)
             return
-        await self.client.chat_postMessage(channel=webhook_url, blocks=blocks, text=text)
+        await self.client_for(token).chat_postMessage(
+            channel=webhook_url, blocks=blocks, text=text
+        )
 
-    async def post_thread_root(self, channel_id: str, blocks: list[dict], text: str) -> str:
-        response = await self.client.chat_postMessage(
+    async def post_thread_root(
+        self, channel_id: str, blocks: list[dict], text: str, token: str | None = None
+    ) -> str:
+        response = await self.client_for(token).chat_postMessage(
             channel=channel_id, blocks=blocks, text=text
         )
         return str(response["ts"])
 
     async def post_in_thread(
-        self, channel_id: str, thread_ts: str, text: str, blocks: list[dict] | None = None
+        self,
+        channel_id: str,
+        thread_ts: str,
+        text: str,
+        blocks: list[dict] | None = None,
+        token: str | None = None,
     ) -> None:
-        await self.client.chat_postMessage(
+        await self.client_for(token).chat_postMessage(
             channel=channel_id, thread_ts=thread_ts, text=text, blocks=blocks
         )
 
 
 def make_delivery(settings, http: httpx.AsyncClient | None = None) -> DeliveryPort:
-    """The bot when a token is configured, the incoming webhook otherwise."""
-    if getattr(settings, "slack_bot_token", ""):
+    """The bot when a token or the Slack app is configured, the incoming webhook otherwise.
+
+    The app's client id and secret mean a clinic may connect its own workspace, and a
+    connected workspace posts as the bot with its own token (slack one-click connect), so
+    the bot delivery is needed even with no global token.
+    """
+    app_configured = bool(
+        getattr(settings, "slack_client_id", "") and getattr(settings, "slack_client_secret", "")
+    )
+    if getattr(settings, "slack_bot_token", "") or app_configured:
         return SlackBotDelivery(settings, http)
     return HttpSlackEmailDelivery(settings, http)
 
@@ -468,6 +509,9 @@ def make_delivery(settings, http: httpx.AsyncClient | None = None) -> DeliveryPo
 class MemoryDelivery:
     def __init__(self):
         self.slack: list[tuple[str, list[dict], str]] = []
+        # The token each Slack post went out with, in step with `slack` (None: a webhook, or
+        # the global token). Kept beside the tuples so older tests keep their shape.
+        self.slack_tokens: list[str | None] = []
         self.emails: list[tuple[str, str, str]] = []
         # --- whatsapp (plan W) ---
         # Every WhatsApp message in order: (to, body or template name, buttons or params).
@@ -475,8 +519,9 @@ class MemoryDelivery:
         self.whatsapp: list[tuple[str, str, list]] = []
         self.whatsapp_templates: list[dict] = []
 
-    async def send_slack(self, webhook_url, blocks, text):
+    async def send_slack(self, webhook_url, blocks, text, token=None):
         self.slack.append((webhook_url, blocks, text))
+        self.slack_tokens.append(token)
 
     async def send_email(self, to, subject, body):
         self.emails.append((to, subject, body))
@@ -519,25 +564,58 @@ class MemoryBotDelivery(MemoryDelivery):
         self.roots: list[tuple[str, list[dict], str]] = []
         self.thread: list[tuple[str, str, str, list[dict] | None]] = []
         self.posted_ts: list[str] = []
+        # The token each root and each thread post went out with, in step with the lists
+        # above (None: the global token).
+        self.root_tokens: list[str | None] = []
+        self.thread_tokens: list[str | None] = []
 
-    async def post_thread_root(self, channel_id, blocks, text) -> str:
+    async def post_thread_root(self, channel_id, blocks, text, token=None) -> str:
         ts = f"1712.{len(self.roots) + 1:06d}"
         self.roots.append((channel_id, blocks, text))
         self.posted_ts.append(ts)
+        self.root_tokens.append(token)
         return ts
 
-    async def post_in_thread(self, channel_id, thread_ts, text, blocks=None) -> None:
+    async def post_in_thread(self, channel_id, thread_ts, text, blocks=None, token=None) -> None:
         self.thread.append((channel_id, thread_ts, text, blocks))
+        self.thread_tokens.append(token)
+
+
+async def connected_slack_workspace(sf: async_sessionmaker, tenant_id: str):
+    """The workspace this tenant connected from the portal, or None (slack one-click connect)."""
+    # Imported here, not at module level: `social` imports `text`, which sits beside this
+    # module, and the two must not need each other at import time.
+    from spatalk.social.meta_oauth import integration_for
+
+    return await integration_for(sf, tenant_id, "slack")
 
 
 async def schedule_item_delivery(
     sf: async_sessionmaker, item: Item, cfg: TenantConfig, escalation: bool = False
 ) -> None:
     urgent = item.urgency == "urgent" or escalation
+    # A workspace the clinic connected from the portal (slack one-click connect) replaces the
+    # bundle's `slack` destinations: one post to the row's channel or webhook, and no read of
+    # `.env`. With no row, the loop below is exactly what it was.
+    workspace = await connected_slack_workspace(sf, cfg.id)
+    if workspace is not None:
+        await jobs.enqueue(
+            sf,
+            "deliver.slack",
+            {
+                "item_id": item.id,
+                "tenant_id": cfg.id,
+                "integration": True,
+                "channel_id": workspace.channel_id,
+                "escalation": escalation,
+            },
+        )
     for dest in cfg.delivery.destinations:
         if dest.urgent_only and not urgent:
             continue
         if dest.kind == "slack":
+            if workspace is not None:
+                continue
             await jobs.enqueue(
                 sf,
                 "deliver.slack",
@@ -609,13 +687,20 @@ async def _deliver_slack(payload: dict, ctx: jobs.JobContext) -> None:
     prefix = "ESCALATED, past due: " if payload.get("escalation") else ""
     text = f"{prefix}#{item.id} {TYPE_LABELS.get(item.type, item.type)}"
 
-    # With a bot token and a channel id, the conversation gets one thread: the first item is
-    # its root, everything after it is a reply (Task B5). Without them, nothing changes.
-    channel_id = payload.get("channel_id")
     # The notes are usually still being drafted when the immediate alert goes out; the
     # block appears when they exist and is absent when they do not (call-notes plan, N1).
     notes = await get_notes(ctx.sf, item.conversation_id)
-    if channel_id and getattr(ctx.delivery, "post_thread_root", None) is not None:
+
+    # A workspace the clinic connected from the portal: its own token and webhook come from
+    # the encrypted row, never from `.env` (slack one-click connect).
+    if payload.get("integration"):
+        await _deliver_slack_to_workspace(ctx, payload, item, cfg, links, now, text, notes)
+        return
+
+    # With a bot token and a channel id, the conversation gets one thread: the first item is
+    # its root, everything after it is a reply (Task B5). Without them, nothing changes.
+    channel_id = payload.get("channel_id")
+    if channel_id and _threads(ctx) and getattr(ctx.settings, "slack_bot_token", ""):
         await _deliver_slack_in_thread(ctx, item, cfg, links, now, channel_id, text, notes)
         return
 
@@ -628,6 +713,75 @@ async def _deliver_slack(payload: dict, ctx: jobs.JobContext) -> None:
     )
 
 
+def _threads(ctx: jobs.JobContext) -> bool:
+    """Whether the delivery object can post as the bot (a thread needs the Web API)."""
+    return getattr(ctx.delivery, "post_thread_root", None) is not None
+
+
+def _not_in_channel(error: Exception) -> bool:
+    """Slack's answer when the bot was never invited to the channel the install chose."""
+    response = getattr(error, "response", None)
+    if response is None:
+        return False
+    try:
+        return response.get("error") == "not_in_channel"
+    except Exception:
+        return False
+
+
+async def _deliver_slack_to_workspace(
+    ctx: jobs.JobContext,
+    payload: dict,
+    item: Item,
+    cfg: TenantConfig,
+    links: ActionLinks,
+    now: datetime,
+    text: str,
+    notes: str | None,
+) -> None:
+    """The clinic's connected workspace: a thread with its own token, else its webhook.
+
+    The row is read when the job runs, not when it was queued, so a workspace disconnected
+    in between is a skip with a warning, never a post with a revoked token. A bot that was
+    not invited to the channel cannot open a thread; the item then goes through the
+    webhook, which the install authorised for that channel, so it still lands.
+    """
+    from spatalk.social.slack_oauth import slack_bot_token, slack_webhook_url
+
+    row = await connected_slack_workspace(ctx.sf, cfg.id)
+    if row is None:
+        logger.warning("slack workspace for {} is no longer connected; skipping", cfg.id)
+        return
+    token = slack_bot_token(row, ctx.settings)
+    webhook = slack_webhook_url(row, ctx.settings)
+    channel_id = payload.get("channel_id") or row.channel_id
+    if channel_id and _threads(ctx):
+        try:
+            await _deliver_slack_in_thread(
+                ctx, item, cfg, links, now, channel_id, text, notes, token=token
+            )
+            return
+        except Exception as e:
+            if not (_not_in_channel(e) and webhook):
+                raise
+            logger.warning(
+                "the bot is not in {}'s slack channel {}; item #{} posted through the webhook "
+                "instead. Invite the bot to the channel for threads.",
+                cfg.id,
+                channel_id,
+                item.id,
+            )
+    if not webhook:
+        logger.warning(
+            "slack workspace for {} has no channel the bot can post in and no webhook; skipping",
+            cfg.id,
+        )
+        return
+    await ctx.delivery.send_slack(
+        webhook, build_slack_blocks(item, cfg, links, now, notes=notes), text
+    )
+
+
 async def _deliver_slack_in_thread(
     ctx: jobs.JobContext,
     item: Item,
@@ -637,17 +791,22 @@ async def _deliver_slack_in_thread(
     channel_id: str,
     text: str,
     notes: str | None = None,
+    token: str | None = None,
 ) -> None:
     thread = await takeover.thread_for(ctx.sf, item.conversation_id)
     if thread is None:
         rooted = item.conversation_id is not None
         blocks = build_slack_blocks(item, cfg, links, now, handback=rooted, notes=notes)
-        ts = await ctx.delivery.post_thread_root(channel_id, blocks, text)
+        ts = await ctx.delivery.post_thread_root(channel_id, blocks, text, token=token)
         if item.conversation_id is not None:
             await takeover.store_thread(ctx.sf, item.conversation_id, channel_id, ts)
         return
     await ctx.delivery.post_in_thread(
-        thread[0], thread[1], text, build_slack_blocks(item, cfg, links, now, notes=notes)
+        thread[0],
+        thread[1],
+        text,
+        build_slack_blocks(item, cfg, links, now, notes=notes),
+        token=token,
     )
 
 

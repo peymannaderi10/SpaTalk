@@ -337,13 +337,20 @@ async def store_integration(
     scopes: list[str] | None = None,
     connected_by: str,
     needs_reconnect: bool = False,
+    channel_id: str | None = None,
+    webhook_url: str | None = None,
 ) -> TenantIntegration:
     """Upsert the one integration a tenant has per provider, token encrypted.
 
     Reconnecting replaces the row's token and clears ``needs_reconnect``: a tenant never ends
     up with two Instagram accounts, and a reconnect is the cure for a failed refresh.
+
+    ``channel_id`` and ``webhook_url`` are a Slack workspace's (onboarding roadmap, section
+    3): the webhook URL lets anyone holding it post, so it is encrypted exactly as the token.
     """
-    ciphertext = encrypt_token(access_token, settings.meta_token_encryption_key)
+    key = settings.meta_token_encryption_key
+    ciphertext = encrypt_token(access_token, key)
+    webhook_ciphertext = encrypt_token(webhook_url, key) if webhook_url else None
     now = clock.now()
     async with sf() as s, s.begin():
         row = (
@@ -364,6 +371,8 @@ async def store_integration(
         row.scopes = list(scopes or [])
         row.needs_reconnect = needs_reconnect
         row.connected_by = connected_by
+        row.channel_id = channel_id
+        row.webhook_url_enc = webhook_ciphertext
         row.updated_at = now
         await s.flush()
     return row

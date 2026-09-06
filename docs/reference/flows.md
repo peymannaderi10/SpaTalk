@@ -19,8 +19,8 @@ Step lists an engineer or QA agent can trace against the code. Each names the mo
 ## 2. Tracked item lifecycle (Tasks 8 to 10)
 
 1. A capability calls `PgLedger.create_item` with an `ItemDraft` (no free text). Due time from `BusinessCalendar.due_for`.
-2. `on_created` schedules delivery jobs per destination (Slack, email); urgent items also go to the owner.
-3. Worker sends: Slack Block Kit with Acknowledge and Resolve buttons (thread root when a bot token exists), email with confirm-then-POST links.
+2. `on_created` schedules delivery jobs per destination (Slack, email, WhatsApp, staff SMS); urgent items also go to the owner. A Slack workspace the clinic connected from the portal (onboarding §3) replaces the bundle's `slack` destination: one `deliver.slack` job with `integration: true`, the token and webhook read from the encrypted `tenant_integrations` row when the job runs, no `.env` line.
+3. Worker sends: Slack Block Kit with Acknowledge and Resolve buttons (thread root when a bot token exists: the connected workspace's own, or the global `SLACK_BOT_TOKEN`; the webhook when the bot was not invited to the channel), email with confirm-then-POST links.
 4. Staff acknowledge or resolve via Slack button, email link, or `#<id>` SMS; each action writes an audit row.
 5. Scheduler every minute: items past `due_at`, still `open`, not yet escalated → delivery to every destination plus the owner, marked escalated once.
 6. Daily digest at the tenant's local time: open items with resolve links.
@@ -43,9 +43,9 @@ Step lists an engineer or QA agent can trace against the code. Each names the mo
 
 ## 5. Human takeover (B5)
 
-1. First item delivered with a bot token creates a Slack thread root; the conversation stores channel and ts.
-2. Customer and assistant messages are mirrored into the thread.
-3. A staff reply in the thread → `controller=human`; the reply is relayed verbatim to the customer on the original channel and stored as role `staff`.
+1. First item delivered with a bot token creates a Slack thread root; the conversation stores channel and ts. The token is the connected workspace's own when the tenant connected Slack from the portal, the global one otherwise.
+2. Customer and assistant messages are mirrored into the thread, with the same token.
+3. A staff reply in the thread → `controller=human`; the reply is relayed verbatim to the customer on the original channel and stored as role `staff`. The events door keeps the one signing secret (one app, many workspaces) and finds the conversation by channel id and thread ts.
 4. While human: no brain; customer messages still mirrored.
 5. "Hand back to assistant" button or 12 h of staff silence → `controller=ai`.
 6. Staff SMS `#4821 running late, calling at 3` relays to that item's conversation.

@@ -125,6 +125,16 @@ class Settings(BaseSettings):
     # reply in it. Without one, delivery stays on the incoming webhook and there is no thread.
     slack_bot_token: str = ""
 
+    # --- slack one-click connect (onboarding roadmap, section 3) ---
+    # The Front Desk app's credentials from api.slack.com, Basic Information. With both set,
+    # a clinic installs the app in its own workspace from Settings, Integrations; the bot
+    # token and the incoming webhook that install answers are stored encrypted against the
+    # tenant (the same Fernet key as the Meta tokens) and no `.env` line per tenant is
+    # needed. One app serves every tenant, so the signing secret above stays global. Empty
+    # means the Slack card in the portal says it is not set up on this service.
+    slack_client_id: str = ""
+    slack_client_secret: str = ""
+
     # --- Instagram and Messenger (instagram plan, Task D1) ---
     # One Meta app per surface: Instagram Business Login and Facebook Login for Pages. The
     # secrets are also the webhook signing keys, which is why both are verified in D2.

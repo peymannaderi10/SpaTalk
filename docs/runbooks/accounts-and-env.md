@@ -136,13 +136,18 @@ Why: the only email provider with no monthly floor. Delivers tracked items and t
 
 ## 8. Slack, staff delivery with buttons (15 minutes)
 
-Why: tracked items arrive as messages with Acknowledge and Resolve buttons. One app serves every tenant; each tenant gets its own channel and webhook.
+Why: tracked items arrive as messages with Acknowledge and Resolve buttons, and every conversation gets a thread staff can reply in. One app serves every tenant. A clinic connects its **own** workspace with one click from the portal (Settings → Integrations → Slack → Connect): the install hands the runtime a bot token and an incoming webhook for the channel the clinic picks, both stored encrypted against the tenant, and nothing per tenant goes into `.env`. The steps below set up that one app.
 
-1. api.slack.com/apps → Create New App → From an app manifest → pick the workspace (yours for testing; later the clinic's, or invite them to a shared channel). Paste the manifest below. Create.
-2. Basic Information → App Credentials → copy **Signing Secret** as `SLACK_SIGNING_SECRET`.
-3. Install App → Install to Workspace → allow. Copy the **Bot User OAuth Token** as `SLACK_BOT_TOKEN` (used by the text-channels plan for staff replies).
-4. Incoming Webhooks → Add New Webhook to Workspace → choose the channel `#skincentrix-frontdesk` (create it first). Copy the webhook URL as `SKINCENTRIX_SLACK_WEBHOOK`. The tenant bundle references this variable by name.
-5. Interactivity is preset in the manifest to `https://api.spatalk.ca/slack/interactions`. It will show an error until the runtime is deployed; that is fine.
+1. api.slack.com/apps → Create New App → From an app manifest → pick your own workspace (the app is created in one workspace and installed into many). Paste the manifest below. Create.
+2. Basic Information → App Credentials → copy **Signing Secret** as `SLACK_SIGNING_SECRET`, **Client ID** as `SLACK_CLIENT_ID` and **Client Secret** as `SLACK_CLIENT_SECRET`. `META_TOKEN_ENCRYPTION_KEY` must also be set (section 9): it is what the stored tokens and webhooks are encrypted with.
+3. OAuth & Permissions → Redirect URLs must list `https://api.spatalk.ca/slack/callback` (the manifest presets it; check it is there and saved). This is the only address Slack will send an install back to.
+4. Manage Distribution → **Activate Public Distribution**. Without it, only the workspace the app was created in can install it, and a clinic's Connect button ends in Slack's "not authorized" page. The checklist asks for a description and an icon (Basic Information → Display Information); the app does not need to go into the Slack Marketplace, public distribution alone is enough for the Connect button.
+5. Interactivity and Events are preset in the manifest to `https://api.spatalk.ca/slack/interactions` and `/slack/events`. Both show an error until the runtime is deployed; that is fine.
+6. Test it with your own workspace exactly as a clinic would: open the portal, Settings → Integrations → Slack → Connect, pick a channel, allow. The card then reads "Connected as <workspace> · #<channel>". Then, in that channel, `/invite @Front Desk` so the bot can open threads there (an install authorises the webhook for the channel but does not add the bot to it; until it is invited, items still arrive through the webhook, without threads, and the log says so).
+
+What each clinic does: the same Connect click, in their workspace, on their Settings page, then the `/invite`. They can Disconnect from the same card, which revokes the token.
+
+Manual fallback (a clinic that cannot install apps in its workspace, or a channel we host for them): skip the Connect button and set two more lines instead. Install App → Install to Workspace → allow, and copy the **Bot User OAuth Token** as `SLACK_BOT_TOKEN`; Incoming Webhooks → Add New Webhook to Workspace → choose the channel (`#skincentrix-frontdesk`, created first) and copy the webhook URL as `SKINCENTRIX_SLACK_WEBHOOK`, which the tenant bundle references by name. A clinic that later connects from the portal stops using those two lines: the connected workspace replaces the bundle's `slack` destination and there is never a double post.
 
 Manifest:
 
@@ -151,6 +156,7 @@ Manifest:
   "display_information": { "name": "Front Desk", "description": "AI front desk: tracked items with acknowledge and resolve" },
   "features": { "bot_user": { "display_name": "Front Desk", "always_online": true } },
   "oauth_config": {
+    "redirect_urls": ["https://api.spatalk.ca/slack/callback"],
     "scopes": { "bot": ["incoming-webhook", "chat:write", "channels:history", "channels:read", "users:read"] }
   },
   "settings": {
@@ -246,7 +252,8 @@ Runtime: `runtime/.env` on the VPS (copy from `runtime/.env.example`). Portal: `
 | `GOOGLE_API_KEY`, `LLM_MODEL` | runtime, CI | step 6 | yes |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM` | runtime | step 7 | email only |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `MAIL_FROM` | portal | step 7 | email only |
-| `SLACK_SIGNING_SECRET`, `SLACK_BOT_TOKEN`, `SKINCENTRIX_SLACK_WEBHOOK` | runtime | step 8 | yes |
+| `SLACK_SIGNING_SECRET`, `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET` | runtime | step 8 | yes |
+| `SLACK_BOT_TOKEN`, `SKINCENTRIX_SLACK_WEBHOOK` | runtime | step 8, manual fallback only; a clinic that connected its workspace from the portal needs neither | no |
 | `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY` | runtime | step 1 | widget only |
 | `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_ENDPOINT`, `R2_BUCKET` | runtime (WAL-G) | step 1 | backups only |
 | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` | worker deploy | step 1 | SMS fallback only |
@@ -281,5 +288,6 @@ The complete variable list with the plan that introduces each one is in `docs/re
 - Forward their TELUS Business Connect main line to our local number on no-answer after four rings, and on busy. In TELUS Business Connect, under Incoming Call Information, choose **Incoming Caller ID**, not Dialed Number, so we see who is calling.
 - Tell us one extension or number that does **not** forward, for live transfer later.
 - Confirm the opening hours in `tenants/skincentrix/tenant.yaml` and the cancellation terms in `knowledge.md`.
-- Accept the Instagram tester invite and the Slack channel invite.
+- Accept the Instagram tester invite.
+- Connect their Slack: Settings → Integrations → Slack → Connect, pick the channel requests should land in, allow; then `/invite @Front Desk` in that channel. (Or, on the manual fallback, accept the invite to the channel we host.)
 - Sign off on the 30-day transcript retention and the recordings-off default, in writing.

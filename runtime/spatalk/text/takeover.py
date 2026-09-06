@@ -97,6 +97,24 @@ async def conversation_for_thread(
         )
 
 
+async def slack_token_for(ctx, conversation_id: uuid.UUID) -> str | None:
+    """The bot token to post in this conversation's thread with.
+
+    A workspace the tenant connected from the portal speaks with its own token (slack
+    one-click connect); None means the global ``SLACK_BOT_TOKEN``, exactly as before.
+    """
+    # Imported here, not at module level, so `social` may import `text` and not the other way.
+    from spatalk.social.slack_oauth import bot_token_for_tenant
+
+    async with ctx.sf() as s:
+        tenant_id = await s.scalar(
+            select(Conversation.tenant_id).where(Conversation.id == conversation_id)
+        )
+    if tenant_id is None:
+        return None
+    return await bot_token_for_tenant(ctx.sf, ctx.settings, tenant_id)
+
+
 async def mirror_to_thread(ctx, conversation_id: uuid.UUID, text: str, who: Who) -> None:
     """Put one side of the conversation into the Slack thread staff are reading.
 
@@ -110,7 +128,8 @@ async def mirror_to_thread(ctx, conversation_id: uuid.UUID, text: str, who: Who)
         return
     label = "Customer" if who == "customer" else "Assistant"
     try:
-        await post(thread[0], thread[1], f"{label}: {text}")
+        token = await slack_token_for(ctx, conversation_id)
+        await post(thread[0], thread[1], f"{label}: {text}", token=token)
     except Exception as e:  # noqa: BLE001  Slack must never break a customer conversation
         logger.warning("could not mirror {} message to slack: {}", who, e)
 
@@ -230,7 +249,8 @@ async def _post_note(ctx, conversation_id: uuid.UUID, note: str) -> None:
     if post is None or thread is None:
         return
     try:
-        await post(thread[0], thread[1], note)
+        token = await slack_token_for(ctx, conversation_id)
+        await post(thread[0], thread[1], note, token=token)
     except Exception as e:  # noqa: BLE001
         logger.warning("could not post a thread note: {}", e)
 

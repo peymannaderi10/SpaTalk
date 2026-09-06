@@ -28,10 +28,13 @@ from spatalk.db import Base
 
 
 class TenantIntegration(Base):
-    """One connected Meta account per tenant per provider, with its token encrypted.
+    """One connected account per tenant per provider, with its token encrypted.
 
-    ``external_id`` is the Instagram user id or the Facebook Page id: it is what a webhook
-    ``entry.id`` carries, so it is how an inbound event finds its tenant.
+    A Meta row is an Instagram account or a Facebook Page: ``external_id`` is what a webhook
+    ``entry.id`` carries, so it is how an inbound event finds its tenant. A Slack row
+    (onboarding roadmap, section 3) is a workspace the clinic installed the app in:
+    ``external_id`` is the team id, the token is the bot token, and the two nullable columns
+    at the end are the channel the install chose and its incoming webhook.
     """
 
     __tablename__ = "tenant_integrations"
@@ -41,7 +44,7 @@ class TenantIntegration(Base):
     )
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     tenant_id: Mapped[str] = mapped_column(ForeignKey("runtime.tenants.id"))
-    provider: Mapped[str] = mapped_column(String(16))  # instagram | messenger
+    provider: Mapped[str] = mapped_column(String(16))  # instagram | messenger | slack
     external_id: Mapped[str] = mapped_column(String(64))
     display_name: Mapped[str] = mapped_column(String(200))
     # Fernet ciphertext. The token itself never lands in a column, a log line or an email.
@@ -55,6 +58,12 @@ class TenantIntegration(Base):
     connected_by: Mapped[str] = mapped_column(String(200))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    # --- slack one-click connect (onboarding roadmap, section 3; migration 0014) ---
+    # The channel the workspace chose at install, and that channel's incoming-webhook URL.
+    # Whoever holds the URL can post to the channel, so it is Fernet ciphertext exactly like
+    # the token. Both null on a Meta row.
+    channel_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    webhook_url_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class MetaEvent(Base):

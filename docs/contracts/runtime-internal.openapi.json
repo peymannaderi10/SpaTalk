@@ -1563,7 +1563,7 @@
           "internal"
         ],
         "summary": "Tenant Integrations",
-        "description": "One row per provider, connected or not, so the page can draw both cards.",
+        "description": "One row per provider, connected or not, so the page can draw every card.",
         "operationId": "tenant_integrations_internal_tenants__tenant_id__integrations_get",
         "security": [
           {
@@ -1615,7 +1615,7 @@
           "internal"
         ],
         "summary": "Integration Connect Url",
-        "description": "The Meta authorisation URL, with a signed state carrying the tenant and `return_to`.\n\nThe state is what makes this safe to hand out: `/instagram/callback` will only store an\naccount against the tenant this key-holder named, and will only bounce the browser back\nto the address signed here. It is minted per click, because it is good for fifteen\nminutes and a settings page can sit open for longer than that.",
+        "description": "The provider's authorisation URL, with a signed state carrying the tenant and `return_to`.\n\nThe state is what makes this safe to hand out: `/instagram/callback` (or `/messenger/`,\n`/slack/`) will only store an account against the tenant this key-holder named, and will\nonly bounce the browser back to the address signed here. It is minted per click, because\nit is good for fifteen minutes and a settings page can sit open for longer than that.",
         "operationId": "integration_connect_url_internal_tenants__tenant_id__integrations__provider__connect_url_get",
         "security": [
           {
@@ -1704,7 +1704,7 @@
           "internal"
         ],
         "summary": "Disconnect Integration",
-        "description": "Disconnect: Meta stops sending, then the row and its token go.\n\nThe order matters. Unsubscribing needs the token, so it happens first; it is best\neffort, and a Meta that refuses does not trap a tenant in a connection they have asked\nto end. The answer says which of the two happened.",
+        "description": "Disconnect: the provider is told to stop, then the row and its token go.\n\nThe order matters. Meta's unsubscribe and Slack's `auth.revoke` both need the token, so\nthey happen first; each is best effort, and a provider that refuses does not trap a\ntenant in a connection they have asked to end. The answer says which of the two happened.",
         "operationId": "disconnect_integration_internal_tenants__tenant_id__integrations__provider__delete",
         "security": [
           {
@@ -2378,7 +2378,7 @@
           "configured"
         ],
         "title": "IntegrationOut",
-        "description": "What the portal may know about a connected Meta account.\n\nNever the token: not the plaintext, not the ciphertext, not its length. The portal has\nno use for it and no way to keep it as safely as the runtime does."
+        "description": "What the portal may know about a connected Meta account or Slack workspace.\n\nNever the token: not the plaintext, not the ciphertext, not its length. The portal has\nno use for it and no way to keep it as safely as the runtime does. For Slack the same\ngoes for the incoming-webhook URL and the channel id; `display_name` already names the\nchannel in words."
       },
       "IntegrationRemoved": {
         "properties": {
@@ -2402,7 +2402,7 @@
           "unsubscribed"
         ],
         "title": "IntegrationRemoved",
-        "description": "`disconnected` is the row; `unsubscribed` is whether Meta agreed to stop sending."
+        "description": "`disconnected` is the row; `unsubscribed` is whether the provider agreed to stop.\n\nFor a Meta account that is the webhook unsubscribe; for a Slack workspace it is Slack\nconfirming the bot token was revoked (`auth.revoke`). Both are best effort, and the row\ngoes either way, so the portal can say which of the two happened."
       },
       "ItemOut": {
         "properties": {

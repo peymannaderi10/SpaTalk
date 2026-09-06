@@ -1142,15 +1142,20 @@ async def select_messenger_page(request: Request, tenant_id: str, body: Messenge
 
 # --- social integrations, portal side (instagram plan, Task D4) ------------------------
 
-# The two providers the runtime has adapters for, in the order the portal draws its cards.
-SOCIAL_PROVIDERS = ("instagram", "messenger")
+# The providers the runtime has adapters for, in the order the portal draws its cards: the
+# two Meta surfaces and, since one-click connect (onboarding roadmap, section 3), Slack.
+INTEGRATION_PROVIDERS = ("instagram", "messenger", "slack")
+# The name the instagram plan gave the tuple, kept for anything that still imports it.
+SOCIAL_PROVIDERS = INTEGRATION_PROVIDERS
 
 
 class IntegrationOut(BaseModel):
-    """What the portal may know about a connected Meta account.
+    """What the portal may know about a connected Meta account or Slack workspace.
 
     Never the token: not the plaintext, not the ciphertext, not its length. The portal has
-    no use for it and no way to keep it as safely as the runtime does.
+    no use for it and no way to keep it as safely as the runtime does. For Slack the same
+    goes for the incoming-webhook URL and the channel id; `display_name` already names the
+    channel in words.
     """
 
     provider: str
@@ -1175,7 +1180,12 @@ class ConnectUrlOut(BaseModel):
 
 
 class IntegrationRemoved(BaseModel):
-    """`disconnected` is the row; `unsubscribed` is whether Meta agreed to stop sending."""
+    """`disconnected` is the row; `unsubscribed` is whether the provider agreed to stop.
+
+    For a Meta account that is the webhook unsubscribe; for a Slack workspace it is Slack
+    confirming the bot token was revoked (`auth.revoke`). Both are best effort, and the row
+    goes either way, so the portal can say which of the two happened.
+    """
 
     provider: str
     disconnected: bool
@@ -1183,7 +1193,7 @@ class IntegrationRemoved(BaseModel):
 
 
 def _provider(provider: str) -> str:
-    if provider not in SOCIAL_PROVIDERS:
+    if provider not in INTEGRATION_PROVIDERS:
         raise HTTPException(status_code=404, detail=f"unknown provider {provider}")
     return provider
 
@@ -1191,18 +1201,20 @@ def _provider(provider: str) -> str:
 def _provider_configured(settings, provider: str) -> bool:
     if provider == "instagram":
         return bool(settings.instagram_app_id and settings.instagram_app_secret)
+    if provider == "slack":
+        return bool(settings.slack_client_id and settings.slack_client_secret)
     return bool(settings.facebook_app_id and settings.facebook_app_secret)
 
 
 @router.get("/tenants/{tenant_id}/integrations", response_model=list[IntegrationOut])
 async def tenant_integrations(request: Request, tenant_id: str):
-    """One row per provider, connected or not, so the page can draw both cards."""
+    """One row per provider, connected or not, so the page can draw every card."""
     from spatalk.social.meta_oauth import integration_for
 
     ctx = _ctx(request)
     await _tenant_config(ctx, tenant_id)
     out: list[IntegrationOut] = []
-    for provider in SOCIAL_PROVIDERS:
+    for provider in INTEGRATION_PROVIDERS:
         row = await integration_for(ctx.sf, tenant_id, provider)
         configured = _provider_configured(ctx.settings, provider)
         if row is None:
@@ -1235,12 +1247,12 @@ async def integration_connect_url(
     return_to: str | None = None,
     x_actor: ActorHeader = None,
 ):
-    """The Meta authorisation URL, with a signed state carrying the tenant and `return_to`.
+    """The provider's authorisation URL, with a signed state carrying the tenant and `return_to`.
 
-    The state is what makes this safe to hand out: `/instagram/callback` will only store an
-    account against the tenant this key-holder named, and will only bounce the browser back
-    to the address signed here. It is minted per click, because it is good for fifteen
-    minutes and a settings page can sit open for longer than that.
+    The state is what makes this safe to hand out: `/instagram/callback` (or `/messenger/`,
+    `/slack/`) will only store an account against the tenant this key-holder named, and will
+    only bounce the browser back to the address signed here. It is minted per click, because
+    it is good for fifteen minutes and a settings page can sit open for longer than that.
     """
     from spatalk.social.meta_oauth import (
         STATE_MAX_AGE,
@@ -1248,6 +1260,7 @@ async def integration_connect_url(
         build_page_start_url,
         sign_state,
     )
+    from spatalk.social.slack_oauth import build_slack_start_url
 
     ctx = _ctx(request)
     await _tenant_config(ctx, tenant_id)
@@ -1259,11 +1272,12 @@ async def integration_connect_url(
             status_code=409, detail=f"{provider} is not configured on this service"
         )
     state = sign_state(ctx.settings.secret_key, tenant_id, return_to)
-    url = (
-        build_instagram_start_url(ctx.settings, state)
-        if provider == "instagram"
-        else build_page_start_url(ctx.settings, state)
-    )
+    if provider == "instagram":
+        url = build_instagram_start_url(ctx.settings, state)
+    elif provider == "slack":
+        url = build_slack_start_url(ctx.settings, state)
+    else:
+        url = build_page_start_url(ctx.settings, state)
     await write_audit(
         ctx.sf, portal_actor(x_actor), "integration_connect_started", "tenant", tenant_id
     )
@@ -1274,17 +1288,18 @@ async def integration_connect_url(
 async def disconnect_integration(
     request: Request, tenant_id: str, provider: str, x_actor: ActorHeader = None
 ):
-    """Disconnect: Meta stops sending, then the row and its token go.
+    """Disconnect: the provider is told to stop, then the row and its token go.
 
-    The order matters. Unsubscribing needs the token, so it happens first; it is best
-    effort, and a Meta that refuses does not trap a tenant in a connection they have asked
-    to end. The answer says which of the two happened.
+    The order matters. Meta's unsubscribe and Slack's `auth.revoke` both need the token, so
+    they happen first; each is best effort, and a provider that refuses does not trap a
+    tenant in a connection they have asked to end. The answer says which of the two happened.
     """
     from spatalk.social.meta_oauth import (
         delete_integration,
         integration_for,
         unsubscribe_integration,
     )
+    from spatalk.social.slack_oauth import revoke_integration
 
     ctx = _ctx(request)
     await _tenant_config(ctx, tenant_id)
@@ -1292,9 +1307,11 @@ async def disconnect_integration(
     row = await integration_for(ctx.sf, tenant_id, provider)
     if row is None:
         raise HTTPException(status_code=404, detail=f"{tenant_id} has no {provider} connection")
-    unsubscribed = await unsubscribe_integration(
-        ctx.settings, row, getattr(ctx, "graph", None)
-    )
+    graph = getattr(ctx, "graph", None)
+    if provider == "slack":
+        unsubscribed = await revoke_integration(ctx.settings, row, graph)
+    else:
+        unsubscribed = await unsubscribe_integration(ctx.settings, row, graph)
     disconnected = await delete_integration(ctx.sf, tenant_id, provider)
     await write_audit(ctx.sf, portal_actor(x_actor), "integration_disconnect", "tenant", tenant_id)
     return IntegrationRemoved(
