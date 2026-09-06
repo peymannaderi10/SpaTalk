@@ -68,15 +68,7 @@ def test_prompt_files_questions_about_the_callers_own_appointment():
     assert "no access to the appointment calendar" in p
     assert "never answer from memory" in p
     assert "never say you cannot help" in p
-    assert "capture_request (kind question)" in p
-
-
-def test_prompt_makes_booking_a_short_exchange_that_collects_a_name():
-    from spatalk.brain.prompt import build_system_prompt
-    p = build_system_prompt(_cfg(), "voice", NOW).lower()
-    assert "when they want to book" in p
-    assert "stop describing" in p and "first name" in p
-    assert "never file a booking, callback or reschedule request without a first name" in p
+    assert "start_request (kind question)" in p
 
 
 def test_the_only_thing_that_changes_between_calls_is_at_the_end_of_the_prompt():
@@ -103,3 +95,11 @@ def test_a_greeting_is_not_a_question_and_tools_wait_to_be_asked():
     from spatalk.brain.flow import Slots, Step, step_tools
     qa = [t.name for t in step_tools(Step.QA, Slots(), _cfg(), "voice")]
     assert "send_link" not in qa and "file_request" not in qa
+
+
+def test_prompt_hands_a_request_to_the_system():
+    from spatalk.brain.prompt import build_system_prompt
+    p = build_system_prompt(_cfg(), "voice", NOW).lower()
+    assert "call start_request and the system asks the questions" in p
+    assert "never say when the team will call, text or reach out" in p
+    assert "when they want to book" not in p and "first name" not in p

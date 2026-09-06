@@ -19,27 +19,6 @@ def _cfg():
     return load_bundle(Path(__file__).resolve().parents[1] / "tenants" / "skincentrix")
 
 
-def test_a_new_caller_is_asked_before_the_offers_are_recited():
-    from spatalk.brain.prompt import build_system_prompt
-
-    for channel in ("voice", "sms", "chat"):
-        p = build_system_prompt(_cfg(), channel, NOW).lower()
-        assert "whether they would like to hear the clinic's new-client offers" in p
-        assert "only if they say yes" in p
-        assert "in the order the facts list them" in p
-
-
-def test_a_suggestion_is_not_treated_as_the_callers_choice():
-    from spatalk.brain.prompt import build_system_prompt
-
-    p = build_system_prompt(_cfg(), "voice", NOW).lower()
-    booking = p.split("when they want to book", 1)[1]
-    assert "hear another option" in booking
-    assert "never assume a suggestion is their choice" in booking
-    assert "do not ask for their name until they have chosen" in booking
-    assert booking.index("hear another option") < booking.index("first name")
-
-
 def test_the_knowledge_file_lists_the_new_client_offers_with_the_credit_first():
     cfg = _cfg()
     assert "## New-client offers" in cfg.knowledge
@@ -59,18 +38,6 @@ def test_the_offer_wording_stays_out_of_the_prompt():
 
 
 # --- after the call from the 437 number, 2026-09-03 20:38 ----------------------------------
-
-
-def test_a_vague_book_request_is_asked_what_to_book():
-    """The caller heard the offers and said "I want to book an appointment"; Ava went straight to
-    the name. Nothing had been chosen."""
-    from spatalk.brain.prompt import build_system_prompt
-
-    p = build_system_prompt(_cfg(), "voice", NOW).lower()
-    booking = p.split("when they want to book", 1)[1]
-    assert "have not named a treatment, a concern or one of the offers" in booking
-    assert "a treatment you suggested earlier is not their choice" in booking
-    assert booking.index("have not named a treatment") < booking.index("first name")
 
 
 def test_the_preferred_day_is_never_when_the_team_will_call():
@@ -104,22 +71,15 @@ def test_every_booking_link_is_the_plain_jane_address():
         assert service.booking_url == "https://skincentrix.janeapp.com/", service.id
 
 
-def test_the_name_is_asked_the_way_the_channel_needs():
+def test_the_static_prompt_no_longer_carries_the_booking_order():
+    """The order and the questions belong to the slot engine (slot engine design, §6.6)."""
     from spatalk.brain.prompt import build_system_prompt
-    voice = build_system_prompt(_cfg(), "voice", NOW).lower()
-    sms = build_system_prompt(_cfg(), "sms", NOW).lower()
-    chat = build_system_prompt(_cfg(), "chat", NOW).lower()
-    assert "number they are calling from is the best one" in voice
-    assert "number they are texting from is already known" in sms and "calling from" not in sms
-    assert "best number to reach them" in chat
-    # The refusal is structural; the prompt tells the model what to do when it hits it.
-    for p in (voice, sms, chat):
-        assert "the system refuses one and asks for the name itself" in p
 
-
-def test_a_kind_of_treatment_or_an_unsure_caller_gets_two_ways_forward():
-    from spatalk.brain.prompt import build_system_prompt
     for channel in ("voice", "sms", "chat"):
-        p = build_system_prompt(_cfg(), channel, NOW).lower()
-        assert "a kind of treatment rather than one in particular" in p
-        assert "recommend that visit and file it" in p
+        # The instructions only: the facts section keeps its "New-client offers" heading.
+        p = build_system_prompt(_cfg(), channel, NOW).split("HOURS:")[0].lower()
+        assert "when they want to book" not in p
+        assert "ask for their first name" not in p
+        assert "new-client offers" not in p
+        assert "the system asks the questions" in p
+        assert "never ask for a name or a number yourself" in p

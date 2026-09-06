@@ -12,7 +12,8 @@ from typing import Literal
 from pipecat.adapters.schemas.function_schema import FunctionSchema
 from pydantic import BaseModel, Field
 
-from spatalk.brain.requests import PreferredWindow
+from spatalk.brain.ports import ItemDraft
+from spatalk.brain.requests import ContactInfo, PreferredWindow
 from spatalk.brain.resolve import (
     first_name_of,
     match_practitioner,
@@ -487,3 +488,76 @@ def _join(names: list[str]) -> str:
     if len(names) == 1:
         return names[0]
     return ", ".join(names[:-1]) + " or " + names[-1]
+
+
+# --- the item, and the model's one-paragraph brief per step -------------------------------
+
+STEP_MARKER = "[step]"
+
+ITEM_TYPE = {
+    "new_booking": "new_booking",
+    "callback": "callback",
+    "reschedule": "reschedule",
+    "cancel": "cancel",
+    "question": "question",
+    "clinical": "escalation_clinical",
+}
+
+
+def draft_from(slots: Slots, cfg: TenantConfig, health_context: bool = False) -> ItemDraft:
+    """The only way a request becomes an item: from the record, never from a tool argument."""
+    return ItemDraft(
+        type=ITEM_TYPE[slots.flow or "question"],
+        urgency="urgent" if slots.flow == "clinical" else "normal",
+        service_id=slots.service_id,
+        contact=ContactInfo(name=slots.first_name, phone=slots.phone),
+        preferred_window=slots.preferred_window or PreferredWindow(),
+        health_context=health_context,
+        returning_client=slots.returning_client,
+        practitioner=slots.practitioner,
+        concern=None,
+    )
+
+
+def step_message(step: Step, slots: Slots, cfg: TenantConfig, channel: str) -> str:
+    """One short brief for the model: what is known, what is open, which tool takes the
+    answer. It replaces the booking bullets that used to sit in the middle of the prompt."""
+    if step == Step.QA:
+        return (
+            f"{STEP_MARKER} No request is open. Answer questions from the facts. The moment the "
+            "caller wants to book, be called back, reschedule, cancel, or asks something the "
+            "facts do not answer, call start_request; the system asks the questions from there."
+        )
+    known = []
+    if slots.returning_client is not None:
+        known.append("returning client" if slots.returning_client else "new client")
+    if slots.practitioner:
+        who = "anyone" if slots.practitioner == "any" else slots.practitioner
+        known.append("wants to see " + who)
+    if slots.service_id:
+        known.append("treatment " + _service_name(cfg, slots.service_id))
+    if slots.first_name:
+        known.append("first name " + slots.first_name)
+    known_text = ("Known: " + ", ".join(known) + ". ") if known else ""
+    if step == Step.COMPLETE:
+        return (
+            f"{STEP_MARKER} {known_text}Everything is collected. Call file_request now. "
+            "Say nothing about the result."
+        )
+    if slots.pending is not None and slots.pending.kind == "offers":
+        return (
+            f"{STEP_MARKER} {known_text}The caller named a kind of treatment. The system just "
+            "offered two or three options or a consultation. If they want options, name two or "
+            "three from the facts with prices in one breath and then wait; when they choose one, "
+            "call choose_service."
+        )
+    offered = {t.name for t in step_tools(step, slots, cfg, channel)}
+    order = (
+        "answer", "choose_practitioner", "choose_service", "give_name", "give_phone",
+        "choose_window", "file_request",
+    )
+    tool = next((n for n in order if n in offered), "answer")
+    return (
+        f"{STEP_MARKER} {known_text}The system has just asked the caller a question. Put their "
+        f"answer in {tool}. Do not ask a question yourself; one short acknowledgement at most."
+    )

@@ -95,3 +95,12 @@ def test_the_notes_never_reach_a_channel():
                 f"{path} imports the notes drafting module; nothing that talks to a "
                 "customer may"
             )
+
+
+def test_item_drafts_in_the_request_path_come_only_from_draft_from():
+    """An item is built from the slot record, never in a driver (slot engine design, §3.2)."""
+    from pathlib import Path as _Path
+
+    for rel in ("spatalk/brain/driver.py", "spatalk/voice/handlers.py", "spatalk/voice/processors.py"):
+        src = (_Path(RUNTIME) / rel).read_text(encoding="utf-8")
+        assert "ItemDraft(" not in src, rel
