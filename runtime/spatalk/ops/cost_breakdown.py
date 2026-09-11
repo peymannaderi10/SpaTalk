@@ -35,17 +35,14 @@ from sqlalchemy import func, select
 from spatalk import rates
 from spatalk.models import Conversation, UsageEvent
 
-UNIT_COLUMNS: tuple[str, ...] = (
-    "llm_input_tokens",
-    "llm_cached_tokens",
-    "llm_output_tokens",
-    "tts_chars",
-)
-
 
 @dataclass(frozen=True)
 class CallCost:
-    """One call's metered usage and what it cost, or the window's total when `ref` is None."""
+    """One call's metered usage and what it cost.
+
+    The same shape carries the window's total, with `conversation_id` and `started_at` unset,
+    so the report prints one renderer over both.
+    """
 
     conversation_id: uuidlib.UUID | None
     started_at: datetime | None
