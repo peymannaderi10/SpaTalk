@@ -139,3 +139,39 @@ def test_a_fragment_with_no_content_words_is_not_a_turn():
         "Seizure.",
     ):
         assert not is_fragment(text), text
+
+
+def test_okay_is_a_fragment_except_where_it_answers_a_yes_no_question():
+    """"Okay." is on the founder's filler list for item 3 and is also how a caller says yes to
+    "Would you like to hear our new-client offers?". So it stands down at a step whose question
+    takes a yes or a no, the way the complaint and payment lexicons stand down at the name
+    step. Everywhere else it is a caller thinking aloud."""
+    from spatalk.brain.rules import is_fragment
+
+    for text in ("Okay.", "ok", "um, okay"):
+        assert is_fragment(text), text
+        assert not is_fragment(text, yes_no_step=True), text
+    # Standing down is only for that one word: a hesitation is a hesitation at every step.
+    for text in ("Um.", "Well.", "What was the, uh-"):
+        assert is_fragment(text, yes_no_step=True), text
+
+
+def test_digits_are_content_so_a_phone_number_is_always_a_turn():
+    """A number is the answer to "What's the best number to reach you on?" and it carries no
+    letters at all. The first cut of `is_fragment` stripped digits along with the punctuation,
+    so `re.sub` left no words and every phone number was held back as a hesitation. Caught in
+    review before a live call; the founder would have given his number and heard nothing."""
+    from spatalk.brain.rules import is_fragment
+
+    for text in (
+        "416 555 0199",
+        "4165550199",
+        "416-555-0199",
+        "it is 905 703 7546",
+        "Um, 416 555 0199",
+        "99",
+    ):
+        assert not is_fragment(text), text
+        assert not is_fragment(text, yes_no_step=True), text
+    # Nothing but punctuation is still nothing.
+    assert is_fragment("...") and is_fragment("") and is_fragment("   ")

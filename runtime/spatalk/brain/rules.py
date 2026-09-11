@@ -83,6 +83,11 @@ BARE_ANSWER_LEAD = frozenset({
 # nudge; "hm" and "hmm" stay, because those are the thinking-aloud ones. And "pardon",
 # "sorry", "again" and a "what" with a question mark are a caller asking for the question
 # again, which is something said and deserves an answer.
+# "Okay." is on the founder's filler list for this rule and is also how a caller says yes to
+# "Would you like to hear our new-client offers?". So it stands down at a step whose question
+# takes a yes or a no, the way the complaint and payment lexicons stand down at the name step.
+YES_NO_FILLERS = frozenset({"okay", "ok"})
+
 NO_CONTENT_WORDS = frozenset({
     "um", "umm", "ummm", "uhm", "uh", "uhh", "uhhh", "er", "err", "erm", "ah", "ahh", "oh",
     "ooh", "hm", "hmm", "eh", "well", "so", "like", "okay", "ok", "actually", "just",
@@ -136,18 +141,23 @@ def _is_bare_answer(text: str) -> bool:
     return 0 < len(words) <= 2
 
 
-def is_fragment(text: str) -> bool:
+def is_fragment(text: str, yes_no_step: bool = False) -> bool:
     """True when an utterance holds no word that carries content (see NO_CONTENT_WORDS).
 
     Pure text, no tenant config and no model. A question mark means the caller asked
-    something, so it is never a fragment however few content words it has.
+    something, so it is never a fragment however few content words it has. `yes_no_step` says
+    the runtime's open question takes a yes or a no, which is the one place `YES_NO_FILLERS`
+    carries content.
     """
     if "?" in (text or ""):
         return False
-    words = re.sub(r"[^A-Za-z' ]+", " ", text or "").split()
+    # Digits are content: a phone number is the answer to the number question and carries no
+    # letters at all, so stripping them here would hold every number back as a hesitation.
+    words = re.sub(r"[^A-Za-z0-9' ]+", " ", text or "").split()
     if not words:
         return True
-    return all(w.lower() in NO_CONTENT_WORDS for w in words)
+    vocabulary = NO_CONTENT_WORDS - YES_NO_FILLERS if yes_no_step else NO_CONTENT_WORDS
+    return all(w.lower() in vocabulary for w in words)
 
 
 def rules_gate(

@@ -35,7 +35,7 @@ from spatalk.brain.audio_tags import drop_unknown_tags
 from spatalk.brain.guard import guard
 from spatalk.brain.outcomes import Refused
 from spatalk.brain.renderer import render, render_script
-from spatalk.brain.flow import Slots, Step, draft_from, next_step, open_flow
+from spatalk.brain.flow import Slots, Step, draft_from, next_step, open_flow, step_tools
 from spatalk.brain.requests import EscalateRequest
 from spatalk.brain.rules import health_context_mentioned, is_fragment, rules_gate
 from spatalk.voice.echo import scrub_echo
@@ -99,7 +99,7 @@ class RulesGateProcessor(FrameProcessor):
         rather than dropped, and put in front of the next utterance that does carry content,
         so a word the caller meant is never lost.
         """
-        if is_fragment(text):
+        if is_fragment(text, yes_no_step=self._yes_no_step()):
             self._held_fragment = f"{self._held_fragment} {text.strip()}".strip()
             logger.info("fragment held, not a turn: {!r}", text)
             return None
@@ -107,6 +107,16 @@ class RulesGateProcessor(FrameProcessor):
             text = f"{self._held_fragment} {text.strip()}".strip()
             self._held_fragment = ""
         return text
+
+    def _yes_no_step(self) -> bool:
+        """Does the runtime's open question take a yes or a no? Asked of `step_tools` rather
+        than answered from a list here, so the gate can never disagree with the flow."""
+        slots = self._s.slots
+        if slots.pending is not None:
+            return True
+        step = next_step(slots, self._s.cfg, self._s.ref.channel)
+        tools = step_tools(step, slots, self._s.cfg, self._s.ref.channel)
+        return any(t.name == "answer" for t in tools)
 
     def _heard_while_assistant_spoke(self) -> bool:
         if self._bot_speaking:

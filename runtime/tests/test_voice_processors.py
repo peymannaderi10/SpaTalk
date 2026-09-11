@@ -575,3 +575,36 @@ async def test_a_fragment_is_not_a_turn_and_its_words_are_kept(fixed_clock):
         TranscriptionFrame(text="No.", user_id="u", timestamp="t"), FrameDirection.DOWNSTREAM
     )
     assert [f.text for f in down if isinstance(f, TranscriptionFrame)] == ["No."]
+
+
+async def test_okay_at_a_yes_no_step_is_an_answer_not_a_fragment(fixed_clock):
+    """The gate asks the flow which steps take a yes or a no, so it can never disagree with
+    `step_tools`. At the offers question "Okay." is an answer and goes through; at the
+    treatment question it is a hesitation and is held."""
+    from pipecat.processors.frame_processor import FrameDirection
+    from spatalk.brain.flow import Slots
+    from spatalk.voice.processors import RulesGateProcessor
+
+    session, _ = _session(fixed_clock)
+    down = []
+
+    async def collect(frame, direction=FrameDirection.DOWNSTREAM):
+        down.append(frame)
+
+    # "Would you like to hear our new-client offers?" is open.
+    session.slots = Slots(flow="new_booking", returning_client=False)
+    gate = RulesGateProcessor(session)
+    gate.push_frame = collect
+    await gate.process_frame(
+        TranscriptionFrame(text="Okay.", user_id="u", timestamp="t"), FrameDirection.DOWNSTREAM
+    )
+    assert [f.text for f in down if isinstance(f, TranscriptionFrame)] == ["Okay."]
+    # "What did you have in mind?" is open: nothing there takes a yes or a no.
+    down.clear()
+    session.slots = Slots(flow="new_booking", returning_client=False, offers_done=True)
+    gate2 = RulesGateProcessor(session)
+    gate2.push_frame = collect
+    await gate2.process_frame(
+        TranscriptionFrame(text="Okay.", user_id="u", timestamp="t"), FrameDirection.DOWNSTREAM
+    )
+    assert down == []
