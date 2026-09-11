@@ -224,6 +224,190 @@ async def test_a_tool_result_does_not_repeat_the_question_just_asked(fixed_clock
     assert session.slots.service_id == "mesojet_facial"
 
 
+def _one_slot_short_booking():
+    """The founder's record at 15:56:02, one answer short of complete (14ea2579)."""
+    from spatalk.brain.flow import Slots
+    from spatalk.brain.requests import PreferredWindow
+
+    return Slots(
+        flow="new_booking", returning_client=False, offers_done=True, service_id="mesojet_facial",
+        practitioner="any", first_name="Dana", phone="+19055550101", phone_confirmed=True,
+        preferred_window=PreferredWindow(part_of_day="afternoon"),
+    )
+
+
+async def test_the_captured_line_is_followed_by_the_tenants_link_offer(fixed_clock):
+    """Founder call 14ea2579, 2026-09-11 15:56:02.950. The route question was asked in front
+    of the ledger and talked over; the booking never became an item. The filing happens on
+    the turn the last slot lands, and the link is put after it as an extra."""
+    session, llm, Params, pushed, _queued, results, ledger = _world(
+        fixed_clock, _one_slot_short_booking()
+    )
+    cfg = session.cfg
+    await llm.registered["answer"](Params("answer", {"value": "no"}))
+    assert _said(pushed) == [cfg.scripts.captured_booking, cfg.scripts.link_offer]
+    assert session.slots.filed is True
+    assert session.slots.flow == "new_booking"
+    assert session.receipts == [f"item:{ledger.items[0].id}"]
+    assert session.band == 2
+    assert session.runtime_asked_this_turn is True
+    assert results[0][1].run_llm is False
+
+
+async def test_the_link_offer_answer_sends_the_link_and_files_nothing_more(fixed_clock):
+    session, llm, Params, pushed, _queued, _results, ledger = _world(
+        fixed_clock, _one_slot_short_booking()
+    )
+    await llm.registered["answer"](Params("answer", {"value": "no"}))
+    await llm.registered["answer"](Params("answer", {"value": "yes"}))
+    assert len(ledger.items) == 1
+    assert len(session.caps._sms.sent) == 1
+    assert _said(pushed)[-1] == session.cfg.scripts.link_sent.format(
+        service="MesoJet and Sound Therapy facial"
+    )
+    assert session.slots.flow is None
+
+
+def _the_1556_booking():
+    """The founder's record at 15:56:17, one answer short of complete (14ea2579)."""
+    from spatalk.brain.flow import Slots
+    from spatalk.brain.requests import PreferredWindow
+
+    return Slots(
+        flow="new_booking", returning_client=False, offers_done=True, service_id="mesojet_facial",
+        practitioner="any", first_name="Payman", phone="+19055550101", phone_confirmed=True,
+        preferred_window=PreferredWindow(part_of_day="afternoon"),
+    )
+
+
+async def test_a_clinical_escalation_keeps_the_call_open_and_parks_the_booking(fixed_clock):
+    """Founder call 14ea2579, 2026-09-11 15:56:30.765. `escalate {'reason':'clinical'}` for a
+    pre-treatment question queued an EndFrame 38 ms later and the carrier cut the leg at
+    15:56:39.742, mid-"is there anything else I can help with?"."""
+    session, llm, Params, pushed, queued, _results, ledger = _world(
+        fixed_clock, _the_1556_booking()
+    )
+    await llm.registered["escalate"](Params("escalate", {"reason": "clinical"}))
+    assert queued == [], "a clinical escalation queued an EndFrame"
+    assert session.ended is False
+    assert ledger.items == []
+    assert _said(pushed) == [session.cfg.scripts.clinical_offer]
+    assert session.slots.flow == "clinical"
+    assert session.slots.parked.service_id == "mesojet_facial"
+    assert session.runtime_asked_this_turn is True
+    assert session.band == 3
+
+
+async def test_saying_yes_to_the_clinical_offer_files_the_item_and_gives_the_booking_back(fixed_clock):
+    session, llm, Params, pushed, queued, _results, ledger = _world(
+        fixed_clock, _the_1556_booking()
+    )
+    await llm.registered["escalate"](Params("escalate", {"reason": "clinical"}))
+    await llm.registered["answer"](Params("answer", {"value": "yes"}))
+    assert ledger.items[0].type == "escalation_clinical"
+    assert ledger.items[0].urgency == "urgent"
+    assert ledger.items[0].contact.name == "Payman"
+    assert _said(pushed)[-1] == session.cfg.scripts.clinical
+    assert queued == []
+    assert session.ended is False
+    assert session.slots.flow == "new_booking"
+    assert session.slots.service_id == "mesojet_facial"
+    assert session.slots.parked is None
+    assert session.runtime_asked_this_turn is True
+
+
+async def test_a_model_called_emergency_escalation_still_ends_the_call(fixed_clock):
+    from pipecat.frames.frames import EndFrame
+
+    session, llm, Params, pushed, queued, _results, ledger = _world(fixed_clock)
+    await llm.registered["escalate"](Params("escalate", {"reason": "emergency"}))
+    assert isinstance(queued[-1], EndFrame)
+    assert session.ended is True
+    assert ledger.items[0].type == "escalation_emergency"
+    assert "911" in _said(pushed)[0]
+
+
+async def test_a_model_called_complaint_escalation_leaves_the_line_open(fixed_clock):
+    session, llm, Params, pushed, queued, _results, ledger = _world(fixed_clock)
+    await llm.registered["escalate"](Params("escalate", {"reason": "complaint"}))
+    assert queued == []
+    assert session.ended is False
+    assert ledger.items[0].type == "escalation_complaint"
+    assert _said(pushed) == [session.cfg.scripts.complaint]
+
+
+async def test_a_slot_recorded_on_a_question_turn_hands_the_turn_back_once(fixed_clock):
+    """Founder call 14ea2579, 2026-09-11 15:55:00.682 to 15:55:09.081. The caller asked "How
+    much does it cost?"; the model recorded the treatment it had inferred two turns earlier
+    and the runtime spoke `ask_practitioner` 11 ms later. The price took three turns and
+    8.4 s to arrive. The write stands; the turn goes back so the question gets answered."""
+    from spatalk.brain.flow import Slots
+    from spatalk.voice.frames import ToolTurnDoneFrame
+
+    slots = Slots(flow="new_booking", returning_client=False, offers_done=True)
+    session, llm, Params, pushed, _queued, results, _ledger = _world(fixed_clock, slots)
+    session.caller_said = "How much does it cost?"
+    session.caller_asked = True
+    await llm.registered["choose_service"](
+        Params("choose_service", {"said": "MesoJet and Sound Therapy facial"})
+    )
+    assert session.slots.service_id == "mesojet_facial", "the write did not survive"
+    assert _said(pushed) == [], "ask_practitioner was spoken over the caller's question"
+    assert session.runtime_asked_this_turn is False
+    assert results[0][1].run_llm is True
+    assert "answer_first" in results[0][0]
+    assert "choose_practitioner" in results[0][0]["answer_first"]
+    done = [f for f in pushed if isinstance(f, ToolTurnDoneFrame)]
+    assert done and done[-1].handed_back is True
+    assert session.signals.counts()["model_rerun"] == 1
+
+
+async def test_the_hand_back_is_spent_once_per_caller_turn(fixed_clock):
+    from spatalk.brain.flow import Slots
+
+    slots = Slots(flow="new_booking", returning_client=False, offers_done=True)
+    session, llm, Params, pushed, _queued, results, _ledger = _world(fixed_clock, slots)
+    session.caller_said = "How much does it cost?"
+    session.caller_asked = True
+    await llm.registered["choose_service"](
+        Params("choose_service", {"said": "MesoJet and Sound Therapy facial"})
+    )
+    spoken_before = _said(pushed)
+    await llm.registered["choose_practitioner"](Params("choose_practitioner", {"said": "anyone"}))
+    assert results[-1][1].run_llm is False
+    assert "answer_first" not in results[-1][0]
+    assert _said(pushed) == spoken_before
+
+
+async def test_an_answer_with_no_question_in_it_still_costs_one_model_call(fixed_clock):
+    """The no-regression pin on today's one-call-per-turn path."""
+    from spatalk.brain.flow import Slots
+
+    slots = Slots(flow="new_booking", returning_client=False, offers_done=True)
+    session, llm, Params, pushed, _queued, results, _ledger = _world(fixed_clock, slots)
+    session.caller_said = "the mesojet one"
+    session.caller_asked = False
+    await llm.registered["choose_service"](Params("choose_service", {"said": "mesojet facial"}))
+    assert results[0][1].run_llm is False
+    assert "answer_first" not in results[0][0]
+    assert _said(pushed) == []
+
+
+async def test_a_confirmation_the_runtime_owes_beats_the_hand_back(fixed_clock):
+    """Fixed wording is still law, and a `Pending` never buys a model turn."""
+    from spatalk.brain.flow import Slots
+
+    session, llm, Params, pushed, _queued, results, _ledger = _world(
+        fixed_clock, Slots(flow="new_booking", returning_client=True)
+    )
+    session.caller_said = "How much does it cost?"
+    session.caller_asked = True
+    await llm.registered["choose_practitioner"](Params("choose_practitioner", {"said": "Ellen"}))
+    assert _said(pushed) == [session.cfg.scripts.confirm_match.format(value="Helen")]
+    assert results[0][1].run_llm is False
+    assert "answer_first" not in results[0][0]
+
+
 async def test_the_receipt_is_recorded_before_the_outcome_is_spoken(fixed_clock):
     """The order is the honest one: the ledger answers, the receipt is written, then the
     sentence that asserts it goes out. A ledger that returns nothing gets no receipt and the

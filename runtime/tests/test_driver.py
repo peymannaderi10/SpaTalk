@@ -176,17 +176,156 @@ async def test_volunteered_health_context_flags_item_and_proceeds(fixed_clock):
 
 
 async def test_booking_link_and_end(fixed_clock):
+    """MOVED 2026-09-11: the record is filed before the link is put, so the `answer yes` that
+    sends the link now lands on a record with `filed=True` rather than on the old route step.
+    What the case pins — the link goes to the caller's number, then the goodbye — is intact."""
     from spatalk.brain.driver import LLMResponse, ToolCall
     from spatalk.brain.flow import Slots
     from spatalk.brain.requests import PreferredWindow
     brain, ref, ledger, sms, _ = _world(fixed_clock, [
         LLMResponse(text=None, tool_calls=[ToolCall("answer", {"value": "yes"})]),
         LLMResponse(text=None, tool_calls=[ToolCall("end_conversation", {})])], sms_number="+18885550100")
-    # Every slot filled on a call with an SMS number: the route question is open.
+    # Filed on the call with an SMS number: the link offer is the one thing left.
     slots = Slots(flow="new_booking", returning_client=True, practitioner="any", service_id="facial",
                   first_name="Dana", phone="+19055550101", phone_confirmed=True,
-                  preferred_window=PreferredWindow(), team_note_asked=True)
+                  preferred_window=PreferredWindow(), team_note_asked=True, filed=True)
     r = await brain.turn(ref, [], "Text me the link", slots)
     assert r.outcomes[0].kind == "link_sent" and sms.sent[0][1] == "+19055550101"
     r2 = await brain.turn(ref, [], "That's all, thanks", r.slots)
     assert r2.ended and r2.reply.startswith("Thanks for calling")
+
+
+def _one_slot_short_booking():
+    """The founder's record at 15:56:02, one answer short of complete (14ea2579)."""
+    from spatalk.brain.flow import Slots
+    from spatalk.brain.requests import PreferredWindow
+
+    return Slots(
+        flow="new_booking", returning_client=False, offers_done=True, service_id="mesojet_facial",
+        practitioner="any", first_name="Dana", phone="+19055550101", phone_confirmed=True,
+        preferred_window=PreferredWindow(part_of_day="afternoon"),
+    )
+
+
+async def test_the_booking_is_filed_before_the_link_is_offered(fixed_clock):
+    """Founder call 14ea2579, 2026-09-11 15:56:02.948. The last slot landed and the route
+    question went out instead of the filing; the caller talked over it twice and the ledger
+    ended the call with one escalation and no booking."""
+    from spatalk.brain.driver import LLMResponse, ToolCall
+
+    brain, ref, ledger, sms, _ = _world(
+        fixed_clock, [LLMResponse(text=None, tool_calls=[ToolCall("answer", {"value": "no"})])]
+    )
+    cfg = ref.tenant
+    r = await brain.turn(ref, [], "no, nothing else", _one_slot_short_booking())
+    assert len(ledger.items) == 1
+    item = ledger.items[0]
+    assert item.type == "new_booking" and item.contact.name == "Dana"
+    assert item.service_id == "mesojet_facial"
+    assert ledger.drafts[0].preferred_window.part_of_day == "afternoon"
+    assert sms.sent == []
+    assert cfg.scripts.captured_booking in r.reply
+    assert r.reply.endswith(cfg.scripts.link_offer)
+    assert r.reply.count("?") == 1
+
+
+async def test_a_model_called_clinical_escalation_does_not_end_the_turn(fixed_clock):
+    """Founder call 14ea2579, 2026-09-11 15:56:30.765. `escalate {'reason':'clinical'}` for
+    "does it hurt? like, that facial?" ended the call 38 ms later, mid-goodbye. The gate's own
+    rule — only an emergency ends anything — now covers the model-called tool too, and the
+    booking in progress is parked rather than thrown away."""
+    from spatalk.brain.driver import LLMResponse, ToolCall
+
+    brain, ref, ledger, _sms, llm = _world(
+        fixed_clock, [LLMResponse(text=None, tool_calls=[ToolCall("escalate", {"reason": "clinical"})])]
+    )
+    cfg = ref.tenant
+    r = await brain.turn(ref, [], "does it hurt? like, that facial?", _one_slot_short_booking())
+    assert llm.calls, "the rules gate answered instead of the model"
+    assert r.ended is False
+    assert ledger.items == []
+    assert r.reply == cfg.scripts.clinical_offer
+    assert r.band == 3
+    assert r.slots.flow == "clinical"
+    assert r.slots.parked.flow == "new_booking"
+
+
+async def test_a_model_called_complaint_escalation_files_and_leaves_the_conversation_open(fixed_clock):
+    from spatalk.brain.driver import LLMResponse, ToolCall
+    from spatalk.brain.flow import Slots
+
+    brain, ref, ledger, _sms, llm = _world(
+        fixed_clock, [LLMResponse(text=None, tool_calls=[ToolCall("escalate", {"reason": "complaint"})])]
+    )
+    r = await brain.turn(ref, [], "I would like to raise something", Slots())
+    assert llm.calls, "the rules gate answered instead of the model"
+    assert ledger.items[0].type == "escalation_complaint"
+    assert r.ended is False
+    assert r.reply.startswith(ref.tenant.scripts.complaint[:20])
+
+
+async def test_a_model_called_emergency_escalation_is_the_one_that_ends(fixed_clock):
+    from spatalk.brain.driver import LLMResponse, ToolCall
+    from spatalk.brain.flow import Slots
+
+    brain, ref, ledger, _sms, llm = _world(
+        fixed_clock, [LLMResponse(text=None, tool_calls=[ToolCall("escalate", {"reason": "emergency"})])]
+    )
+    r = await brain.turn(ref, [], "something is very wrong here", Slots())
+    assert llm.calls, "the rules gate answered instead of the model"
+    assert r.ended is True
+    assert "911" in r.reply
+    assert ledger.items[0].type == "escalation_emergency"
+
+
+async def test_a_capture_that_failed_leaves_the_record_unfiled(fixed_clock):
+    """If the ledger is down at the moment the last slot lands, nothing is on it. The caller
+    hears refuse_unavailable, which promises nothing, so the record must not be marked filed
+    and the flow must not be closed: the end of the call still has to try."""
+    from spatalk.brain.driver import run_tool
+    from spatalk.brain.flow import unfiled_record
+    from spatalk.brain.ports import MemoryLedger
+
+    class ExplodingLedger(MemoryLedger):
+        async def create_item(self, ref, draft):
+            raise RuntimeError("database is down")
+
+    brain, ref, _ledger, _sms, _llm = _world(fixed_clock, [], ledger=ExplodingLedger(fixed_clock))
+    slots, spoken, outcome, ended, _speaks = await run_tool(
+        brain._caps, ref, _one_slot_short_booking(), "answer", {"value": "no"}, fixed_clock.now()
+    )
+    assert outcome.kind == "refused" and outcome.reason == "unavailable"
+    assert slots.filed is False and slots.ended_flow is False
+    assert spoken == [ref.tenant.scripts.refuse_unavailable.format(phone=ref.tenant.public_phone)]
+    assert unfiled_record(slots, ref.tenant, "voice") is True
+    assert ended is False
+
+
+async def test_yes_to_the_offer_texts_the_link_and_files_nothing_more(fixed_clock):
+    from spatalk.brain.driver import LLMResponse, ToolCall
+
+    brain, ref, ledger, sms, _ = _world(fixed_clock, [
+        LLMResponse(text=None, tool_calls=[ToolCall("answer", {"value": "no"})]),
+        LLMResponse(text=None, tool_calls=[ToolCall("answer", {"value": "yes"})]),
+    ])
+    r = await brain.turn(ref, [], "no, nothing else", _one_slot_short_booking())
+    r2 = await brain.turn(ref, [], "yes please", r.slots)
+    assert sms.sent[0][1] == "+19055550101"
+    assert r2.outcomes[0].kind == "link_sent"
+    assert len(ledger.items) == 1
+
+
+async def test_no_to_the_offer_sends_nothing_and_claims_nothing(fixed_clock):
+    from spatalk.brain.driver import LLMResponse, ToolCall
+
+    brain, ref, ledger, sms, _ = _world(fixed_clock, [
+        LLMResponse(text=None, tool_calls=[ToolCall("answer", {"value": "no"})]),
+        LLMResponse(text=None, tool_calls=[ToolCall("answer", {"value": "no"})]),
+    ])
+    r = await brain.turn(ref, [], "no, nothing else", _one_slot_short_booking())
+    r2 = await brain.turn(ref, [], "no thanks", r.slots)
+    assert sms.sent == []
+    assert len(ledger.items) == 1
+    assert r2.reply == ref.tenant.scripts.link_declined
+    low = r2.reply.lower()
+    assert "text" not in low and "sent" not in low

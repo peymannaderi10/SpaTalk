@@ -62,6 +62,28 @@ def test_a_malformed_value_says_which_way_it_was_wrong():
     assert named.reason == "bad_value" and named.detail == "name_it_instead"
 
 
+def test_the_answer_first_message_names_the_next_slot_and_claims_nothing():
+    """The function response for a slot recorded on a question turn (founder call 14ea2579,
+    15:55:00). Like `rejection_text` it is read by a model and never spoken, never sent,
+    never stored — and like every other sentence the model is given, it claims nothing."""
+    from spatalk.brain.flow import Slots, answer_first_text
+
+    cfg = _cfg()
+    s = Slots(flow="new_booking", returning_client=False, offers_done=True,
+              service_id="mesojet_facial")
+    text = answer_first_text(s, cfg, "voice")
+    assert "has not been answered" in text
+    assert "choose_practitioner" in text
+    assert "who they would like to see" in text
+    # Whole words, not substrings: the sentence says "in one or two sentences", and the claim
+    # being forbidden is "sent", not the letters of it.
+    import re
+
+    low = text.lower()
+    for claim in ("sent", "filed", "booked", "passed on", "confirmed"):
+        assert re.search(rf"\b{claim}\b", low) is None, claim
+
+
 def test_a_legal_call_earns_no_rejection():
     from spatalk.brain.flow import Slots, tool_rejection
 

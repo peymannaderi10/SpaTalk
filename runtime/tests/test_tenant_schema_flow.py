@@ -20,13 +20,21 @@ def test_every_slot_script_has_a_default_and_the_bundle_supplies_it():
         "practitioner_suggest", "practitioner_else", "ask_service", "ask_service_kind",
         "ask_service_again", "confirm_match", "confirm_which", "ask_name", "ask_name_again",
         "no_name", "confirm_name_staff", "ask_phone_same", "ask_phone", "confirm_phone",
-        "phone_fallback", "ask_window", "ask_team_note", "ask_route", "clinical_offer",
-        "clinical_declined",
+        # MOVED 2026-09-11: `ask_route` is gone — the route question was a gate in front of
+        # the ledger — and the three keys the post-filing offer needs take its place.
+        "phone_fallback", "ask_window", "ask_team_note", "captured_booking", "link_offer",
+        "link_declined", "clinical_offer", "clinical_declined",
     ]
     fields = Scripts.model_fields
     for key in keys:
         assert key in fields, key
         assert fields[key].default not in (None, ""), key
+    import yaml
+
+    raw = yaml.safe_load((BUNDLE / "scripts.yaml").read_text(encoding="utf-8"))
+    for key in keys:
+        assert key in raw, f"the skincentrix bundle does not supply {key}"
+    assert "ask_route" not in raw and "ask_route" not in fields
     cfg = _cfg()
     assert cfg.scripts.ask_name == "Could I get your first name?"
     assert cfg.scripts.confirm_match == "Did you mean {value}?"

@@ -22,6 +22,10 @@ def test_qa_offers_start_request_and_nothing_that_files():
 
 
 def test_each_step_offers_exactly_its_slot_tool():
+    """MOVED 2026-09-11: `Step.ROUTE` became `Step.LINK_OFFER`, and its escape hatch on
+    `file_request` went with it — the record is on the ledger before that step exists, so
+    `file_request` is now absent at every step but COMPLETE. `change_answer` is absent there
+    too: a reopened slot would leave a stale row the ledger has no way to amend."""
     from spatalk.brain.flow import Slots, Step, step_tools
 
     cfg = _cfg()
@@ -29,13 +33,13 @@ def test_each_step_offers_exactly_its_slot_tool():
     expect = {
         Step.RETURNING: "answer", Step.OFFERS: "answer", Step.PRACTITIONER: "choose_practitioner",
         Step.SERVICE: "choose_service", Step.NAME: "give_name", Step.PHONE: "answer",
-        Step.WINDOW: "choose_window", Step.TEAM_NOTE: "answer", Step.ROUTE: "answer",
+        Step.WINDOW: "choose_window", Step.TEAM_NOTE: "answer", Step.LINK_OFFER: "answer",
     }
     for step, tool in expect.items():
         names = _names(step_tools(step, s, cfg, "voice"))
         assert tool in names, (step, names)
-        assert "file_request" not in names or step == Step.ROUTE
-        assert "change_answer" in names
+        assert "file_request" not in names
+        assert "change_answer" in names or step == Step.LINK_OFFER
 
 
 def test_phone_step_offers_give_phone_once_the_caller_said_no():
@@ -48,16 +52,38 @@ def test_phone_step_offers_give_phone_once_the_caller_said_no():
 
 
 def test_complete_offers_file_request_and_route_offers_send_link_only_with_sms():
+    """MOVED 2026-09-11: `Step.ROUTE` became `Step.LINK_OFFER` on a record that is already
+    filed, and `"file_request" in route` became `"file_request" not in link_offer`."""
     from spatalk.brain.flow import Slots, Step, step_tools
 
     cfg = _cfg()
     assert "file_request" in _names(step_tools(Step.COMPLETE, Slots(flow="callback"), cfg, "voice"))
-    route = _names(step_tools(
-        Step.ROUTE, Slots(flow="new_booking", phone="+1", phone_confirmed=True), cfg, "voice",
-    ))
-    assert "send_link" in route and "file_request" in route
+    filed = Slots(flow="new_booking", phone="+1", phone_confirmed=True, filed=True)
+    link_offer = _names(step_tools(Step.LINK_OFFER, filed, cfg, "voice"))
+    assert "send_link" in link_offer and "file_request" not in link_offer
     no_sms = cfg.model_copy(update={"sms_from_number": None})
-    assert "send_link" not in _names(step_tools(Step.ROUTE, Slots(flow="new_booking"), no_sms, "voice"))
+    assert "send_link" not in _names(
+        step_tools(Step.LINK_OFFER, Slots(flow="new_booking", filed=True), no_sms, "voice")
+    )
+
+
+def test_the_link_offer_offers_answer_and_send_link_and_never_file_request():
+    from spatalk.brain.flow import Slots, Step, step_tools
+
+    cfg = _cfg()
+    filed = Slots(
+        flow="new_booking", service_id="mesojet_facial", phone="+19055550101",
+        phone_confirmed=True, filed=True,
+    )
+    names = _names(step_tools(Step.LINK_OFFER, filed, cfg, "voice"))
+    assert "answer" in names and "send_link" in names
+    assert "file_request" not in names and "change_answer" not in names
+    no_sms = _names(step_tools(
+        Step.LINK_OFFER, filed, cfg.model_copy(update={"sms_from_number": None}), "voice"
+    ))
+    assert "answer" in no_sms and "send_link" not in no_sms
+    unconfirmed = _names(step_tools(Step.LINK_OFFER, filed.with_(phone_confirmed=False), cfg, "voice"))
+    assert "answer" in unconfirmed and "send_link" not in unconfirmed
 
 
 def test_no_tool_carries_contact_lead_or_free_text_beyond_the_three_transients():

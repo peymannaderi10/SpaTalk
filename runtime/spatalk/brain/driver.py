@@ -32,6 +32,7 @@ from spatalk.brain.flow import (
     Slots,
     Step,
     apply,
+    close_flow,
     draft_from,
     next_step,
     open_flow,
@@ -478,14 +479,20 @@ async def run_tool(
     outcome: Outcome | None = None
     ended = applied.end
     try:
-        if name == "escalate":
+        if applied.escalate:
             outcome = await caps.escalate(ref, EscalateRequest(reason=args.get("reason", "unsure")))
             spoken.append(render(outcome, cfg, now, channel=ref.channel))
-            ended = True
         elif applied.file:
             draft = draft_from(applied.slots, cfg, health_context=ref.health_context)
             outcome = await caps.capture(ref, draft)
-            spoken.append(render(outcome, cfg, now, channel=ref.channel))
+            # The flow stays open exactly when the link offer follows in the same turn, so
+            # the captured line must not ask a question of its own (founder call 14ea2579).
+            spoken.append(
+                render(
+                    outcome, cfg, now, channel=ref.channel,
+                    more_follows=not applied.slots.ended_flow,
+                )
+            )
         elif applied.send_link:
             contact = ContactInfo(name=applied.slots.first_name, phone=applied.slots.phone)
             outcome = await caps.send_booking_link(
@@ -502,6 +509,15 @@ async def run_tool(
         logger.exception("tool {} failed: {}", name, e)
         outcome = Refused(reason="unavailable")
         spoken.append(render(outcome, cfg, now, channel=ref.channel))
+    if applied.file and not isinstance(outcome, Captured):
+        # The ledger refused or failed: nothing is on it, so the record is neither filed nor
+        # finished and the end-of-call path must still try. The caller heard
+        # refuse_unavailable, which promises nothing, so a later silent filing contradicts
+        # no sentence.
+        return (
+            applied.slots.with_(filed=False, ended_flow=False),
+            spoken, outcome, ended, applied.model_speaks,
+        )
     return applied.slots, spoken, outcome, ended, applied.model_speaks
 
 
@@ -588,6 +604,10 @@ class Brain:
                 if isinstance(out, Captured):
                     band = 3 if out.item_type.startswith("escalation_") else max(band, 2)
             ended = ended or did_end
+        if slots.flow == "clinical" and not slots.offer_accepted:
+            # The clinical offer is open: nothing is filed yet, and the nightly audit still
+            # has to see the turn that raised a clinical matter.
+            band = 3
         ack, blocked = "", False
         if resp.text:
             has_completed = any(isinstance(o, Completed) for o in outcomes)
@@ -629,7 +649,7 @@ class Brain:
         # reason the A4 hand-back is voice-only.
         slots = pop_digression(slots, cfg, ref.channel)
         if slots.ended_flow:
-            slots = slots.with_(flow=None, ended_flow=False)
+            slots = close_flow(slots)
         reply = " ".join(p for p in [ack, *said, question] if p).strip()
         return TurnResult(
             reply=reply,

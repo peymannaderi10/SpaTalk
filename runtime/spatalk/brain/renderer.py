@@ -60,17 +60,38 @@ def render_script(
     return _fill(template, cfg, now, urgent, **extra)
 
 
-def render(outcome: Outcome, cfg: TenantConfig, now: datetime, channel: str = "voice") -> str:
-    """Turn a closed outcome into the sentence the caller hears or reads."""
-    text = _render(outcome, cfg, now, channel)
+def render(
+    outcome: Outcome,
+    cfg: TenantConfig,
+    now: datetime,
+    channel: str = "voice",
+    *,
+    more_follows: bool = False,
+) -> str:
+    """Turn a closed outcome into the sentence the caller hears or reads.
+
+    `more_follows` means a question from the record follows in this same turn, so the outcome
+    line must not ask one of its own (two questions in one breath is the 2026-09-10 20:54:37
+    defect). Only a captured booking reads it; every other outcome ignores it.
+    """
+    text = _render(outcome, cfg, now, channel, more_follows=more_follows)
     return text if channel == "voice" else strip_audio_tags(text)
 
 
-def _render(outcome: Outcome, cfg: TenantConfig, now: datetime, channel: str) -> str:
+def _render(
+    outcome: Outcome,
+    cfg: TenantConfig,
+    now: datetime,
+    channel: str,
+    *,
+    more_follows: bool = False,
+) -> str:
     s = cfg.scripts
     if isinstance(outcome, Captured):
         urgent = outcome.urgency == "urgent"
         confirm = humanize_due(outcome.confirm_by, now, cfg.timezone, urgent)
+        if more_follows and outcome.item_type == "new_booking":
+            return s.captured_booking.format(confirm_by=confirm)
         if outcome.item_type == "send_link":
             return s.link_captured.format(confirm_by=confirm, service="the treatment")
         if outcome.item_type.startswith("escalation_"):

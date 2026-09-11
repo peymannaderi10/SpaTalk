@@ -120,6 +120,40 @@ async def test_clinical_gate_offers_first_and_files_only_on_yes(fixed_clock):
     assert ledger.items[0].contact.name == "Dana"
 
 
+async def test_a_clinical_question_mid_booking_keeps_the_booking_and_finishes_it(fixed_clock):
+    """Founder call 14ea2579-a14e-4be5-9786-8b5354499931, 2026-09-11 15:56:30. The caller
+    asked "does it hurt? like, that facial?" one answer from the end of a booking. The model
+    called escalate(clinical); the call was cut off and the booking was lost. The clinical
+    request now opens its own offer, the booking waits, and both reach the ledger."""
+    from spatalk.brain.flow import Slots
+    from spatalk.brain.requests import PreferredWindow
+
+    brain, ref, ledger, llm, cfg = _world(fixed_clock, [
+        _call("escalate", reason="clinical"),
+        _call("answer", value="yes"),
+        _call("answer", value="no"),
+    ])
+    booking = Slots(
+        flow="new_booking", returning_client=False, offers_done=True, service_id="mesojet_facial",
+        practitioner="any", first_name="Payman", phone="+18567451025", phone_confirmed=True,
+        preferred_window=PreferredWindow(part_of_day="afternoon"),
+    )
+    r = await brain.turn(ref, [], "does it hurt? like, that facial?", booking)
+    assert r.ended is False and r.reply == cfg.scripts.clinical_offer
+    assert ledger.items == [] and r.slots.parked.service_id == "mesojet_facial"
+    r = await brain.turn(ref, [], "yes please", r.slots)
+    assert r.ended is False
+    assert ledger.items[0].type == "escalation_clinical"
+    assert ledger.items[0].contact.name == "Payman"
+    # The booking is back, at the step it was interrupted on.
+    assert r.slots.flow == "new_booking" and r.slots.service_id == "mesojet_facial"
+    assert r.slots.parked is None
+    r = await brain.turn(ref, [], "no, nothing else", r.slots)
+    assert r.ended is False
+    assert sorted(i.type for i in ledger.items) == ["escalation_clinical", "new_booking"]
+    assert ledger.items[1].contact.name == "Payman"
+
+
 async def test_declining_the_clinical_offer_files_nothing(fixed_clock):
     from spatalk.brain.flow import Slots
 

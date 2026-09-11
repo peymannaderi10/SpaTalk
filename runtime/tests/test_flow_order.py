@@ -38,13 +38,62 @@ def test_new_client_booking_order_on_a_call():
         Step.PHONE: lambda s: s.with_(phone="+19055550101", phone_confirmed=True),
         Step.WINDOW: lambda s: s.with_(preferred_window=PreferredWindow()),
         Step.TEAM_NOTE: lambda s: s.with_(team_note_asked=True),
-        Step.ROUTE: lambda s: s.with_(ended_flow=True),
     }
     seen = _walk(Slots(flow="new_booking"), cfg, "voice", answers)
+    # MOVED 2026-09-11 (founder call 14ea2579, 15:56): COMPLETE now precedes the link
+    # question, because the record has to reach the ledger before anything else is asked.
+    # The link half of the old walk is pinned by the two cases below instead.
     assert seen == [
         Step.RETURNING, Step.OFFERS, Step.SERVICE, Step.PRACTITIONER, Step.NAME,
-        Step.PHONE, Step.WINDOW, Step.TEAM_NOTE, Step.ROUTE, Step.QA,
+        Step.PHONE, Step.WINDOW, Step.TEAM_NOTE, Step.COMPLETE,
     ]
+
+
+def _filled_booking():
+    from spatalk.brain.flow import Slots
+    from spatalk.brain.requests import PreferredWindow
+
+    return Slots(
+        flow="new_booking", returning_client=False, offers_done=True,
+        service_id="mesojet_facial", practitioner="any", first_name="Dana",
+        phone="+19055550101", phone_confirmed=True,
+        preferred_window=PreferredWindow(part_of_day="afternoon"), team_note_asked=True,
+    )
+
+
+def test_the_link_offer_comes_after_the_filing_not_before_it():
+    """Founder call 14ea2579-a14e-4be5-9786-8b5354499931, 2026-09-11 15:56:02. Every slot of
+    a new-client MesoJet booking was on the record and the route question stood between it
+    and the ledger; the caller talked over it twice and the call ended with no booking on the
+    ledger at all. The record reaches COMPLETE with nothing asked, and only once it is filed
+    is the link put as an extra."""
+    from spatalk.brain.flow import Step, next_step
+
+    cfg = _cfg()
+    s = _filled_booking()
+    assert next_step(s, cfg, "voice") == Step.COMPLETE
+    assert next_step(s.with_(filed=True), cfg, "voice") == Step.LINK_OFFER
+    assert next_step(s.with_(filed=True, link_offered=True), cfg, "voice") == Step.COMPLETE
+    assert next_step(s.with_(filed=True, ended_flow=True), cfg, "voice") == Step.QA
+
+
+def test_the_link_offer_is_voice_only_and_needs_an_sms_number_a_service_and_a_confirmed_number():
+    from spatalk.brain.flow import link_offer_open
+
+    cfg = _cfg()
+    s = _filled_booking().with_(filed=True)
+    assert link_offer_open(s, cfg, "voice") is True
+    for channel in ("sms", "chat"):
+        assert link_offer_open(s, cfg, channel) is False, channel
+    assert link_offer_open(s, cfg.model_copy(update={"sms_from_number": None}), "voice") is False
+    assert link_offer_open(s.with_(service_id=None), cfg, "voice") is False
+    assert link_offer_open(s.with_(phone_confirmed=False), cfg, "voice") is False
+    assert link_offer_open(s.with_(phone=None), cfg, "voice") is False
+    assert link_offer_open(s.with_(link_offered=True), cfg, "voice") is False
+    assert link_offer_open(s.with_(ended_flow=True), cfg, "voice") is False
+    assert link_offer_open(s.with_(filed=False), cfg, "voice") is False
+    for flow in ("callback", "reschedule", "cancel", "question", "training_enquiry", "clinical"):
+        assert link_offer_open(s.with_(flow=flow), cfg, "voice") is False, flow
 
 
 def test_returning_client_asks_practitioner_first_and_no_offers():

@@ -38,6 +38,7 @@ A tenant can also start from the basics. The runtime ships a starter bundle as p
 | persona.assistant_name | string | default "the assistant" | |
 | persona.tone | string | default "warm, brief, plain-spoken" | |
 | persona.max_sentences_per_turn | int | default 2 | |
+| persona.max_items_per_turn | int | default 3 | treatments or people the assistant may name in one breath; must match the "never name more than three" line in `brain/prompt.py`. No bundle sets it; the voice sentence cap reads it as `getattr(cfg.persona, "max_items_per_turn", 3)` |
 | team[] | list | default [] | the people a caller may ask for: each `name` (string, required, max 80 characters, the width of `items.practitioner`) and `role` (string, default ""). This list plus `any` is the whole enum for `items.practitioner`; a name outside it is nulled by the ledger and logged [L1] |
 | concerns | list of strings | default `["pigmentation", "acne", "ageing", "dryness", "hair removal", "hair loss", "body contouring", "skin tightening", "tattoo removal", "glow", "other"]` | the cosmetic taxonomy behind `items.concern`; each entry is at most 40 characters, the width of the column. Deliberately not medical, and enforced: a concern matching the clinical or health-context lexicon is refused at import, and a symptom, a reaction or a condition still routes to the clinical script and lives only in the transcript [L1] |
 | escalation.owner_name, owner_email | string | yes | named owner for breaches |
@@ -62,7 +63,7 @@ Each `team[]` entry may carry `services: [service_id, …]`, the treatments that
 
 ## services.yaml
 
-`services:` list of: `id` (slug), `name`, `category`, `price_text`, `duration_minutes` (optional), `booking_url`, `consult_required` (bool), `clinical` (bool), `description`. The service ids become the enum the model may use; nothing outside this list can be referenced by a tool call.
+`services:` list of: `id` (slug), `name`, `category`, `price_text`, `duration_minutes` (optional), `booking_url`, `consult_required` (bool), `clinical` (bool), `description`. The service ids become the enum the model may use; nothing outside this list can be referenced by a tool call. `description` is the three-to-eight-word "what it does" the assistant says before any price; a service with a real `price_text` must have one, a service priced "ask the team" need not. It is never a price list — prices belong in `price_text` and in knowledge.md.
 
 **Generic category entries.** A catalog may carry a placeholder row for what callers ask for by category — Skincentrix has `id: facial, name: Facial, category: facial`, plus `Laser hair removal` and `Microchanneling` — so the prompt can quote a price range. The resolver treats such a row as a *kind*, never as a treatment: a caller who says "a facial" or "the facial one" hears `ask_service_kind` and the slot stays empty, and the placeholder is never offered as a "did you mean?" against the specific treatments behind it. No flag is needed; a row is recognised as a placeholder when its `id` or its `name` is its `category`, or when its `name` is a strict subset of the names of two or more other rows in the same category (`spatalk.brain.resolve.category_placeholders`). A real treatment always carries a word the others do not, so it is never mistaken for one.
 
@@ -132,7 +133,9 @@ confirm_phone: "That's {digits} — is that right?"
 phone_fallback: "No problem, I'll use the number you're calling from."
 ask_window: "Which day or time of day suits you best for the visit? Any is fine."
 ask_team_note: "Is there anything you'd like the team to know before they call?"
-ask_route: "I can text you the booking link now, or have the team call you to book — which do you prefer?"
+captured_booking: "I've sent that to the team as a request. Someone will confirm with you as soon as they're free."   # must NOT end in a question: link_offer follows it in the same turn
+link_offer: "If you'd like to lock it in yourself right now, I can also text you the booking link — want that?"       # the extra after the filing, voice only; never a choice between the link and a callback
+link_declined: "No problem. Is there anything else I can help with?"
 clinical_offer: "That's one for our clinical team rather than me — would you like me to have them reach out to you?"
 clinical_declined: "No problem. Is there anything else I can help with?"
 offers_intro: "Here's what we have for new clients: {offers}."

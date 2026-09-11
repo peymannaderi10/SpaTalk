@@ -124,7 +124,23 @@ def test_sms_takes_the_sender_number_without_asking():
     assert a.slots.preferred_window.date == "Thursday"
 
 
+def _filled_booking():
+    """The founder's record at 15:56:02: every required slot of a new-client booking."""
+    from spatalk.brain.flow import Slots
+    from spatalk.brain.requests import PreferredWindow
+
+    return Slots(
+        flow="new_booking", returning_client=False, offers_done=True,
+        service_id="mesojet_facial", practitioner="any", first_name="Payman",
+        phone="+19055550101", phone_confirmed=True,
+        preferred_window=PreferredWindow(part_of_day="afternoon"), team_note_asked=True,
+    )
+
+
 def test_complete_files_and_route_sends_the_link():
+    """MOVED 2026-09-11: the two ROUTE assertions became the link-offer pair below, because
+    the route question stood between a complete record and the ledger (founder call
+    14ea2579). What this test still pins is `file_request` and the premature refusal."""
     from spatalk.brain.flow import Slots
     from spatalk.brain.requests import PreferredWindow
 
@@ -134,14 +150,62 @@ def test_complete_files_and_route_sends_the_link():
         preferred_window=PreferredWindow(), team_note_asked=True,
     )
     a = _apply(done, "file_request", {})
-    assert a.file and a.slots.ended_flow
-    booking = done.with_(flow="new_booking")
-    link = _apply(booking, "answer", {"value": "yes"})           # ROUTE: yes = the link
-    assert link.send_link and link.slots.ended_flow
-    call = _apply(booking, "answer", {"value": "no"})            # ROUTE: no = the team calls
-    assert call.file and call.slots.ended_flow
+    assert a.file and a.slots.ended_flow and a.slots.filed is True
     early = _apply(Slots(flow="callback"), "file_request", {})
     assert early.ignored and not early.file
+
+
+def test_a_voice_booking_files_at_the_last_slot_and_then_offers_the_link():
+    """Founder call 14ea2579, 2026-09-11 15:56:02.948. The last slot landed and the runtime
+    asked the route question instead of filing; the call ended with the booking nowhere but
+    the transcript. The record files on that same call, and the link becomes an extra."""
+    from spatalk.brain.flow import Step, next_step, step_question
+
+    cfg = _cfg()
+    one_short = _filled_booking().with_(team_note_asked=False)
+    a = _apply(one_short, "answer", {"value": "no"})
+    assert a.file is True and a.send_link is False
+    assert a.slots.filed is True and a.slots.ended_flow is False
+    assert next_step(a.slots, cfg, "voice") == Step.LINK_OFFER
+    assert step_question(Step.LINK_OFFER, a.slots, cfg, "voice") == ("link_offer", {})
+
+
+def test_yes_to_the_link_sends_it_and_no_says_so_and_neither_files_again():
+    filed = _filled_booking().with_(filed=True)
+    yes = _apply(filed, "answer", {"value": "yes"})
+    assert yes.send_link is True and yes.file is False
+    assert yes.slots.link_offered is True and yes.slots.ended_flow is True
+    no = _apply(filed, "answer", {"value": "no"})
+    assert no.file is False and no.send_link is False
+    assert no.say == (("link_declined", {}),)
+    assert no.slots.link_offered is True and no.slots.ended_flow is True
+
+
+def test_a_filed_record_can_never_file_twice():
+    """The ledger has no amend path, so a second row for one request is a second job for the
+    team. Nothing the link step offers may file, and neither may a record forced back to
+    COMPLETE with the offer already answered."""
+    from spatalk.brain.flow import Step, next_step, step_tools
+
+    cfg = _cfg()
+    filed = _filled_booking().with_(filed=True)
+    assert next_step(filed, cfg, "voice") == Step.LINK_OFFER
+    for tool in step_tools(Step.LINK_OFFER, filed, cfg, "voice"):
+        for args in ({"value": "yes"}, {"value": "no"}, {}):
+            assert _apply(filed, tool.name, args).file is False, (tool.name, args)
+    answered = filed.with_(link_offered=True)
+    assert next_step(answered, cfg, "voice") == Step.COMPLETE
+    assert _apply(answered, "answer", {"value": "no"}).file is False
+
+
+def test_no_sms_number_files_and_ends_in_one_move():
+    from spatalk.brain.flow import Step, apply, next_step
+
+    no_sms = _cfg().model_copy(update={"sms_from_number": None})
+    one_short = _filled_booking().with_(team_note_asked=False)
+    a = apply(one_short, "answer", {"value": "no"}, no_sms, "voice", "+19055550101")
+    assert a.file is True and a.slots.ended_flow is True
+    assert next_step(a.slots, no_sms, "voice") == Step.QA
 
 
 def test_the_record_files_itself_when_the_last_slot_lands():
@@ -175,11 +239,105 @@ def test_a_second_request_keeps_the_name_and_number_but_not_the_treatment():
     assert a.slots.service_id is None and a.slots.practitioner is None
 
 
+def test_only_an_emergency_escalation_ends_anything():
+    """Founder call 14ea2579, 2026-09-11 15:56:30.765. The model called escalate(clinical)
+    for "does it hurt? like, that facial?" — a pre-treatment question the rules lexicon
+    deliberately excludes — and driver.py ended the call 38 ms later, mid-sentence. Only the
+    emergency script tells the caller to hang up and dial 911, so it is the only reason that
+    ends anything (flows.md §1.8; voice-regression-V1 fixed this for the gate path only)."""
+    from spatalk.brain.flow import Slots
+
+    for reason in ("human_request", "complaint", "payment", "legal", "unsure"):
+        a = _apply(Slots(), "escalate", {"reason": reason})
+        assert a.end is False, reason
+        assert a.escalate is True, reason
+    emergency = _apply(Slots(), "escalate", {"reason": "emergency"})
+    assert emergency.end is True and emergency.escalate is True
+
+
+def test_a_clinical_escalation_opens_the_offer_and_files_nothing():
+    from spatalk.brain.flow import Slots
+
+    a = _apply(Slots(), "escalate", {"reason": "clinical"})
+    assert a.slots.flow == "clinical" and a.slots.offer_accepted is False
+    assert a.escalate is False and a.file is False and a.end is False and a.say == ()
+
+
+def test_a_clinical_escalation_mid_booking_parks_the_booking():
+    """Slot-engine spec line 65: a request in progress is kept, not thrown away. On the
+    founder's call the booking was one answer from done when the clinical question came."""
+    a = _apply(_filled_booking(), "escalate", {"reason": "clinical"})
+    assert a.slots.flow == "clinical"
+    assert a.slots.service_id is None
+    assert a.slots.first_name == "Payman" and a.slots.phone_confirmed is True
+    assert a.slots.parked.flow == "new_booking"
+    assert a.slots.parked.service_id == "mesojet_facial"
+    assert a.slots.parked.preferred_window.part_of_day == "afternoon"
+    assert a.slots.parked.parked is None
+
+
+def test_the_clinical_offer_is_its_own_step_even_when_the_name_is_known():
+    """The offer used to be a special case of Step.NAME, so mid-booking — where the name and
+    the number are already on the record — the clinical flow opened at COMPLETE and filed an
+    urgent item with no offer at all."""
+    from spatalk.brain.flow import Slots, Step, next_step, step_tools
+
+    cfg = _cfg()
+    s = Slots(flow="clinical", first_name="Dana", phone="+19055550101", phone_confirmed=True)
+    assert next_step(s, cfg, "voice") == Step.CLINICAL_OFFER
+    names = [t.name for t in step_tools(Step.CLINICAL_OFFER, s, cfg, "voice")]
+    assert names[:1] == ["answer"] and "file_request" not in names
+
+
+def test_saying_yes_to_the_offer_files_the_clinical_item_and_gives_the_booking_back():
+    from spatalk.brain.flow import close_flow, draft_from
+
+    parked = _apply(_filled_booking(), "escalate", {"reason": "clinical"}).slots
+    yes = _apply(parked, "answer", {"value": "yes"})
+    assert yes.file is True and yes.slots.ended_flow is True
+    draft = draft_from(yes.slots, _cfg())
+    assert draft.type == "escalation_clinical" and draft.contact.name == "Payman"
+    back = close_flow(yes.slots)
+    assert back.flow == "new_booking" and back.service_id == "mesojet_facial"
+    assert back.preferred_window.part_of_day == "afternoon" and back.parked is None
+
+
+def test_declining_the_offer_files_nothing_and_gives_the_booking_back():
+    from spatalk.brain.flow import close_flow
+
+    parked = _apply(_filled_booking(), "escalate", {"reason": "clinical"}).slots
+    no = _apply(parked, "answer", {"value": "no"})
+    assert no.file is False and no.say == (("clinical_declined", {}),)
+    assert no.slots.ended_flow is True
+    back = close_flow(no.slots)
+    assert back.flow == "new_booking" and back.service_id == "mesojet_facial"
+
+
+def test_closing_a_flow_with_nothing_parked_drops_to_qa():
+    from spatalk.brain.flow import Slots, close_flow
+
+    back = close_flow(Slots(flow="cancel", ended_flow=True, first_name="Dana"))
+    assert back.flow is None and back.ended_flow is False
+    assert back.first_name == "Dana" and back.parked is None
+
+
+def test_a_second_request_at_qa_parks_nothing():
+    """The guard on making parking automatic: `start_request` is only offered at Q&A, where
+    the previous flow is None or ended, so nothing it opens can park anything."""
+    from spatalk.brain.flow import Slots
+
+    a = _apply(Slots(flow="cancel", ended_flow=True), "start_request", {"kind": "new_booking"})
+    assert a.slots.parked is None
+
+
 def test_the_clinical_offer_is_answered_yes_or_no_before_the_name():
+    """MOVED 2026-09-11: the open step is now `Step.CLINICAL_OFFER` rather than `Step.NAME`,
+    because a known name must not be able to skip the offer. The yes/no behaviour is
+    unchanged."""
     from spatalk.brain.flow import Slots, Step, next_step
 
     s = Slots(flow="clinical")
-    assert next_step(s, _cfg(), "voice") == Step.NAME
+    assert next_step(s, _cfg(), "voice") == Step.CLINICAL_OFFER
     yes = _apply(s, "answer", {"value": "yes"})
     assert yes.slots.offer_accepted and yes.say == ()
     no = _apply(s, "answer", {"value": "no"})
@@ -219,6 +377,10 @@ def test_a_booking_on_a_text_channel_ends_with_the_link_and_a_call_without_sms_f
     )
     chat = _apply(booking, "answer", {"value": "no"}, channel="chat")     # TEAM_NOTE
     assert chat.send_link and not chat.file
+    # And a reader who already has the link is never asked whether they want one.
+    from spatalk.brain.flow import Step, next_step
+
+    assert next_step(chat.slots, _cfg(), "chat") == Step.QA
     from spatalk.brain.flow import apply
     no_sms = _cfg().model_copy(update={"sms_from_number": None})
     call = apply(booking, "answer", {"value": "no"}, no_sms, "voice", "+19055550101")
@@ -235,11 +397,14 @@ def test_a_training_enquiry_is_a_request_too():
 
 
 def test_the_clinical_offer_takes_only_yes_or_no_until_it_is_accepted():
+    """MOVED 2026-09-11: the un-accepted offer is asked at `Step.CLINICAL_OFFER`, not at
+    `Step.NAME`. The post-acceptance half still passes `Step.NAME` and still expects
+    `give_name`."""
     from spatalk.brain.flow import Slots, Step, step_tools
 
     s = Slots(flow="clinical", phone="+19055550101")
-    assert [t.name for t in step_tools(Step.NAME, s, _cfg(), "voice")][:1] == ["answer"]
-    assert "give_name" not in [t.name for t in step_tools(Step.NAME, s, _cfg(), "voice")]
+    assert [t.name for t in step_tools(Step.CLINICAL_OFFER, s, _cfg(), "voice")][:1] == ["answer"]
+    assert "give_name" not in [t.name for t in step_tools(Step.CLINICAL_OFFER, s, _cfg(), "voice")]
     ignored = _apply(s, "give_name", {"first_name": "yes please, that would be great"})
     assert ignored.ignored and ignored.slots.first_name is None
     yes = _apply(s, "answer", {"value": "yes"})
@@ -363,6 +528,78 @@ def test_a_generic_category_entry_does_not_fill_the_treatment_slot():
     assert a.slots.pending is not None and a.slots.pending.kind == "offers"
     key, _fills = step_question(next_step(a.slots, cfg, "voice"), a.slots, cfg, "voice")
     assert key == "ask_service_kind"
+
+
+# --- a slot recorded on a question turn owes the caller an answer (defect 5) ---------------
+
+
+def test_a_slot_recorded_on_a_question_turn_owes_the_caller_an_answer():
+    """Founder call 14ea2579, 2026-09-11 15:55:00.682. The caller said exactly "How much does
+    it cost?". At 15:55:02.028 the model called choose_service{'said':'MesoJet and Sound
+    Therapy facial'} — it rewrote the caller's turn into a service name inferred two turns
+    earlier, so `is_question`, which runs on the ARGUMENT, never saw a question. The write was
+    right; the price was never answered. The caller asked twice more and got it at
+    15:55:09.081: three turns and 8.4 s."""
+    from spatalk.brain.flow import ANSWER_FIRST_TOOLS, Slots, apply
+
+    cfg = _cfg()
+    s = Slots(flow="new_booking", returning_client=False, offers_done=True)
+    a = apply(s, "choose_service", {"said": "MesoJet and Sound Therapy facial"}, cfg, "voice",
+              "+19055550101", caller_said="How much does it cost?")
+    assert a.slots.service_id == "mesojet_facial"
+    assert a.answer_owed is True
+    for said in ("the mesojet one", ""):
+        b = apply(s, "choose_service", {"said": "MesoJet and Sound Therapy facial"}, cfg,
+                  "voice", "+19055550101", caller_said=said)
+        assert b.slots.service_id == "mesojet_facial", said
+        assert b.answer_owed is False, said
+    assert ANSWER_FIRST_TOOLS == ("choose_service", "choose_practitioner")
+
+
+def test_only_the_two_tools_that_take_the_callers_words_can_owe_an_answer():
+    from spatalk.brain.flow import Slots, answer_owed
+
+    cfg = _cfg()
+    asked = "How much does it cost?"
+    window_open = Slots(
+        flow="new_booking", returning_client=False, offers_done=True, practitioner="any",
+        service_id="mesojet_facial", first_name="Payman", phone="+19055550101",
+        phone_confirmed=True,
+    )
+    assert answer_owed(window_open, "choose_window", {"date": "Thursday"}, cfg, "voice",
+                       "+19055550101", caller_said=asked) is False
+    assert answer_owed(Slots(flow="new_booking"), "answer", {"value": "no"}, cfg, "voice",
+                       "+19055550101", caller_said=asked) is False
+    name_open = Slots(
+        flow="new_booking", returning_client=False, offers_done=True, practitioner="any",
+        service_id="mesojet_facial",
+    )
+    assert answer_owed(name_open, "give_name", {"first_name": "Dana"}, cfg, "voice",
+                       "+19055550101", caller_said=asked) is False
+
+
+def test_a_debt_is_never_owed_on_a_filing_a_confirmation_or_a_refusal():
+    from spatalk.brain.flow import Slots, apply
+    from spatalk.brain.requests import PreferredWindow
+
+    cfg = _cfg()
+    asked = "How much does it cost?"
+    last_slot = Slots(
+        flow="callback", returning_client=True, practitioner="any", first_name="Dana",
+        phone="+19055550101", phone_confirmed=True, preferred_window=PreferredWindow(),
+        team_note_asked=True,
+    )
+    filing = apply(last_slot, "choose_service", {"said": "mesojet facial"}, cfg, "voice",
+                   "+19055550101", caller_said=asked)
+    assert filing.file is True and filing.answer_owed is False
+    confirm = apply(Slots(flow="new_booking", returning_client=True), "choose_practitioner",
+                    {"said": "Ellen"}, cfg, "voice", "+19055550101", caller_said=asked)
+    assert confirm.slots.pending.kind == "match" and confirm.answer_owed is False
+    refused = apply(Slots(flow="new_booking", returning_client=False, offers_done=True),
+                    "choose_service", {"said": "what was the facial one again?"}, cfg, "voice",
+                    "+19055550101", caller_said=asked)
+    assert refused.ignored is True and refused.rejection.detail == "question_shaped"
+    assert refused.answer_owed is False
 
 
 # --- the side question gets a turn of its own (memo §2) -----------------------------------

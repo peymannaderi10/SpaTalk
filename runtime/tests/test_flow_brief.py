@@ -90,6 +90,26 @@ def test_a_pending_confirmation_is_the_runtimes_words_and_a_plain_step_question_
     assert "read something back" in brief and "say nothing else" in brief
 
 
+def test_the_link_offer_brief_says_the_request_is_already_filed():
+    """Founder call 14ea2579, 2026-09-11 15:56. The old route brief let the model put the
+    link first ("I can text you the booking link now, or…"), which is the branch that wrote
+    nothing to the ledger at all. The step's brief now says the filing already happened."""
+    from spatalk.brain.flow import Slots, Step, step_message
+
+    cfg = _cfg()
+    filed = Slots(
+        flow="new_booking", returning_client=False, offers_done=True, practitioner="any",
+        service_id="mesojet_facial", first_name="Payman", phone="+19055550101",
+        phone_confirmed=True, team_note_asked=True, filed=True,
+    )
+    brief = step_message(Step.LINK_OFFER, filed, cfg, "voice")
+    assert "already said so" in brief
+    assert "never lead with the link" in brief
+    assert "answer with yes or no" in brief
+    assert "never say a request has been sent, filed, passed on or booked" in brief
+    assert "file_request" not in brief
+
+
 def test_no_flow_no_open_question():
     from spatalk.brain.flow import Slots, open_question
 
