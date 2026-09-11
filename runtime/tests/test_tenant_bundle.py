@@ -93,3 +93,56 @@ def test_bundle_sms_destination_names_an_env_var_and_carries_a_messaging_number(
     assert cfg.sms_from_number == "+12899170079"
     # The whatsapp destination from the earlier plan is dormant, not removed.
     assert any(d.kind == "whatsapp" for d in cfg.delivery.destinations)
+
+
+# --- the catalogue the assistant answers from (defect 8, founder call 14ea2579) ------------
+
+# The clinic publishes only the names of these, not what they do: knowledge.md, "Other
+# treatments (ask the team for current pricing)". A "what it does" written here by an engineer
+# would be a clinic claim spoken to a caller as fact, so the row stays bare and the assistant
+# offers the team, which is the honest answer. If the founder supplies wording it goes in
+# services.yaml.
+UNPRICED_AND_UNDESCRIBED = {
+    "xerf_skin_tightening",
+    "laser_facial",
+    "fractional_resurfacing",
+    "scalp_facial",
+    "body_contouring",
+    "tattoo_removal",
+    "acne_program",
+}
+
+
+def test_a_priced_service_says_what_it_does():
+    """A price with no purpose beside it is what the assistant read out at 15:53:14.
+
+    The ceiling is the longest of the clinic's own published descriptions
+    (`microchanneling_vamp`, 13 words). It is not a style preference: the recital this test
+    was written against — the old `facial` row — was 25 words and 208 characters, so a bound
+    set by real copy still catches it by a factor of two. Raise it only for wording the
+    founder supplied; do not trim a clinic's clinical copy to fit it.
+    """
+    from spatalk.tenants.bundle import load_bundle
+    cfg = load_bundle(BUNDLE)
+    bare = set()
+    for s in cfg.services:
+        if s.price_text.strip().lower() == "ask the team":
+            if not (s.description or "").strip():
+                bare.add(s.id)
+            continue
+        desc = (s.description or "").strip()
+        assert desc, f"{s.id} has a price and no description"
+        assert 3 <= len(desc.split()) <= 13, f"{s.id}: {len(desc.split())} words"
+    assert bare == UNPRICED_AND_UNDESCRIBED
+
+
+def test_a_service_description_is_not_a_price_list():
+    """The `facial` row's description was the recital the model read back, figure for figure.
+
+    Every price in it already sat on the specific sibling row it came from, and every figure
+    is still in knowledge.md's "Treatments and prices" section.
+    """
+    from spatalk.tenants.bundle import load_bundle
+    cfg = load_bundle(BUNDLE)
+    for s in cfg.services:
+        assert "$" not in (s.description or ""), s.id

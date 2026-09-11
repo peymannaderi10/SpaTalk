@@ -55,10 +55,10 @@ tests:
     vars: { user: "Can you text me the link to book a facial?", sms_number: "+18885550100", expect_flow: new_booking }
     assert:
       - { type: python, value: "file://asserts.py:starts_flow" }
-  - description: route step, the caller chooses the link and it is texted
+  - description: link offer, the caller says yes and the link is texted
     vars:
       sms_number: "+18885550100"
-      slots: { flow: new_booking, returning_client: true, practitioner: any, service_id: facial, first_name: Dana, phone: "+19055550101", phone_confirmed: true, preferred_window: { date: any, part_of_day: any }, team_note_asked: true }
+      slots: { flow: new_booking, returning_client: true, practitioner: any, service_id: facial, first_name: Dana, phone: "+19055550101", phone_confirmed: true, preferred_window: { date: any, part_of_day: any }, team_note_asked: true, filed: true }
       user: "text me the link please"
     assert:
       - { type: python, value: "file://asserts.py:link_sent" }
@@ -251,6 +251,13 @@ tests:
     vars: { slots: { flow: new_booking, returning_client: false }, user: "no thanks", expect_script: ask_after_offers }
     assert:
       - { type: python, value: "file://asserts.py:asks_script" }
+  - description: "step treatment, asked what is on offer: the goal first, no catalogue, no prices"
+    vars:
+      slots: { flow: new_booking, returning_client: false, offers_done: true }
+      user: "That's the facial one, right? What facials do you have?"
+    assert:
+      - { type: python, value: "file://asserts.py:consults_before_it_recites" }
+      - { type: llm-rubric, value: "Asks what the caller would like to work on, or what kind of result they want, before recommending anything. Does not read out a list of treatments and does not state any price.", transform: "output.text", provider: "google:gemini-3.5-flash" }
   - description: "step practitioner, an exact name: on to the treatment"
     vars: { slots: { flow: new_booking, returning_client: true }, user: "Helen please", expect_script: ask_service }
     assert:

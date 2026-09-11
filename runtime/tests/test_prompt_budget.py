@@ -172,6 +172,36 @@ def test_three_in_a_breath_covers_people_as_well_as_treatments():
         assert member.name in build_system_prompt(cfg, "voice", NOW)
 
 
+def test_a_service_line_says_what_it_does_before_it_says_the_price():
+    """Purpose first, price last, under a heading that says when a price is wanted.
+
+    On founder call 14ea2579 at 15:53:14 the assistant read seven names and three prices back
+    in one breath. The catalogue it read from was rendered `- {name}: {price}.{description}`
+    under `SERVICES (name: price):`, which is a price list with a note attached. Reordered, a
+    row reads as the answer the caller wanted: what it is, then what it costs.
+    """
+    from spatalk.brain.prompt import _services_text, build_system_prompt
+
+    cfg = _cfg()
+    text = _services_text(cfg)
+    lines = {line.split(":", 1)[0]: line for line in text.splitlines()}
+    for service in cfg.services:
+        if not (service.description or "").strip():
+            continue
+        line = lines[f"- {service.name}"]
+        # Normalised the way `_services_text` normalises it: a description that is exactly
+        # one sentence loses its full stop to the em dash that introduces the price.
+        head = " ".join((service.description or "").strip().rstrip(".").split()[:6])
+        assert head in line, service.id
+        assert line.index(head) < line.rindex(service.price_text), service.id
+
+    prompt = build_system_prompt(cfg, "voice", NOW)
+    assert "SERVICES (name: price):" not in prompt
+    heading = next(ln for ln in prompt.splitlines() if ln.startswith("SERVICES"))
+    assert "what it does" in heading
+    assert "when they ask or when they have chosen" in heading
+
+
 def test_a_service_id_is_never_spent_on_the_prompt():
     """No tool takes a service id from the model, so the ids bought nothing but tokens.
 
