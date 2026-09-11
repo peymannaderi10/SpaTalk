@@ -96,6 +96,31 @@ NO_CONTENT_WORDS = frozenset({
     "what's", "whats",
 })
 
+# While the assistant is talking, a caller has to say this many words before Pipecat yields
+# the turn. The same number is configured on the aggregator in `spatalk/voice/pipeline.py`;
+# it lives here as well because `voice/processors.py` cannot import `voice/pipeline.py`
+# (pipeline imports processors), and `tests/test_rules.py::test_the_barge_in_floor_has_one_value`
+# pins the two equal until the follow-up points pipeline.py at this constant. The VALUE is
+# not to be tuned from a desk: voice-regression-V1 §4 recorded that one word was worse on
+# 2026-09-03. The gate works *around* this floor; it does not move it.
+INTERRUPT_MIN_WORDS: int = 3
+
+# The words English uses to take a turn back. Not tenant wording and not a band-3 lexicon:
+# the runtime acts on these by stopping its own audio, never by speaking, so non-negotiable 3
+# does not apply and the list is not tenant-extensible. Founder call 14ea2579, 2026-09-11:
+# "Hello?" and "Stop." are not fragments and not escalations, so they sailed past this gate
+# and were then DELETED by the aggregator's three-word floor (15:55:02.691, 15:56:04.2,
+# 15:56:17.6) — one word the founder said reached no transcript and no model context.
+STOP_REQUESTS: tuple[str, ...] = (
+    "stop", "stop talking", "hold on", "hang on", "wait", "one sec", "one second",
+    "just a sec", "just a second", "sec", "second", "excuse me", "pardon", "sorry",
+    "hello", "hey", "quiet", "shush",
+)
+_STOP_REQUEST_RE = re.compile(
+    r"\b(?:" + "|".join(re.escape(p) for p in sorted(STOP_REQUESTS, key=len, reverse=True)) + r")\b",
+    re.IGNORECASE,
+)
+
 
 # "Am I talking to a real person?" is a question about the assistant, not a request for a
 # person. The words overlap with the human-request lexicon ("real person", "a human"), so
@@ -158,6 +183,27 @@ def is_fragment(text: str, yes_no_step: bool = False) -> bool:
         return True
     vocabulary = NO_CONTENT_WORDS - YES_NO_FILLERS if yes_no_step else NO_CONTENT_WORDS
     return all(w.lower() in vocabulary for w in words)
+
+
+def is_stop_request(text: str) -> bool:
+    """True when the WHOLE utterance is the caller asking for the floor.
+
+    Pure text, no tenant config and no model. The word regex is the one `is_fragment` uses,
+    so the two predicates cannot drift on tokenisation. "Stop." and "Hold on." are the
+    caller taking their turn back; "Can you stop talking?" and "Sorry, I meant Tuesday" are
+    sentences, and a sentence is something to answer, not a signal to act on.
+    """
+    words = re.sub(r"[^A-Za-z0-9' ]+", " ", text or "").split()
+    if not words:
+        return False
+    joined = " ".join(words)
+    if _STOP_REQUEST_RE.search(joined) is None:
+        return False
+    leftovers = [
+        w for w in _STOP_REQUEST_RE.sub(" ", joined).split()
+        if w.lower() not in NO_CONTENT_WORDS
+    ]
+    return not leftovers
 
 
 def rules_gate(

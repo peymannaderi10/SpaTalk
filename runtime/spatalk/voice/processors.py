@@ -33,6 +33,7 @@ from pipecat.frames.frames import (
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 
 from spatalk.brain.audio_tags import drop_unknown_tags
+from spatalk.brain.breath import named_items
 from spatalk.brain.guard import guard
 from spatalk.brain.outcomes import Refused
 from spatalk.brain.renderer import render, render_script
@@ -47,7 +48,14 @@ from spatalk.brain.flow import (
     step_tools,
 )
 from spatalk.brain.requests import EscalateRequest
-from spatalk.brain.rules import health_context_mentioned, is_fragment, rules_gate
+from spatalk.brain.resolve import is_question
+from spatalk.brain.rules import (
+    INTERRUPT_MIN_WORDS,
+    health_context_mentioned,
+    is_fragment,
+    is_stop_request,
+    rules_gate,
+)
 from spatalk.voice.echo import scrub_echo
 from spatalk.voice.frames import ToolTurnDoneFrame
 from spatalk.voice.session import VoiceSession
@@ -79,6 +87,14 @@ STALE_INTERIM_SECS = 1.5
 CALLER_REPEAT = 0.80
 CALLER_REPEAT_MIN_WORDS = 3
 
+# How many utterances the caller may have swallowed inside one assistant turn before the
+# runtime stops the audio for them. One is a backchannel ("Oh."); two is a caller who cannot
+# get in. Set from the founder's call 14ea2579 (2026-09-11), where the pair at 15:54:32.984
+# and 15:54:34.537 was held while the assistant kept talking. Tunable to 1 after a call test,
+# and this is the lever if talk-over persists — not `INTERRUPT_MIN_WORDS`, which
+# voice-regression-V1 §4 measured and refused to move from a desk.
+BARGEIN_HELD_UTTERANCES = 2
+
 
 class RulesGateProcessor(FrameProcessor):
     """Sits after STT. Band-3 lexicon hits are answered with the fixed script and the model never runs."""
@@ -99,6 +115,8 @@ class RulesGateProcessor(FrameProcessor):
         # The caller's previous turn, for the repeat signal only. One turn deep, exactly as
         # `recent_bot_text` is for the assistant's side, and never persisted.
         self._last_final: str | None = None
+        # Utterances held back inside the assistant's current turn. A count, not words.
+        self._held_while_speaking: int = 0
 
     async def _promote_stale_interim(self, frame: InterimTranscriptionFrame):
         await asyncio.sleep(STALE_INTERIM_SECS)
@@ -142,6 +160,47 @@ class RulesGateProcessor(FrameProcessor):
         tools = step_tools(step, slots, self._s.cfg, self._s.ref.channel)
         return any(t.name == "answer" for t in tools)
 
+    def _may_interrupt(self) -> bool:
+        """Is there audio to stop, and is it the caller's to stop?
+
+        The second clause mirrors `MuteUntilFirstBotCompleteUserMuteStrategy`, which
+        suppresses interruptions until the bot's first `BotStoppedSpeakingFrame`: the
+        disclosure cannot be talked over, and this gate sits upstream of the mute, so it has
+        to respect it itself or it fires a pointless upstream interruption into STT.
+        """
+        return self._bot_speaking and self._bot_stopped_at is not None
+
+    def _hold_while_speaking(self, text: str) -> bool:
+        """The aggregator would delete this, so it must not go there.
+
+        `MinWordsUserTurnStartStrategy._handle_transcription` appends the text and then, on
+        the else branch, calls `trigger_reset_aggregation`, which empties the aggregation —
+        so a sub-floor utterance heard over the assistant is not ignored downstream, it is
+        destroyed (founder call 14ea2579, 15:55:02.691: no transcript, no context, no model).
+        """
+        return self._may_interrupt() and len(text.split()) < INTERRUPT_MIN_WORDS
+
+    async def _cut_in(self) -> None:
+        """Stop the assistant's audio for a caller who cannot get a word in."""
+        logger.info("cutting the assistant's audio off: the caller is trying to speak")
+        await self.broadcast_interruption()
+        # The local flags go now rather than waiting for transport.output's
+        # `BotStoppedSpeakingFrame` to come back up (~3 ms on the founder's call:
+        # 15:54:35.552 -> 15:54:35.555), so the next utterance in that window is not counted
+        # as a second cut-in against a turn that is already stopping.
+        self._bot_speaking = False
+        self._bot_stopped_at = self._monotonic()
+        self._held_while_speaking = 0
+
+    async def _cut_in_if_pressed(self, *, stop_request: bool = False) -> None:
+        """One more utterance the caller could not land. Two is enough; a stop request is one."""
+        if not self._may_interrupt():
+            self._held_while_speaking = 0
+            return
+        self._held_while_speaking += 1
+        if stop_request or self._held_while_speaking >= BARGEIN_HELD_UTTERANCES:
+            await self._cut_in()
+
     def _heard_while_assistant_spoke(self) -> bool:
         if self._bot_speaking:
             return True
@@ -154,6 +213,8 @@ class RulesGateProcessor(FrameProcessor):
         await super().process_frame(frame, direction)
         if isinstance(frame, BotStartedSpeakingFrame):
             self._bot_speaking = True
+            # The count of swallowed utterances is per assistant turn.
+            self._held_while_speaking = 0
         elif isinstance(frame, BotStoppedSpeakingFrame):
             self._bot_speaking = False
             self._bot_stopped_at = self._monotonic()
@@ -197,14 +258,51 @@ class RulesGateProcessor(FrameProcessor):
                 # Not a turn: the caller is still assembling the sentence. Nothing goes to
                 # the aggregator, so no model runs and no step question is re-spoken; the
                 # words are kept for the next transcription and the idle nudge still holds
-                # the floor if the caller has in fact stopped.
+                # the floor if the caller has in fact stopped. But a caller who keeps trying
+                # while the assistant talks is a caller who cannot get in.
+                await self._cut_in_if_pressed()
                 return
             frame.text = text
+            # Decided before the session bookkeeping so the barge-in hold below can ask
+            # whether this utterance is a band-3 hit. Behaviour-preserving: neither the step
+            # nor the gate depends on idle_nudges, ignored_tools, runtime_asked_this_turn,
+            # the signal turn, `_last_final` or `ref.health_context`.
+            # A bare answer to "Could I get your first name?" is a name, whatever word the
+            # recogniser produced for it (founder call 2026-09-10 20:56:19, where the
+            # founder's name Peyman came through as "payment").
+            at_name = (
+                next_step(self._s.slots, self._s.cfg, self._s.ref.channel) == Step.NAME
+            )
+            gate = rules_gate(frame.text, self._s.cfg, name_step=at_name)
+            if gate is None and self._hold_while_speaking(frame.text):
+                # Under the aggregator's floor and heard over the assistant, so forwarding it
+                # would destroy it. `_turn_text` has already emptied `_held_fragment` into
+                # `text`, so putting the whole run back on hold loses nothing and keeps the
+                # prepend order.
+                self._held_fragment = frame.text
+                logger.info("cut-in held, too short for the barge-in gate: {!r}", frame.text)
+                await self._cut_in_if_pressed(stop_request=is_stop_request(frame.text))
+                return
+            if gate is not None and self._may_interrupt():
+                # A band-3 word must not queue its 911 or callback script behind the sentence
+                # the caller cut into.
+                await self._cut_in()
             # The caller spoke: any "still there?" count starts over, and so does the
             # allowance for a tool the step did not offer.
             self._s.idle_nudges = 0
             self._s.ignored_tools = 0
             self._s.runtime_asked_this_turn = False
+            # And so does the breath the model may spend answering (founder call 14ea2579,
+            # 2026-09-11 15:53:14 and 15:54:05). A held fragment never gets here, so it
+            # cannot buy a fresh breath in the middle of a monologue.
+            self._s.reset_speech_budget()
+            # The caller's own words for this turn, and whether they asked something. The
+            # tool handlers read these because their only question detector runs on the
+            # argument the model chose (15:55:00.682: "How much does it cost?" arrived as
+            # `choose_service{'said': 'MesoJet and Sound Therapy facial'}`).
+            self._s.caller_said = frame.text
+            self._s.caller_asked = is_question(frame.text)
+            self._s.answer_owed_spent = False
             self._s.signals.next_turn()
             previous, self._last_final = self._last_final, frame.text
             if previous and len(previous.split()) >= CALLER_REPEAT_MIN_WORDS:
@@ -213,13 +311,6 @@ class RulesGateProcessor(FrameProcessor):
                     self._s.record_signal("caller_repeat", similarity=similarity)
             if health_context_mentioned(frame.text, self._s.cfg) and not self._s.ref.health_context:
                 self._s.ref = self._s.ref.model_copy(update={"health_context": True})
-            # A bare answer to "Could I get your first name?" is a name, whatever word the
-            # recogniser produced for it (founder call 2026-09-10 20:56:19, where the
-            # founder's name Peyman came through as "payment").
-            at_name = (
-                next_step(self._s.slots, self._s.cfg, self._s.ref.channel) == Step.NAME
-            )
-            gate = rules_gate(frame.text, self._s.cfg, name_step=at_name)
             if gate:
                 self._s.band = 3
                 now = self._s.clock.now()
@@ -236,12 +327,17 @@ class RulesGateProcessor(FrameProcessor):
                     )
                     sync_context(self._s, now)
                     logger.info("rules gate: clinical ({!r}) -> offer", gate.matched)
+                    offer = render_script("clinical_offer", self._s.cfg, now, urgent=False)
                     await self.push_frame(
-                        TTSSpeakFrame(
-                            text=render_script("clinical_offer", self._s.cfg, now, urgent=False),
-                            append_to_context=True,
-                        )
+                        TTSSpeakFrame(text=offer, append_to_context=True)
                     )
+                    # No model turn runs for this frame, so `_finish_turn` never fires and
+                    # the guard's `_egress` only calls `remember_spoken` (for the echo
+                    # scrubber). Without these two lines the caller's next turn found the
+                    # record still at the clinical offer and rendered the same sentence
+                    # again with `asked_already` False.
+                    self._s.remember_question(offer)
+                    self._s.runtime_asked_this_turn = True
                     return
                 try:
                     out = await self._s.caps.escalate(
@@ -320,6 +416,11 @@ class OutputGuardProcessor(FrameProcessor):
         # turn ends: see `_emit`.
         self._held: str | None = None
         self._spoke_this_turn = False
+        # Sentences of the model's own words this *completion* has put on the wire. Every
+        # completion is allowed one whatever the caller turn's budget has left, so a turn is
+        # never answered with silence (the hand-back at 15:53:13.970 spends two completions
+        # inside one caller turn).
+        self._said_this_completion = 0
         # The two halves of a model turn. The question the caller hears is decided once both
         # have arrived: the completion's end frame, and — on a turn that called a tool — the
         # handler's `ToolTurnDoneFrame`, which arrives after the runtime's own fixed lines.
@@ -337,10 +438,57 @@ class OutputGuardProcessor(FrameProcessor):
     def _flow_open(self) -> bool:
         return bool(self._s.slots.flow) and not self._s.slots.ended_flow
 
-    async def _release_held(self):
+    async def _release_held(self, *, as_statement: bool = False) -> None:
+        """Let the held sentence out.
+
+        `as_statement` is set by `_emit`, where the held sentence has turned out not to be
+        the last one and so was part of the answer: it is budgeted like any other statement.
+        The default is `_finish_turn`'s call, where it is the question that carries the turn
+        and goes out whatever the budget has left — dropping it would leave the turn without
+        a question at all, and the runtime's fallback is suppressible by `asked_already`.
+        """
         held, self._held = self._held, None
-        if held is not None:
-            await self._egress(held, model_words=True)
+        if held is None:
+            return
+        if as_statement:
+            await self._say_statement(held)
+            return
+        await self._egress(held, model_words=True)
+
+    async def _say_statement(self, sentence: str) -> None:
+        """One sentence of the model's own words, against this caller turn's budget.
+
+        Two budgets, because the founder's call broke through each of them separately: the
+        tenant's `max_sentences_per_turn` (five sentences from one completion at 15:54:05,
+        29.7 s of audio) and the catalogue entries named inside them (three sentences at
+        15:53:14 that between them recited seven treatments). The count is added on
+        ADMISSION, not on delivery: a sentence naming four services is spoken whole and the
+        NEXT statement is the one dropped, because the egress cannot cut inside a sentence
+        without leaving a fragment on the wire.
+        """
+        if self._s.turn_capped:
+            # Everything after the cap belongs to the breath that was stopped, the same
+            # discipline `_dropping` already applies after a blocked sentence.
+            return
+        max_sentences = self._s.cfg.persona.max_sentences_per_turn
+        max_items = getattr(self._s.cfg.persona, "max_items_per_turn", 3)
+        floor = self._said_this_completion == 0
+        if not floor and self._s.spoken_sentences >= max_sentences:
+            self._cap("sentences")
+            return
+        if not floor and self._s.spoken_items >= max_items:
+            self._cap("items")
+            return
+        self._s.spoken_sentences += 1
+        self._said_this_completion += 1
+        self._s.spoken_items += named_items(sentence, self._s.cfg)
+        await self._egress(sentence, model_words=True)
+
+    def _cap(self, reason: str) -> None:
+        """The breath is spent. Once a caller turn: `_say_statement` short-circuits after."""
+        self._s.turn_capped = True
+        logger.info("turn capped on {}: the rest of the model's words are dropped", reason)
+        self._s.record_signal("truncated", reason=reason)
 
     async def _egress(
         self, text: str, *, model_words: bool, append_to_context: bool = True
@@ -479,8 +627,8 @@ class OutputGuardProcessor(FrameProcessor):
         if not sentence or self._dropping:
             return
         # Whatever was held back was not the last sentence after all, so it was part of the
-        # answer: it goes out ahead of this one.
-        await self._release_held()
+        # answer: it goes out ahead of this one, and against the same budget.
+        await self._release_held(as_statement=True)
         if sentence.endswith("?") and self._flow_open():
             # A trailing question is the model taking the turn, and since 2026-09-11 that is
             # what it is for: the runtime names the act and the model finds the words. It is
@@ -491,13 +639,14 @@ class OutputGuardProcessor(FrameProcessor):
             # perhaps something else?" then "What did you have in mind?").
             self._held = sentence
             return
-        await self._egress(sentence, model_words=True)
+        await self._say_statement(sentence)
 
     async def process_frame(self, frame: Frame, direction: FrameDirection):
         await super().process_frame(frame, direction)
         if isinstance(frame, LLMFullResponseStartFrame):
             self._buffer, self._dropping, self._held = "", False, None
             self._spoke_this_turn = False
+            self._said_this_completion = 0
             self._response_ended = self._tool_done = self._finished = False
             self._handed_back = False
             self._s.tool_called_this_turn = False
@@ -544,6 +693,7 @@ class OutputGuardProcessor(FrameProcessor):
                     await self._egress(question, model_words=False)
         elif isinstance(frame, InterruptionFrame):
             self._buffer, self._dropping, self._held = "", False, None
+            self._said_this_completion = 0
             self._response_ended = self._tool_done = self._finished = False
             self._s.record_signal("bargein")
             await self.push_frame(frame, direction)

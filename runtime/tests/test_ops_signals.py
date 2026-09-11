@@ -67,3 +67,20 @@ def test_a_new_miss_and_a_new_confirmation_are_repairs():
     assert signals_for(before, before) == []
     # A slot that filled is not a repair.
     assert signals_for(before, before.with_(practitioner="any")) == []
+
+
+def test_truncated_is_a_closed_signal():
+    """The turn ran past its breath (founder call 14ea2579, 2026-09-11 15:53:14 and
+    15:54:05). The reason is one of two closed labels, and the words that were dropped are
+    not in it: the same fence every other signal sits behind."""
+    import pytest
+
+    from spatalk.ops.signals import SIGNAL_KINDS, SignalLog
+
+    assert "truncated" in SIGNAL_KINDS
+    log = SignalLog()
+    log.record("truncated", reason="sentences")
+    log.record("truncated", reason="items")
+    assert log.counts()["truncated"] == 2
+    with pytest.raises(ValueError):
+        log.record("truncated", text="and our Mirapeel facial is $249")
