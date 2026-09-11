@@ -59,6 +59,8 @@ from spatalk.brain.driver import (
     provider_for,
     vendor_key,
 )
+from spatalk.brain.flow import draft_from, unfiled_record
+from spatalk.brain.outcomes import Captured
 from spatalk.brain.prompt import build_system_prompt
 from spatalk.brain.renderer import render_script
 from spatalk.brain.requests import ConversationRef
@@ -407,6 +409,43 @@ async def run_call(websocket: WebSocket, token: str, ctx) -> None:
         await _finalize(ctx, session, context)
 
 
+async def file_complete_record(session: VoiceSession) -> None:
+    """A call that ended on a complete record files it. Nothing is spoken: the caller has
+    gone. A complete request is the team's to work whether or not the caller ever answered
+    the link question (founder call 14ea2579, 2026-09-11 15:56:39).
+
+    A successful live transfer still files, because a spurious item is a click to close where
+    a missing one is a lost booking.
+    """
+    records = [session.slots, getattr(session.slots, "parked", None)]
+    for record in records:
+        if record is None or not unfiled_record(record, session.cfg, "voice"):
+            continue
+        draft = draft_from(record, session.cfg, health_context=session.ref.health_context)
+        try:
+            outcome = await session.caps.capture(session.ref, draft)
+        except Exception as e:  # noqa: BLE001  the ledger is down: nothing was filed
+            logger.exception("call {} could not file its complete record: {}",
+                             session.ref.conversation_id, e)
+            continue
+        if not isinstance(outcome, Captured):
+            logger.warning(
+                "call {} ended on a complete record the ledger refused ({})",
+                session.ref.conversation_id, getattr(outcome, "reason", outcome.kind),
+            )
+            continue
+        if record is session.slots:
+            session.slots = session.slots.with_(filed=True, ended_flow=True)
+        else:
+            session.slots = session.slots.with_(parked=record.with_(filed=True))
+        session.remember_receipt("item", str(outcome.item_id))
+        session.band = max(session.band, 2)
+        logger.info(
+            "call {} ended on a complete record; filed item {}",
+            session.ref.conversation_id, outcome.item_id,
+        )
+
+
 async def _finalize(ctx, session: VoiceSession, context: LLMContext) -> None:
     cid, tenant_id = session.ref.conversation_id, session.cfg.id
     # Whether the caller ever said anything: the missed-call decision below turns on it.
@@ -427,6 +466,9 @@ async def _finalize(ctx, session: VoiceSession, context: LLMContext) -> None:
         had_user_speech = had_user_speech or (role == "user" and bool(text.strip()))
         # Delivery tags were for the voice, not the record (spatalk.brain.audio_tags).
         await append_message(ctx.sf, cid, role, strip_audio_tags(text) if role == "assistant" else text)
+    # The transcript is written, so the record behind it can still reach the ledger: a call
+    # that ended on a complete request files it (founder call 14ea2579, 2026-09-11).
+    await file_complete_record(session)
     seconds = (
         (datetime.now(timezone.utc) - session.started_at).total_seconds()
         if session.started_at

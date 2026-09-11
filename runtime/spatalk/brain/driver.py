@@ -509,6 +509,15 @@ async def run_tool(
         logger.exception("tool {} failed: {}", name, e)
         outcome = Refused(reason="unavailable")
         spoken.append(render(outcome, cfg, now, channel=ref.channel))
+    if applied.file and not isinstance(outcome, Captured):
+        # The ledger refused or failed: nothing is on it, so the record is neither filed nor
+        # finished and the end-of-call path must still try. The caller heard
+        # refuse_unavailable, which promises nothing, so a later silent filing contradicts
+        # no sentence.
+        return (
+            applied.slots.with_(filed=False, ended_flow=False),
+            spoken, outcome, ended, applied.model_speaks,
+        )
     return applied.slots, spoken, outcome, ended, applied.model_speaks
 
 
