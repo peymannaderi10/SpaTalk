@@ -24,7 +24,13 @@ def llm_cost_per_turn(llm):
 def voice_per_minute(tel, stt, tts, llm):
     c_tel = tel["inbound_per_min"] + tel.get("stream_per_min", 0) + tel.get("record_per_min", 0)
     c_stt = stt["per_min"]
-    c_tts = AGENT_SPEAK_FRAC * CHARS_PER_MIN * tts["per_1m_chars"] / 1e6
+    # A vendor that quotes per hour of generated speech is priced on the speaking fraction
+    # directly; one that quotes per character is priced on the characters that fraction
+    # produces at the measured speaking rate. The two agree for Soniox by construction.
+    if "per_spoken_min" in tts:
+        c_tts = AGENT_SPEAK_FRAC * tts["per_spoken_min"]
+    else:
+        c_tts = AGENT_SPEAK_FRAC * CHARS_PER_MIN * tts["per_1m_chars"] / 1e6
     c_llm = TURNS_PER_MIN * llm_cost_per_turn(llm)
     total = c_tel + c_stt + c_tts + c_llm
     return dict(tel=c_tel, stt=c_stt, tts=c_tts, llm=c_llm, total_usd=total, total_cad=total * FX)
@@ -53,7 +59,19 @@ def check(label, cad, target, ceiling, counts=True):
     if flag == "BREACH" and counts: fail = True
     print(f"  {label:<48} {cad:8.4f} CAD  target {target:.3f}  ceiling {ceiling:.3f}  {flag}")
 
-print("=== VOICE, per call-minute (all-in) ===")
+print("=== LIVE STACK, per call-minute: what the quote prices and what the calls run on ===")
+LIVE = R["live_stack"]
+live = voice_per_minute(
+    R["telephony"][LIVE["tel"]], R["stt"][LIVE["stt"]], R["tts"][LIVE["tts"]], R["llm"][LIVE["llm"]]
+)
+print(f"\n{LIVE['label']}")
+print(f"  breakdown USD/min: tel {live['tel']:.4f}  stt {live['stt']:.4f}  tts {live['tts']:.4f}  llm {live['llm']:.4f}")
+check("per call-minute", live["total_cad"], CEIL["voice_min_target"], CEIL["voice_min_ceiling"])
+floor_usd = live["tel"] + live["stt"]
+print(f"  -> telephony and transcription alone are {floor_usd * FX:.4f} CAD/min: the floor no code can move")
+print(f"  -> avg call of {AVG_CALL_MIN} min costs {live['total_cad']*AVG_CALL_MIN:.3f} CAD")
+
+print("\n=== VOICE, per call-minute (all-in) ===")
 for name, stack in R["voice_stacks"].items():
     v = voice_per_minute(R["telephony"][stack["tel"]], R["stt"][stack["stt"]], R["tts"][stack["tts"]], R["llm"][stack["llm"]])
     print(f"\n{name}: tel={stack['tel']} stt={stack['stt']} tts={stack['tts']} llm={stack['llm']}")

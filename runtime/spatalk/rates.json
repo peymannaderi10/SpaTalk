@@ -15,13 +15,14 @@
     }
   },
   "assumptions": {
+    "_note": "Re-derived 2026-09-10 from 38 calls and 42.03 metered minutes of tenant skincentrix (September to date), with the LLM and TTS meters corrected: the usage observer had been counting every metrics frame once per processor hop, so the ledger held eight times the tokens the provider reported and four times the characters. Corrected month: 811,088 input tokens, 311,730 of them read from the vendor cache, 4,625 output, 126 model turns, 28,762 characters sent to be spoken. turns_per_minute 3.00 is measured and unchanged. input_tokens_uncached_per_turn is the 6,400-token request less the ~2,500 the vendor's best-effort implicit cache reads (it caps at ~4,050 tokens and appears on about 6 turns in 10), and is 3,900 rather than the 3,750 the current prompt renders so a clinic with a longer catalogue is still inside it; the September 1 sheet's 600 assumed a cache that read the whole static prefix every turn, which this vendor does not do. output_tokens_per_turn 37 is measured, against 60 assumed. chars_per_spoken_minute 1100 and agent_speaking_fraction 0.58 are measured from the speaking spans of four logged calls (2026-09-10: 107.1 s of speech in a 185 s call); the old 0.5 x 825 = 412 characters a call-minute was an estimate of the same quantity that came out 40% low. avg_call_minutes stays the business assumption: the 38 metered calls average 1.11 minutes because most were hang-ups and tests, and the two real conversations ran 3.08 and 3.45.",
     "avg_call_minutes": 3.0,
-    "agent_speaking_fraction": 0.5,
+    "agent_speaking_fraction": 0.58,
     "chars_per_spoken_minute": 1100,
     "turns_per_minute": 3.0,
-    "input_tokens_uncached_per_turn": 600,
-    "input_tokens_cached_per_turn": 5000,
-    "output_tokens_per_turn": 60
+    "input_tokens_uncached_per_turn": 3900,
+    "input_tokens_cached_per_turn": 2500,
+    "output_tokens_per_turn": 37
   },
   "assumptions_text": {
     "turns_per_conversation": 5,
@@ -162,8 +163,16 @@
       "in": 0.25,
       "cached_in": 0.025,
       "out": 1.5,
+      "cache_storage_per_1m_per_hour": 1.0,
       "_ttft_s": 0.3,
-      "_note": "AI Studio model picker 2026-09-05, text prices; cached input assumed 10% of input like the other Gemini rows; audio input ($0.50) unused, STT is Soniox. Chosen 2026-09-05 as the production model once the slot engine lands: gemini-2.5-flash-lite is refused for this project ('no longer available to new users')."
+      "_note": "ai.google.dev/gemini-api/docs/pricing fetched 2026-09-10, paid tier, text prices: input $0.25 (text/image/video), context caching $0.025, output $1.50, cache storage $1.00 per 1M tokens per hour. The $0.50 audio input rate is unused, STT is Soniox. Chosen 2026-09-05 as the production model once the slot engine lands: gemini-2.5-flash-lite is refused for this project ('no longer available to new users'). The 2026-09-05 entry guessed cached input at 10% of input and the published page agrees."
+    },
+    "gemini_35_flash_lite": {
+      "in": 0.3,
+      "cached_in": 0.03,
+      "out": 2.5,
+      "cache_storage_per_1m_per_hour": 1.0,
+      "_note": "ai.google.dev/gemini-api/docs/pricing fetched 2026-09-10, paid tier: input $0.30, context caching $0.03, output $2.50, cache storage $1.00 per 1M tokens per hour. This is the model the calls actually run on (LLM_MODEL in the deployed .env) and it is dearer than the 3.1 row the quote prices: +20% on input and cached input, +67% on output. At the measured shape of a call (6,400 input tokens a turn of which about 2,500 come from the cache, 37 output, 3 turns a call-minute) that is CA$0.00579 a minute against CA$0.00483 on 3.1 Flash-Lite, so running 3.5 costs CA$0.00096 a call-minute more. No TTFB measured for it."
     }
   },
   "sms": {
