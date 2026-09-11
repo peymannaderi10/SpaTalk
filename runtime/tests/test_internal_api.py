@@ -529,6 +529,29 @@ async def test_a_transcript_read_returns_messages_and_items_and_audits_the_actor
     ]
 
 
+async def test_the_conversation_endpoint_carries_the_signals(client, seeded, sf):
+    """Rung zero reaches the portal the only way runtime data ever does (model-words §6)."""
+    from sqlalchemy import update
+
+    from spatalk.models import Conversation
+    from spatalk.ops.signals import SignalLog
+
+    log = SignalLog()
+    log.next_turn()
+    log.record("repeat", script="ask_service")
+    async with sf() as s, s.begin():
+        await s.execute(
+            update(Conversation)
+            .where(Conversation.id == seeded["voice"])
+            .values(signals=log.as_json())
+        )
+    body = (await client.get(f"/internal/conversations/{seeded['voice']}")).json()
+    assert body["conversation"]["signals"]["counts"]["repeat"] == 1
+    # A page of conversations is a list of rows: the counts stay off the list view.
+    page = (await client.get("/internal/tenants/skincentrix/conversations")).json()
+    assert "signals" not in page["items"][0]
+
+
 async def test_reading_an_unknown_conversation_is_404(client, seeded):
     assert (await client.get(f"/internal/conversations/{uuid.uuid4()}")).status_code == 404
 

@@ -51,6 +51,10 @@ async def end_conversation(
     # Operations plan, Task E5: the call's per-stage p95, {stt, llm, tts}. Optional, because
     # only a voice call has stages; a text conversation ends with nothing to say here.
     stage_ms: dict | None = None,
+    # Model-words memo, §6: the call's rung-0 signal log, as `SignalLog.as_json()`. Counts
+    # and closed labels, so it outlives the transcript; optional, because only a voice call
+    # keeps one today.
+    signals: dict | None = None,
     # Call-notes plan, Task N1: the tenant's `call_notes` switch, passed by the caller
     # because this function has the session factory and not the config. True queues one
     # drafting job for this conversation; the handler is the thing that is idempotent.
@@ -66,6 +70,7 @@ async def end_conversation(
                 latency_ms=latency_ms,
                 health_context=health_context,
                 stage_ms=stage_ms,
+                signals=signals,
             )
         )
     if call_notes:

@@ -64,6 +64,7 @@ async def _conversation(
     messages=0,
     latency_ms=None,
     stage_ms=None,
+    signals=None,
 ):
     from spatalk.models import Conversation, Message
 
@@ -79,6 +80,7 @@ async def _conversation(
             last_message_at=last_message_at,
             latency_ms=latency_ms,
             stage_ms=stage_ms,
+            signals=signals,
         )
         s.add(c)
         await s.flush()
@@ -348,6 +350,7 @@ async def test_the_conversation_stub_keeps_the_shape_and_drops_the_person(
         messages=3,
         latency_ms=[800, 900],
         stage_ms={"stt": 120, "llm": 300, "tts": 150},
+        signals={"counts": {"repeat": 1, "bargein_repeat": 0}, "turns": 4, "signals": []},
     )
     await run_retention(_ctx(sf, registry, fixed_clock), NOW)
 
@@ -355,6 +358,11 @@ async def test_the_conversation_stub_keeps_the_shape_and_drops_the_person(
         c = await s.get(Conversation, cid)
     assert c is not None, "the stub is kept for 400 days"
     assert c.caller is None and c.latency_ms is None and c.stage_ms is None
+    assert c.flow is None
+    # The signals hold no caller words — `spatalk.ops.signals` makes that structural — and a
+    # trouble threshold cannot be set from thirty days of data, so they live as long as the
+    # stub and die with it (model-words memo, §6).
+    assert c.signals is not None and c.signals["counts"]["repeat"] == 1
     assert c.channel == "voice" and c.band == 2
     assert c.started_at == NOW - timedelta(days=40)
     assert c.ended_at == NOW - timedelta(days=40)

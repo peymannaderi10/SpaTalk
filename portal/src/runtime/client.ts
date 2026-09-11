@@ -653,6 +653,10 @@ export interface components {
             notes: string | null;
             /** Notes At */
             notes_at: string | null;
+            /** Signals */
+            signals: {
+                [key: string]: unknown;
+            } | null;
         };
         /** ConversationPage */
         ConversationPage: {

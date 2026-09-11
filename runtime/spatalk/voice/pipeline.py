@@ -462,6 +462,10 @@ async def _finalize(ctx, session: VoiceSession, context: LLMContext) -> None:
         # Operations plan, Task E5: the call's own per-stage p95, stored by the call rather
         # than recomputed later, because retention takes the transcript long before this.
         stage_ms=session_stage_ms(session) or None,
+        # Model-words memo, §6: rung zero outlives the call. One JSONB write at the end,
+        # counts and closed labels, and the only history a trouble threshold can be set
+        # against — so retention keeps it when the transcript goes.
+        signals=session.signals.as_json(),
         # Call-notes plan, Task N1: the transcript is written above, so the drafting job can
         # be queued the moment the call is recorded.
         call_notes=session.cfg.call_notes,

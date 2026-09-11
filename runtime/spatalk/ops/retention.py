@@ -117,6 +117,10 @@ async def _sweep_tenant(sf: async_sessionmaker, tenant_id: str, now: datetime, d
             await s.execute(delete(Message).where(Message.conversation_id.in_(expired)))
         ).rowcount
         # What is left is analytics: channel, band, timestamps. No caller, no latency.
+        # `signals` is deliberately absent from this list (model-words memo, §6): it holds
+        # no caller data — `spatalk.ops.signals` refuses any value that could be a word
+        # somebody said — and a trouble threshold cannot be set from thirty days of calls.
+        # It lives as long as the conversation stub and dies with it at 400 days.
         await s.execute(
             update(Conversation)
             .where(Conversation.id.in_(expired))
