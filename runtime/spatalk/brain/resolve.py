@@ -238,12 +238,24 @@ def match_service(said: str, cfg: TenantConfig) -> Match:
         narrowed = _best(" ".join(rest), options)
         if narrowed.kind != "none":
             return narrowed
+        # The category word is the only thing the caller named ("maybe a facial"), so this is
+        # a kind. Fuzzy-matching the whole phrase instead answers `which` — "did you mean the
+        # Acne facial or the Classic facial?" — to someone who has chosen nothing.
+        return _named_category(cfg, words, categories, placeholders) or Match(kind="none")
     match = _best(text, options)
     if match.kind == "none":
-        for cat in categories:
-            if cat in words or cat + "s" in words:
-                return _kind(cfg, cat, placeholders)
+        return _named_category(cfg, words, categories, placeholders) or match
     return match
+
+
+def _named_category(
+    cfg: TenantConfig, words: list[str], categories: list[str], placeholders: dict[str, str]
+) -> Match | None:
+    """A kind for the first category word among `words`, or None when there is none."""
+    for cat in categories:
+        if cat in words or cat + "s" in words:
+            return _kind(cfg, cat, placeholders)
+    return None
 
 
 def normalise_phone(digits: str) -> str | None:

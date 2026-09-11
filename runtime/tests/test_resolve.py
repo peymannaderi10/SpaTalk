@@ -159,3 +159,34 @@ def test_a_generic_category_entry_resolves_to_a_kind():
     assert match_service("classic facial", cfg).value == "classic_facial"
     assert match_service("hydroabrasion facial", cfg).value == "hydrabrasion_facial"
     assert match_service("skin and scalp facial", cfg).value == "scalp_facial"
+
+
+def test_a_category_word_the_rest_does_not_narrow_is_a_kind():
+    """`scenarios/promptfooconfig.yaml` has "I was thinking a facial" -> `ask_service_kind`,
+    and taking the placeholder row out of the running left the whole phrase to the fuzzy
+    match, which answered `which` — "did you mean the Acne facial or the Classic facial?" on a
+    caller who has not chosen anything. When the only thing a caller named is the category,
+    that is a kind (slot engine design §5), not a coin-flip between two treatments that happen
+    to share the word."""
+    from spatalk.brain.resolve import match_service
+
+    cfg = _cfg()
+    for said in (
+        "I was thinking a facial",
+        "maybe a facial",
+        "just a facial",
+        "some kind of facial",
+        "a facial i guess",
+        "a laser treatment",
+    ):
+        m = match_service(said, cfg)
+        assert m.kind == "kind", f"{said!r} -> {m}"
+        assert len(m.candidates) >= 2, said
+    # The words that do narrow it still win.
+    assert match_service("the hydrabrasion facial", cfg).value == "hydrabrasion_facial"
+    assert match_service("MesoJet facial", cfg).value == "mesojet_facial"
+    # "a facial for acne" narrows to the acne treatments rather than the whole category; the
+    # clinic has two of those, so it is a `which`, which is the honest answer.
+    acne = match_service("a facial for acne", cfg)
+    assert acne.kind != "kind"
+    assert "acne_facial" in (acne.candidates or (acne.value,))
