@@ -327,12 +327,17 @@ class RulesGateProcessor(FrameProcessor):
                     )
                     sync_context(self._s, now)
                     logger.info("rules gate: clinical ({!r}) -> offer", gate.matched)
+                    offer = render_script("clinical_offer", self._s.cfg, now, urgent=False)
                     await self.push_frame(
-                        TTSSpeakFrame(
-                            text=render_script("clinical_offer", self._s.cfg, now, urgent=False),
-                            append_to_context=True,
-                        )
+                        TTSSpeakFrame(text=offer, append_to_context=True)
                     )
+                    # No model turn runs for this frame, so `_finish_turn` never fires and
+                    # the guard's `_egress` only calls `remember_spoken` (for the echo
+                    # scrubber). Without these two lines the caller's next turn found the
+                    # record still at the clinical offer and rendered the same sentence
+                    # again with `asked_already` False.
+                    self._s.remember_question(offer)
+                    self._s.runtime_asked_this_turn = True
                     return
                 try:
                     out = await self._s.caps.escalate(

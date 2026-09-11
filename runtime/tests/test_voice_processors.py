@@ -1373,3 +1373,34 @@ async def test_a_held_fragment_is_part_of_the_question_the_gate_records(fixed_cl
     )
     assert "Um." in session.caller_said and "What's the price?" in session.caller_said
     assert session.caller_asked is True
+
+
+async def test_the_clinical_offer_the_gate_speaks_is_not_asked_twice(fixed_clock):
+    """The gate pushes `scripts.clinical_offer` and returns before the transcription reaches
+    the aggregator, so no model turn runs and `OutputGuardProcessor._finish_turn` never fires
+    for that frame. `_egress` calls `remember_spoken` (for the echo scrubber), not
+    `remember_question`, so on the caller's next turn the record was still at the clinical
+    offer and the same sentence was rendered again with `asked_already` False. The record
+    group is making the clinical offer a step of its own, which makes that path reachable
+    more often, so it is closed here."""
+    from spatalk.voice.processors import RulesGateProcessor
+
+    session, ledger = _session(fixed_clock)
+    ended = []
+
+    class FakeWorker:
+        async def queue_frames(self, frames):
+            ended.extend(type(f).__name__ for f in frames)
+
+    session.worker = FakeWorker()
+    down, _ = await run_test(
+        RulesGateProcessor(session),
+        frames_to_send=[
+            TranscriptionFrame(text="I have a rash after my peel", user_id="u", timestamp="t")
+        ],
+        expected_down_frames=[TTSSpeakFrame], start_timeout=10.0,
+    )
+    assert down[0].text == session.cfg.scripts.clinical_offer
+    assert ledger.items == [] and ended == []
+    assert session.asked_already(session.cfg.scripts.clinical_offer) is True
+    assert session.runtime_asked_this_turn is True
