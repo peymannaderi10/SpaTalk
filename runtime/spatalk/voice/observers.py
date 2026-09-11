@@ -71,9 +71,12 @@ class UsageObserver(BaseObserver):
 
     Speech is metered twice over, in characters sent and in seconds heard. The vendor quotes
     a price per hour of generated speech, and the two diverge the moment a caller talks over
-    the assistant: the websocket is torn down on an interruption, so the sentences already
-    queued are billed for the audio they produced and not for the characters they held. On
-    the founder's call of 2026-09-10 that was 2,691 characters sent against 107.1 seconds of
+    the assistant: on an interruption `TTSService._handle_interruption` drops the sentences
+    still queued and calls `on_audio_context_interrupted` for every open stream, which for
+    Soniox sends `{"stream_id": ..., "cancel": true}` and gets `terminated` back
+    (`pipecat/services/soniox/tts.py`). The audio the vendor is told not to make is audio it
+    cannot charge for, while the character count still holds every sentence we queued. On the
+    founder's call of 2026-09-10 that was 2,691 characters sent against 107.1 seconds of
     audio — 28% of the characters never reached the caller's ear.
     """
 

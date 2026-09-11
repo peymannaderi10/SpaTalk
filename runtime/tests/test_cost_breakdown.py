@@ -182,10 +182,11 @@ async def test_the_seconds_the_assistant_spoke_are_metered(fixed_clock):
     On the founder's call of 2026-09-10 the runtime sent 2,691 characters to be spoken and
     the line carried 107.1 seconds of audio: at the 1,087 characters a spoken minute the
     uninterrupted spans of that call actually run at, 751 of those characters (28%) were
-    cut off by a barge-in and never heard. The websocket is torn down on an interruption
-    (`WebsocketTTSService._handle_interruption` disconnects and reconnects), so the audio
-    the vendor never generated is audio it cannot bill for. Seconds of speech are what the
-    price is quoted in, so seconds are what we meter.
+    cut off by a barge-in and never heard. A barge-in cancels the stream —
+    `TTSService._handle_interruption` drops what is queued and calls
+    `on_audio_context_interrupted`, which for Soniox sends `cancel: true` for the open
+    stream — so the audio the vendor never generated is audio it cannot bill for. Seconds of
+    speech are what the price is quoted in, so seconds are what we meter.
     """
     from pipecat.frames.frames import BotStartedSpeakingFrame, BotStoppedSpeakingFrame
     from spatalk.voice.observers import UsageObserver

@@ -109,8 +109,8 @@ def components_cad(usage: Mapping[str, float], rates: dict | None = None) -> dic
     minutes = q("telephony_seconds") / 60 if usage.get("telephony_seconds") else q("call_minutes")
     # Speech is priced by the hour the vendor generates. `tts_seconds` is the exact unit and
     # `tts_chars` the older proxy, which over-states an utterance a caller talked over: the
-    # socket is dropped on an interruption, so the audio that was never generated was never
-    # billed. Seconds win when the call recorded them and the priced row carries the rate.
+    # runtime cancels the stream on an interruption, so the audio that was never generated
+    # was never billed. Seconds win when the call recorded them and the row carries the rate.
     spoken_min = tts.get("per_spoken_min")
     if usage.get("tts_seconds") and spoken_min is not None:
         tts_usd = q("tts_seconds") / 60 * spoken_min
