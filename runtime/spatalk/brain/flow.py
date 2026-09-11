@@ -17,6 +17,7 @@ from spatalk.brain.ports import ItemDraft
 from spatalk.brain.requests import ContactInfo, PreferredWindow
 from spatalk.brain.resolve import (
     first_name_of,
+    is_question,
     match_practitioner,
     match_service,
     normalise_phone,
@@ -254,9 +255,44 @@ class Applied(BaseModel, frozen=True):
     send_link: bool = False
     end: bool = False
     ignored: bool = False
+    # Why a refused call was refused, in words the model can act on. It goes back as the
+    # function response and nowhere else: never rendered, never spoken to the caller, never
+    # written to an item or the record (2026-09-11 memo, decision 6).
+    rejection: str | None = None
     # True when the model's own words are the content of the turn (the offers, two or three
     # options from the facts) rather than a one-line acknowledgement.
     model_speaks: bool = False
+
+
+# What the model is told when a call is refused. Never caller-facing, so not tenant config:
+# these sentences are read by a model, not spoken by the assistant (non-negotiable 3 covers
+# the wording the caller hears, which is still scripts.yaml and only scripts.yaml).
+ANSWER_THE_QUESTION = {
+    "service": (
+        "The caller asked a question rather than choosing a treatment, so nothing was "
+        "recorded. Answer it from the conversation and the facts, then come back to which "
+        "treatment they would like."
+    ),
+    "practitioner": (
+        "The caller asked a question rather than naming someone, so nothing was recorded. "
+        "Answer it from the conversation and the facts, then come back to who they would "
+        "like to see."
+    ),
+    "answer": (
+        "That is not the caller's yes or no, so nothing was recorded. If they asked a "
+        "question, answer it from the conversation and the facts; the system asks its own "
+        "question again once they have answered it."
+    ),
+    "not_offered": (
+        "That tool is not available at this point in the conversation, so nothing was "
+        "recorded. Answer the caller from the conversation and the facts; the system asks "
+        "the next question itself."
+    ),
+    "nothing_to_change": (
+        "Nothing is stored in that slot yet, so there is nothing to change. Answer the "
+        "caller from the conversation and the facts instead."
+    ),
+}
 
 
 def _tool_allowed(name: str, step: Step, slots: Slots, cfg: TenantConfig, channel: str) -> bool:
@@ -307,11 +343,20 @@ def apply(
     return _finalize(_apply(slots, name, args, cfg, channel, caller_phone), cfg, channel)
 
 
+def tool_refusal(
+    slots: Slots, name: str, args: dict, cfg: TenantConfig, channel: str, caller_phone: str | None
+) -> tuple[bool, str | None]:
+    """Would this call change nothing and say nothing, and why? `apply` is pure, so this just
+    asks it. The reason is for the model to read as the tool result; it is never spoken."""
+    a = apply(slots, name, args, cfg, channel, caller_phone)
+    return a.ignored, a.rejection
+
+
 def tool_ignored(
     slots: Slots, name: str, args: dict, cfg: TenantConfig, channel: str, caller_phone: str | None
 ) -> bool:
-    """Would this call change nothing and say nothing? `apply` is pure, so this just asks it."""
-    return apply(slots, name, args, cfg, channel, caller_phone).ignored
+    """Would this call change nothing and say nothing? The boolean half of `tool_refusal`."""
+    return tool_refusal(slots, name, args, cfg, channel, caller_phone)[0]
 
 
 def _apply(
@@ -327,7 +372,7 @@ def _apply(
     if name in ("escalate", "transfer_to_human"):
         return Applied(slots=slots)
     if not _tool_allowed(name, step, slots, cfg, channel):
-        return Applied(slots=slots, ignored=True)
+        return Applied(slots=slots, ignored=True, rejection=ANSWER_THE_QUESTION["not_offered"])
     args = args or {}
     if name == "start_request":
         kind = args.get("kind")
@@ -341,14 +386,31 @@ def _apply(
             # was the $50 one you said?" reads as a correction to the model (founder call
             # 2026-09-10 20:54:29), and the step question came back for the second time in a
             # row with no answer in front of it. An ignored call hands the turn to the model.
-            return Applied(slots=slots, ignored=True)
+            return Applied(
+                slots=slots, ignored=True, rejection=ANSWER_THE_QUESTION["nothing_to_change"]
+            )
         return Applied(slots=_reopen(slots, slot))
     if name == "answer":
-        return _answer(slots, step, args.get("value", "unsure"), cfg, channel, caller_phone)
+        # The schema's enum is the whole vocabulary of this tool. Anything else is the
+        # caller's question wearing an answer's clothes, and "no" is not a safe reading of it.
+        value = args.get("value", "unsure")
+        if value not in ("yes", "no", "unsure"):
+            return Applied(slots=slots, ignored=True, rejection=ANSWER_THE_QUESTION["answer"])
+        return _answer(slots, step, value, cfg, channel, caller_phone)
     if name == "choose_practitioner":
-        return _practitioner(slots, args.get("said", ""), cfg)
+        said = args.get("said", "")
+        if is_question(said):
+            return Applied(
+                slots=slots, ignored=True, rejection=ANSWER_THE_QUESTION["practitioner"]
+            )
+        return _practitioner(slots, said, cfg)
     if name == "choose_service":
-        return _service(slots, args.get("said", ""), cfg)
+        # A question is not an answer (founder call 2026-09-11 01:41:26, where "Sorry, what
+        # was the- what was the facial one again?" filled the slot and moved the step on).
+        said = args.get("said", "")
+        if is_question(said):
+            return Applied(slots=slots, ignored=True, rejection=ANSWER_THE_QUESTION["service"])
+        return _service(slots, said, cfg)
     if name == "give_name":
         return _name(slots, args.get("first_name", ""), cfg)
     if name == "give_phone":

@@ -307,3 +307,36 @@ def test_change_answer_looks_at_the_slot_not_the_miss_counter():
 
     s = Slots(flow="new_booking", returning_client=False, offers_done=True, misses={"service": 1})
     assert _apply(s, "change_answer", {"slot": "service"}).ignored
+
+
+def test_a_question_shaped_answer_is_refused_with_a_reason():
+    """Founder call 2026-09-11 01:41. "Sorry, what was the- what was the facial one again?"
+    became `choose_service(said='the facial one')`, the resolver filled the slot and the step
+    moved on to the practitioner with the caller's question unanswered. A question is not an
+    answer: nothing is resolved, nothing is written, and the tool result tells the model to
+    answer it. The rejection is a function response to the model, never spoken and never
+    stored."""
+    from spatalk.brain.flow import Slots
+
+    s = Slots(flow="new_booking", returning_client=False, offers_done=True)   # open: SERVICE
+    for said in (
+        "what was the station one again?",
+        "Sorry, what was the- what was the facial one again? The facial one?",
+    ):
+        a = _apply(s, "choose_service", {"said": said})
+        assert a.ignored and a.slots == s, said
+        assert a.rejection and "question" in a.rejection.lower(), said
+    # The control still resolves: the same words without the question.
+    c = _apply(s, "choose_service", {"said": "the facial one"})
+    assert not c.ignored and c.rejection is None
+    assert c.slots.service_id or c.slots.pending
+    p = Slots(flow="new_booking", returning_client=True)                      # open: PRACTITIONER
+    d = _apply(p, "choose_practitioner", {"said": "what was the name again?"})
+    assert d.ignored and d.slots == p and d.rejection
+    e = _apply(p, "choose_practitioner", {"said": "Helen"})
+    assert not e.ignored and e.slots.practitioner == "Helen Courbetis"
+    # `answer` carries a closed enum, so anything else in it is the same failure.
+    r = Slots(flow="new_booking")                                             # open: RETURNING
+    g = _apply(r, "answer", {"value": "what do you mean?"})
+    assert g.ignored and g.rejection and g.slots.returning_client is None
+    assert _apply(r, "answer", {"value": "unsure"}).slots.returning_client is False

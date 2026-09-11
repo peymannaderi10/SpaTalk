@@ -142,3 +142,22 @@ async def test_a_tool_the_step_does_offer_still_speaks_the_next_question(fixed_c
     assert session.slots.service_id == "mesojet_facial"
     assert [f.text for f in pushed] == [session.cfg.scripts.ask_practitioner]
     assert results[0][1].run_llm is False and results[0][0]["ignored"] is False
+
+
+async def test_a_question_shaped_answer_hands_the_turn_back_with_a_reason(fixed_clock):
+    """Founder call 2026-09-11 01:41:26. `choose_service(said='the facial one')` on a caller
+    who had asked what the facial offer was: the slot filled and the runtime asked the next
+    question. Now nothing is spoken, the record does not move, and the model gets the turn
+    back with a readable reason in the tool result."""
+    from spatalk.brain.flow import Slots
+
+    slots = Slots(flow="new_booking", returning_client=False, offers_done=True)
+    session, llm, Params, pushed, _queued, results, _ledger = _world(fixed_clock, slots)
+    await llm.registered["choose_service"](
+        Params("choose_service", {"said": "Sorry, what was the- what was the facial one again?"})
+    )
+    assert pushed == [], "a refused tool call spoke"
+    assert results[0][1].run_llm is True
+    assert session.slots == slots
+    assert results[0][0]["ignored"] is True and results[0][0]["spoken"] is False
+    assert "question" in results[0][0]["rejection"].lower()

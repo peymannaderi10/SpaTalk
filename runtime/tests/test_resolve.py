@@ -90,3 +90,38 @@ def test_a_misheard_first_name_still_confirms():
     cfg = _cfg()
     assert match_practitioner("Ellen", cfg).value == "Helen Courbetis"
     assert match_practitioner("Alexandre", cfg).value == "Alexandra Debski"
+
+
+def test_a_question_is_not_an_answer():
+    """Founder call 2026-09-11 01:41:17 and 01:41:26. The caller asked the runtime to repeat
+    itself — "what was the station one again?", then "Sorry, what was the- what was the facial
+    one again? The facial one?" — and both arrived as `choose_service(said=...)`, because the
+    service step offers no other tool. The second one resolved and the caller's question was
+    never answered. An utterance carrying an interrogative or a repeat marker, or ending in a
+    question mark, is a question and never an answer to the open slot."""
+    from spatalk.brain.resolve import is_question
+
+    questions = (
+        "what was the station one again?",
+        "Sorry, what was the- what was the facial one again? The facial one?",
+        "what was the facial one again",
+        "you said fifty dollars",
+        "can you repeat that",
+        "which one was the cheaper one",
+        "again?",
+        "pardon",
+        "the mesojet?",
+    )
+    for said in questions:
+        assert is_question(said), said
+    answers = (
+        "the facial one",
+        "the mesojet and sound therapy facial",
+        "sorry, the classic facial",
+        "whoever's available",
+        "no preference",
+        "Helen",
+        "hydroabrasion",
+    )
+    for said in answers:
+        assert not is_question(said), said

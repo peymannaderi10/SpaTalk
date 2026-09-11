@@ -35,11 +35,38 @@ ANY_WORDS = (
 STRIP_WORDS = ("with", "dr", "dr.", "doctor", "nurse", "the", "a", "an", "please", "to", "see")
 DIGIT_WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"]
 
+# A caller asking the runtime to say something again is not answering it. On the founder's
+# call of 2026-09-11 01:41 the service step offered only `choose_service`, so "what was the
+# station one again?" and "Sorry, what was the- what was the facial one again?" both arrived
+# as answers and the second one filled the slot. These markers are whole words, so
+# "whichever" and "whoever's" are still answers, and "sorry" is deliberately not one of them:
+# "Sorry, the classic facial" is a correction. A question mark anywhere is a marker by itself.
+QUESTION_WORDS = frozenset({
+    "what", "what's", "whats", "whatre", "which", "again", "repeat", "repeated", "pardon",
+})
+QUESTION_PHRASES = ("you said", "did you say", "one more time", "say that", "come again")
+
 
 class Match(BaseModel, frozen=True):
     kind: Literal["exact", "confirm", "which", "kind", "none"]
     value: str | None = None
     candidates: tuple[str, ...] = ()
+
+
+def is_question(said: str) -> bool:
+    """True when the caller asked something rather than answered (see QUESTION_WORDS).
+
+    Pure text, no tenant config: the tools share it so a question can never be resolved into
+    a slot. The caller's question itself stays in the transcript and is answered by the model
+    in its own words; nothing here is ever spoken or stored.
+    """
+    if "?" in (said or ""):
+        return True
+    words = re.sub(r"[^a-z0-9' ]+", " ", (said or "").lower()).split()
+    if any(w in QUESTION_WORDS for w in words):
+        return True
+    joined = " ".join(words)
+    return any(p in joined for p in QUESTION_PHRASES)
 
 
 def _normalise(text: str) -> str:

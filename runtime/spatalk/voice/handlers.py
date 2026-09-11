@@ -13,7 +13,7 @@ from pipecat.frames.frames import EndFrame, FunctionCallResultProperties, TTSSpe
 from pipecat.services.llm_service import FunctionCallParams
 
 from spatalk.brain.driver import run_tool
-from spatalk.brain.flow import tool_ignored
+from spatalk.brain.flow import tool_refusal
 from spatalk.voice.steps import next_question, sync_context
 from spatalk.brain.outcomes import Captured, Completed, Refused, Transferred
 from spatalk.brain.renderer import render, render_script
@@ -42,7 +42,7 @@ def _make_handler(session: VoiceSession):
         now = session.clock.now()
         session.tool_called_this_turn = True
         args = dict(params.arguments or {})
-        ignored = tool_ignored(
+        ignored, rejection = tool_refusal(
             session.slots,
             params.function_name,
             args,
@@ -51,17 +51,27 @@ def _make_handler(session: VoiceSession):
             session.ref.caller_phone,
         )
         if ignored and session.ignored_tools < IGNORED_TOOL_RETRIES:
-            # The step did not offer this tool, so nothing was written and nothing is said.
-            # The spec's answer was to re-ask the open question (slot engine design, §7), but
-            # on the founder's call that turned "can you book me that facial?" into a bare
-            # "What did you have in mind?" with no answer in front of it, twice. The model
-            # gets the turn back instead, with the step's own tools and the whole
-            # conversation in its context; the budget above stops it looping.
+            # The call changed nothing: the step does not offer this tool, the slot holds
+            # nothing to change, or the caller asked a question instead of answering. Nothing
+            # was written and nothing is said. The spec's answer was to re-ask the open
+            # question (slot engine design, §7), but on the founder's call that turned "can
+            # you book me that facial?" into a bare "What did you have in mind?" with no
+            # answer in front of it, twice. The model gets the turn back instead, with the
+            # step's own tools and the whole conversation in its context; the budget above
+            # stops it looping.
             session.ignored_tools += 1
-            logger.info("tool {} ignored at this step; the model answers instead", params.function_name)
+            logger.info(
+                "tool {} refused; the model answers instead: {}",
+                params.function_name,
+                rejection or "not offered at this step",
+            )
+            result = {"spoken": False, "outcome": "none", "ignored": True}
+            if rejection:
+                # A reason the model can act on, rather than a silent no (2026-09-11 memo,
+                # decision 6). It is a function response: never spoken, never stored.
+                result["rejection"] = rejection
             await params.result_callback(
-                {"spoken": False, "outcome": "none", "ignored": True},
-                properties=FunctionCallResultProperties(run_llm=True),
+                result, properties=FunctionCallResultProperties(run_llm=True)
             )
             return
         slots, spoken, outcome, ended, _speaks = await run_tool(
