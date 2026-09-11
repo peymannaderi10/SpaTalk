@@ -1468,6 +1468,17 @@ git commit -m "feat(brain): a refused tool comes back in words, naming what is m
 
 OSS §8.2 and §8.4(f); LIT R1. The last task of phase A and the one that must not land before Tasks 1 and 2.
 
+> **Amendment (orchestrator, 2026-09-11, after the plan's own cost note below): one model call per caller turn is an invariant of this task.** The cost section is right that `run_llm=True` after a slot tool is a second model round trip, and LIT R4 says the gap is the thing to shorten first, so the second call is not allowed. The design that keeps the memo's "≈ 0" honest:
+>
+> - The readiness report (Task 5's `readiness()`) sits in the step brief **before** the model answers, and names the open slot *and the slot that follows it*, so the model can record the answer and ask the next question in the **same response**: a text part and a function-call part in one completion (Gemini emits both; the order of the parts is not guaranteed and must not matter).
+> - The prompt bullet (verbatim): *"When you record an answer with a tool, ask the next question in the same reply. Never wait for the tool result to ask it."*
+> - `handlers.py`: after a slot tool, `run_llm` stays **False**. The runtime speaks the fixed confirmation if `open_question().fixed` is true, then the model's own text from that same response (buffered by `OutputGuardProcessor` and released after the tool result's fixed lines, so the order the caller hears is: confirmation, then the model's question). Only when that response carried **no question text** does the runtime speak `next_question()` as the fallback, still with no re-run.
+> - The runtime checks the model's question realises the open step (the `Readiness.step` the brief named); a question about a different slot is not spoken, and the fallback fires. This check is the act-level control of LIT R1 (DiactTOD), not a wording check.
+> - Test to add to `tests/test_voice_handlers.py`: `test_a_slot_tool_never_triggers_a_second_model_run` — after `answer`/`choose_service`/`give_name` the handler's `FunctionCallResultProperties.run_llm is False` in every branch, and `test_the_models_question_from_the_tool_turn_is_spoken_after_the_confirmation` — a response with `[text "Got it. Anyone in particular you'd like to see?", call answer(value="no")]` speaks the confirmation (if any) then that sentence, and `next_question()` is not spoken. A third case: a response with the tool call and no text speaks `next_question()` and nothing else.
+> - The one legitimate `run_llm=True` in phase A remains the rejection path (Task 5 / the narrow fix): an un-offered or premature tool hands the turn back, once per caller turn, because there the model has not yet produced a usable reply.
+>
+> With this amendment the cost table below collapses to its first row (0.0355, 64.3%) and the perceived-gap row to today's 1.31 s median. The table stays as the record of what was avoided and why.
+
 **Files:**
 - Modify: `spatalk/brain/flow.py` (`OpenQuestion`, `open_question`, `step_message`), `spatalk/brain/prompt.py`, `spatalk/voice/steps.py`, `spatalk/voice/handlers.py`, `spatalk/voice/processors.py`
 - Test: `tests/test_voice_processors.py` (three cases move, four survive), `tests/test_voice_steps.py` (one moves), `tests/test_flow_brief.py` (new), `tests/test_tools_prompt.py` (one moves), `tests/test_prompt_booking_flow.py` (one moves), `tests/test_prompt_budget.py` (must still pass)
