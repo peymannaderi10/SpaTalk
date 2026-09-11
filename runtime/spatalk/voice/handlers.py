@@ -94,7 +94,13 @@ def _make_handler(session: VoiceSession):
         lines = list(spoken)
         if not ended:
             question = next_question(session, now)
-            if question:
+            if question and session.asked_already(question):
+                # The same rule as in `OutputGuardProcessor`: the caller has just heard those
+                # words and nothing in the record has moved, so the tool result is the whole
+                # of this turn. Reachable on the second refused call in a caller turn, whose
+                # fallback is the open question.
+                logger.info("step question not repeated: {!r}", question)
+            elif question:
                 lines.append(question)
                 # Recorded against the record the tool just moved, so the same question is
                 # not repeated word for word on a later side answer at the same step.

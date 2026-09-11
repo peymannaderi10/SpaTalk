@@ -161,3 +161,24 @@ async def test_a_question_shaped_answer_hands_the_turn_back_with_a_reason(fixed_
     assert session.slots == slots
     assert results[0][0]["ignored"] is True and results[0][0]["spoken"] is False
     assert "question" in results[0][0]["rejection"].lower()
+
+
+async def test_a_tool_result_does_not_repeat_the_question_just_asked(fixed_clock):
+    """The other path into the same fixed question. V1 suppressed a repeat only inside
+    `OutputGuardProcessor`, so the tool-result path could still speak a question the caller
+    had just heard on a record that had not moved. The second ignored call in a caller turn
+    is the reachable case: its fallback is the open question, and by then the caller has
+    already been asked it."""
+    from spatalk.brain.flow import Slots
+
+    slots = Slots(flow="new_booking", returning_client=False, offers_done=True)
+    session, llm, Params, pushed, _queued, results, _ledger = _world(fixed_clock, slots)
+    session.remember_question(session.cfg.scripts.ask_after_offers)
+    for _ in range(2):
+        await llm.registered["start_request"](Params("start_request", {"kind": "new_booking"}))
+    assert pushed == [], "the fixed question came back on an unchanged record"
+    assert results[1][1].run_llm is False
+    # It comes back the moment the record moves.
+    session.ignored_tools = 0
+    await llm.registered["choose_service"](Params("choose_service", {"said": "mesojet facial"}))
+    assert [f.text for f in pushed] == [session.cfg.scripts.ask_practitioner]

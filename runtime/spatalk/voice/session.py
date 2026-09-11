@@ -106,5 +106,11 @@ class VoiceSession:
 
     def asked_already(self, text: str) -> bool:
         """True when those exact words are the last thing the runtime asked and nothing in the
-        record has moved since, so asking them again would say nothing new."""
+        record has moved since, so asking them again would say nothing new.
+
+        Every path that could speak a fixed question asks this: the tool result, the end of a
+        model turn, and the end of a model turn the caller's next words cancelled. The
+        rendered text is the identity, because it is what the caller hears — two script keys
+        that render to the same sentence are the same sentence twice.
+        """
         return bool(text) and text == self.last_question and self.slots == self.last_question_slots

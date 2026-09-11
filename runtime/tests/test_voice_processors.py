@@ -395,16 +395,20 @@ async def test_the_step_question_comes_back_once_the_record_moves(fixed_clock):
     ]
 
 
-async def test_a_silent_model_turn_still_gets_the_question(fixed_clock):
-    """The suppression never leaves a turn with nothing in it: with no words from the model,
-    the script is spoken however recently it was last asked."""
+async def test_a_silent_model_turn_gets_the_question_unless_it_was_just_asked(fixed_clock):
+    """V1 let a turn with no words from the model have the script "however recently it was
+    last asked", which is how "What did you have in mind?" went out twice more on the founder
+    call of 2026-09-11 (01:41:12.841 and 01:41:16.795, both on completions the caller's next
+    fragment had cancelled: `prompt tokens: 0, completion tokens: 0`). The rule is now the
+    same on every path: the same rendered question is never spoken twice running on an
+    unchanged record. A question the runtime has *not* just asked still fills a silent turn."""
     from spatalk.brain.flow import Slots
     from spatalk.voice.processors import OutputGuardProcessor
 
     session, _ = _session(fixed_clock)
     session.slots = Slots(flow="new_booking", returning_client=False, offers_done=True)
-    session.remember_question(session.cfg.scripts.ask_after_offers)
     frames = [LLMFullResponseStartFrame(), LLMFullResponseEndFrame()]
+    # Nothing asked yet: a silent turn is still given the script.
     down, _ = await run_test(
         OutputGuardProcessor(session), frames_to_send=frames,
         expected_down_frames=[
@@ -414,6 +418,27 @@ async def test_a_silent_model_turn_still_gets_the_question(fixed_clock):
     )
     assert [f.text for f in down if isinstance(f, TTSSpeakFrame)] == [
         session.cfg.scripts.ask_after_offers
+    ]
+    # The two cancelled completions of 01:41:12 to 01:41:17, replayed: the record has not
+    # moved and the caller has just heard those words, so the line stays quiet.
+    for _ in range(2):
+        again, _ = await run_test(
+            OutputGuardProcessor(session), frames_to_send=frames,
+            expected_down_frames=[LLMFullResponseStartFrame, LLMFullResponseEndFrame],
+            start_timeout=10.0,
+        )
+        assert not any(isinstance(f, TTSSpeakFrame) for f in again)
+    # The record moves and the next question is asked.
+    session.slots = session.slots.with_(service_id="mesojet_facial")
+    moved, _ = await run_test(
+        OutputGuardProcessor(session), frames_to_send=frames,
+        expected_down_frames=[
+            LLMFullResponseStartFrame, LLMFullResponseEndFrame, TTSSpeakFrame
+        ],
+        start_timeout=10.0,
+    )
+    assert [f.text for f in moved if isinstance(f, TTSSpeakFrame)] == [
+        session.cfg.scripts.ask_practitioner
     ]
 
 

@@ -358,9 +358,14 @@ class OutputGuardProcessor(FrameProcessor):
                 if not self._s.tool_called_this_turn and not self._s.ended
                 else None
             )
-            if question and self._spoke_this_turn and self._s.asked_already(question):
+            if question and self._s.asked_already(question):
                 # The caller has just heard those exact words and nothing in the record has
-                # moved, so the answer above is the whole of this turn.
+                # moved, so there is nothing new to say. V1 made this conditional on the
+                # model having spoken, which let the script out twice more on the founder's
+                # call of 2026-09-11 (01:41:12.841 and 01:41:16.795, both on completions his
+                # next fragment had cancelled: `prompt tokens: 0, completion tokens: 0`).
+                # The rule holds whatever the turn contained; a caller who has stopped
+                # talking is picked up by the "still there?" nudge, not by a third repeat.
                 logger.info("step question not repeated: {!r}", question)
                 question = None
             if question is None and not self._s.tool_called_this_turn:
