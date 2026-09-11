@@ -942,3 +942,42 @@ async def test_the_promptfoo_provider_asks_for_a_number_when_the_caller_var_is_e
     out = p.call_api("", {}, {"vars": {"user": "Text me the link", "caller": "", "slots": slots, "sms_number": "+18885550100"}})["output"]
     assert out["items"] == [] and out["sms_sent"] == 0 and out["outcomes"] == []
     assert out["text"] == load_bundle(BUNDLE).scripts.ask_phone
+
+
+# ---------------------------------------------------------------------------
+# 4.6  The reference's `description` contract matches the bundle it describes
+# ---------------------------------------------------------------------------
+
+_NUMBER_WORDS = {
+    "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8,
+    "nine": 9, "ten": 10, "eleven": 11, "twelve": 12, "thirteen": 13,
+}
+
+
+def _reference_description_bound() -> tuple[int, int]:
+    """The word bound docs/reference/tenant-config.md states for `services[].description`."""
+    doc = (DOCS / "reference" / "tenant-config.md").read_text(encoding="utf-8")
+    m = re.search(r"`description` is the ([a-z]+)-to-([a-z]+)-word", doc)
+    assert m, "the `description` contract sentence moved in docs/reference/tenant-config.md"
+    lo, hi = m.group(1), m.group(2)
+    assert lo in _NUMBER_WORDS and hi in _NUMBER_WORDS, f"unreadable bound: {lo}-to-{hi}"
+    return _NUMBER_WORDS[lo], _NUMBER_WORDS[hi]
+
+
+def test_the_reference_description_bound_is_the_one_the_bundle_keeps():
+    """Merge of fix-1551-record and fix-1551-prompt, 2026-09-11. Two branches wrote the same
+    contract to two different numbers: record's reference sentence said three-to-eight words,
+    while prompt set the ceiling at the longest of the clinic's own published descriptions
+    (`microchanneling_vamp`, thirteen words) rather than delete a published ingredient claim
+    to fit a number. The reference is the document a second tenant is built from, so it has
+    to state the bound the bundle and `tests/test_tenant_bundle.py` actually keep.
+    """
+    lo, hi = _reference_description_bound()
+    cfg = load_bundle(BUNDLE)
+    for s in cfg.services:
+        desc = (s.description or "").strip()
+        if not desc:
+            continue
+        assert lo <= len(desc.split()) <= hi, (
+            f"{s.id} is {len(desc.split())} words; the reference says {lo} to {hi}"
+        )
