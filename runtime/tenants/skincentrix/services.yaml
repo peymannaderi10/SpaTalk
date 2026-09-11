@@ -25,28 +25,28 @@ services:
     price_text: "from $125 for the Classic to $295 for the advanced facials"
     duration_minutes: 60
     booking_url: https://skincentrix.janeapp.com/
-    description: Ask which facial they have in mind; the Classic is $125, Hydrabrasion and HydrationFIX $215, MesoJet, Mirapeel, PureCarbon and Lift and Sculpt $295.
+    description: "Ask which facial they have in mind: cleansing, brightening, hydration or lift."
   - id: express_treatment
     name: $99 express treatment
     category: express
     price_text: "$99"
     duration_minutes: 40
     booking_url: https://skincentrix.janeapp.com/
-    description: Four options at $99, 30 to 45 minutes each; Sculpt and Drain, SkinC Pilates, Acnefix and Lift.
+    description: Four short treatments, 30 to 45 minutes each.
   - id: laser_hair_removal
     name: Laser hair removal
     category: laser
     price_text: "$399 to $1,199 for a package of 6 sessions, depending on the area"
     duration_minutes: 20
     booking_url: https://skincentrix.janeapp.com/
-    description: Extra-small areas $399, small $599, medium $899, large $1,199; every four to six weeks; new clients can try a free underarm treatment.
+    description: Packages of six sessions, every four to six weeks.
   - id: microchanneling
     name: Microchanneling
     category: skin
     price_text: "$450 to $599 depending on the serum"
     duration_minutes: 75
     booking_url: https://skincentrix.janeapp.com/
-    description: DNA repair enzyme $450, VAMP salmon DNA or exosome $599; series of three to six.
+    description: Serum-infused channelling; a series of three to six.
 
   # --- advanced facials ---
   - id: mesojet_facial
@@ -171,7 +171,7 @@ services:
     price_text: "$599 for 6 sessions"
     duration_minutes: 15
     booking_url: https://skincentrix.janeapp.com/
-    description: Underarms, Brazilian or full face. New clients can try a free underarm treatment.
+    description: Underarms, Brazilian or full face.
   - id: laser_hair_medium
     name: Laser hair removal, medium area
     category: laser
@@ -228,6 +228,7 @@ services:
     booking_url: https://skincentrix.janeapp.com/
     consult_required: true
     clinical: true
+    description: Platelet-rich plasma driven in by microchanneling.
   - id: prp_undereye
     name: Under-eye PRP
     category: medical
@@ -236,6 +237,7 @@ services:
     booking_url: https://skincentrix.janeapp.com/
     consult_required: true
     clinical: true
+    description: Platelet-rich plasma for the under-eye area.
   - id: prp_hair
     name: Hair PRP
     category: medical
@@ -244,7 +246,7 @@ services:
     booking_url: https://skincentrix.janeapp.com/
     consult_required: true
     clinical: true
-    description: Scalp injections to support hair growth. Hair and face together $749, three for $1,975.
+    description: Scalp injections to support hair growth.
 
   # --- injectables (nurses) ---
   - id: neuromodulators
@@ -264,6 +266,7 @@ services:
     booking_url: https://skincentrix.janeapp.com/
     consult_required: true
     clinical: true
+    description: Filler for lips, cheeks, under-eye or chin.
   - id: biostimulators
     name: Radiesse biostimulator
     category: medical
@@ -272,6 +275,7 @@ services:
     booking_url: https://skincentrix.janeapp.com/
     consult_required: true
     clinical: true
+    description: Collagen stimulator for the lower face, neck or hands.
 
   # --- other treatments, priced by the team ---
   - id: xerf_skin_tightening
