@@ -340,3 +340,17 @@ def test_a_question_shaped_answer_is_refused_with_a_reason():
     g = _apply(r, "answer", {"value": "what do you mean?"})
     assert g.ignored and g.rejection and g.slots.returning_client is None
     assert _apply(r, "answer", {"value": "unsure"}).slots.returning_client is False
+
+
+def test_a_generic_category_entry_does_not_fill_the_treatment_slot():
+    """The other half of the 01:41:26 defect: "the facial one" moved the step on to the
+    practitioner. A kind opens `ask_service_kind` and the treatment slot stays empty."""
+    from spatalk.brain.flow import Slots, next_step, step_question
+
+    cfg = _cfg()
+    s = Slots(flow="new_booking", returning_client=False, offers_done=True)
+    a = _apply(s, "choose_service", {"said": "the facial one"})
+    assert a.slots.service_id is None
+    assert a.slots.pending is not None and a.slots.pending.kind == "offers"
+    key, _fills = step_question(next_step(a.slots, cfg, "voice"), a.slots, cfg, "voice")
+    assert key == "ask_service_kind"

@@ -64,6 +64,8 @@ Each `team[]` entry may carry `services: [service_id, …]`, the treatments that
 
 `services:` list of: `id` (slug), `name`, `category`, `price_text`, `duration_minutes` (optional), `booking_url`, `consult_required` (bool), `clinical` (bool), `description`. The service ids become the enum the model may use; nothing outside this list can be referenced by a tool call.
 
+**Generic category entries.** A catalog may carry a placeholder row for what callers ask for by category — Skincentrix has `id: facial, name: Facial, category: facial`, plus `Laser hair removal` and `Microchanneling` — so the prompt can quote a price range. The resolver treats such a row as a *kind*, never as a treatment: a caller who says "a facial" or "the facial one" hears `ask_service_kind` and the slot stays empty, and the placeholder is never offered as a "did you mean?" against the specific treatments behind it. No flag is needed; a row is recognised as a placeholder when its `id` or its `name` is its `category`, or when its `name` is a strict subset of the names of two or more other rows in the same category (`spatalk.brain.resolve.category_placeholders`). A real treatment always carries a word the others do not, so it is never mistaken for one.
+
 ## knowledge.md
 
 Prose. Goes into the cached system prompt verbatim. Keep under 4,000 words. No wording that promises outcomes, no medical claims, no prices that change weekly unless the tenant will maintain them.

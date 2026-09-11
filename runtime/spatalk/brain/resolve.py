@@ -46,6 +46,11 @@ QUESTION_WORDS = frozenset({
 })
 QUESTION_PHRASES = ("you said", "did you say", "one more time", "say that", "come again")
 
+# Words a caller hangs off the end of a category name without naming a treatment: "the facial
+# one", "an express treatment". Stripped before the category test, never when they are the
+# whole utterance ("one" on its own names nothing).
+KIND_TAIL = frozenset({"one", "ones", "treatment", "treatments", "option", "options"})
+
 
 class Match(BaseModel, frozen=True):
     kind: Literal["exact", "confirm", "which", "kind", "none"]
@@ -155,15 +160,77 @@ def match_practitioner(said: str, cfg: TenantConfig) -> Match:
     return _best(text, options)
 
 
+def category_placeholders(cfg: TenantConfig) -> dict[str, str]:
+    """The catalog entries that stand for a whole category rather than a treatment, as
+    `{service_id: category}`.
+
+    Skincentrix's `services.yaml` carries them under "what callers ask for by category":
+    `Facial`, `Laser hair removal`, `Microchanneling`. They are recognised by shape rather
+    than by a new schema field, so no tenant bundle has to be re-authored: an entry whose id
+    or name *is* its category, or whose name is a strict subset of the names of two or more
+    other entries in the same category ("Laser hair removal" inside "Laser hair removal,
+    small area"). A real treatment carries a word the others do not, so it is never caught.
+    """
+    by_category: dict[str, list] = {}
+    for s in cfg.services:
+        by_category.setdefault(s.category, []).append(s)
+    found: dict[str, str] = {}
+    for s in cfg.services:
+        if s.id == s.category or _normalise(s.name) == s.category:
+            found[s.id] = s.category
+            continue
+        mine = set(_normalise(s.name).split())
+        wider = [
+            o for o in by_category[s.category]
+            if o.id != s.id and mine < set(_normalise(o.name).split())
+        ]
+        if len(wider) >= 2:
+            found[s.id] = s.category
+    return found
+
+
+def _kind(cfg: TenantConfig, category: str, placeholders: dict[str, str]) -> Match:
+    """A kind, with the category's specific treatments as the candidates behind it."""
+    return Match(
+        kind="kind",
+        value=category,
+        candidates=tuple(
+            s.id for s in cfg.services if s.category == category and s.id not in placeholders
+        ),
+    )
+
+
+def _named_kind(
+    text: str, cfg: TenantConfig, categories: list[str], placeholders: dict[str, str]
+) -> str | None:
+    """The category `text` names, by the category word itself or by a placeholder's name."""
+    words = text.split()
+    while len(words) > 1 and words[-1] in KIND_TAIL:
+        words.pop()
+    stem = " ".join(words)
+    named = {_normalise(cfg.service(i).name): c for i, c in placeholders.items()}
+    for candidate in (stem, stem[:-1] if stem.endswith("s") else stem):
+        if candidate in categories:
+            return candidate
+        if candidate in named:
+            return named[candidate]
+    return None
+
+
 def match_service(said: str, cfg: TenantConfig) -> Match:
     text = _normalise(said)
     if not text:
         return Match(kind="none")
     categories = sorted({s.category for s in cfg.services})
-    singular = text[:-1] if text.endswith("s") else text
-    if text in categories or singular in categories:
-        return Match(kind="kind", value=text if text in categories else singular)
-    options = [(s.id, s.name) for s in cfg.services]
+    placeholders = category_placeholders(cfg)
+    named = _named_kind(text, cfg, categories, placeholders)
+    if named is not None:
+        return _kind(cfg, named, placeholders)
+    # A placeholder is not a treatment, so it is out of the running: with "Facial" in the
+    # list, "acne facial" and "classic facial" were a coin-flip "did you mean Facial or
+    # Acne facial?" and "the facial one" was an exact match on a row that names nothing
+    # (founder call 2026-09-11 01:41:26).
+    options = [(s.id, s.name) for s in cfg.services if s.id not in placeholders]
     # "hydroabrasion facial": the words that are not a category name pick the service.
     words = text.split()
     rest = [w for w in words if w not in categories and (w[:-1] if w.endswith("s") else w) not in categories]
@@ -174,8 +241,8 @@ def match_service(said: str, cfg: TenantConfig) -> Match:
     match = _best(text, options)
     if match.kind == "none":
         for cat in categories:
-            if cat in text.split() or cat + "s" in text.split():
-                return Match(kind="kind", value=cat)
+            if cat in words or cat + "s" in words:
+                return _kind(cfg, cat, placeholders)
     return match
 
 

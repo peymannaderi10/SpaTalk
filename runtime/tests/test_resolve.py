@@ -125,3 +125,37 @@ def test_a_question_is_not_an_answer():
     )
     for said in answers:
         assert not is_question(said), said
+
+
+def test_a_generic_category_entry_resolves_to_a_kind():
+    """Founder call 2026-09-11 01:41:26. `services.yaml` carries generic entries "for what
+    callers ask for by category" — `id: facial, name: Facial, category: facial` and the same
+    shape for laser hair removal and microchanneling — and `WRatio` scores any phrase
+    containing "facial" at exactly 0.90 against "Facial", which is `ACCEPT`. So "the facial
+    one" came back `exact` and the runtime booked "Facial", a catalog row that names no
+    treatment. A placeholder stands for a category, so naming one names a kind
+    (slot engine design §5, "a facial" -> kind -> ask_service_kind), and it never competes
+    with the specific entries behind it."""
+    from spatalk.brain.resolve import match_service
+
+    cfg = _cfg()
+    m = match_service("the facial one", cfg)
+    assert m.kind == "kind" and m.value == "facial" and len(m.candidates) >= 2
+    assert "facial" not in m.candidates, "the placeholder is not one of the choices"
+    assert "mesojet_facial" in m.candidates
+    # A placeholder whose name is not the bare category word is one too.
+    laser = match_service("laser hair removal", cfg)
+    assert laser.kind == "kind" and laser.value == "laser" and len(laser.candidates) >= 2
+    assert "laser_hair_removal" not in laser.candidates
+    assert match_service("microchanneling", cfg).kind == "kind"
+    # "the express one" and "express treatment" are the category word with a filler tail.
+    for said in ("the express one", "express treatment"):
+        k = match_service(said, cfg)
+        assert k.kind == "kind" and k.value == "express", said
+    # A specific treatment is still exact, and the entries behind a category still resolve
+    # on their own now that the placeholder is out of their way.
+    assert match_service("MesoJet", cfg) .kind == "exact"
+    assert match_service("MesoJet", cfg).value == "mesojet_facial"
+    assert match_service("classic facial", cfg).value == "classic_facial"
+    assert match_service("hydroabrasion facial", cfg).value == "hydrabrasion_facial"
+    assert match_service("skin and scalp facial", cfg).value == "scalp_facial"
