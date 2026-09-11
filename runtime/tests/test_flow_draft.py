@@ -33,7 +33,11 @@ def test_step_message_names_what_is_known_and_the_tool_to_use():
     s = Slots(flow="new_booking", returning_client=True, practitioner="Helen Courbetis")
     m = step_message(Step.SERVICE, s, _cfg(), "voice")
     assert m.startswith(STEP_MARKER) and "choose_service" in m and "Helen" in m
-    assert len(m.split(". ")) <= 5
+    # Six, not five, since 2026-09-11: the brief became a readiness report and names what is
+    # still needed and its legal choices as well as the tool that takes it (memo §7
+    # decision 1). It is still a paragraph, and it is still the only volatile input a turn
+    # buys — `tests/test_prompt_budget.py` keeps the money honest.
+    assert len(m.split(". ")) <= 6
     qa = step_message(Step.QA, Slots(), _cfg(), "voice")
     assert qa.startswith(STEP_MARKER) and "start_request" in qa
     done = step_message(Step.COMPLETE, s.with_(first_name="Dana"), _cfg(), "voice")

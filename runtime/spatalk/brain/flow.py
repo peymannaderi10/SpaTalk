@@ -881,6 +881,30 @@ def _missing(step: Step, slots: Slots, cfg: TenantConfig, channel: str) -> Missi
     )
 
 
+class OpenQuestion(BaseModel, frozen=True):
+    """The question the record is waiting on, and who owns its wording.
+
+    `fixed` is True exactly when a `Pending` is open: a value the resolver could not settle
+    is read back in the tenant's own words, because a wrong read-back is a wrong record
+    (candidates-not-verdicts is phase B). Everything else is a plain step question, and the
+    model words it from the readiness report (memo §7 decision 1).
+    """
+
+    key: str
+    fills: dict
+    fixed: bool
+
+
+def open_question(slots: Slots, cfg: TenantConfig, channel: str) -> OpenQuestion | None:
+    """The open step's question as a script key, or None when no flow is open."""
+    if slots.flow is None or slots.ended_flow:
+        return None
+    q = step_question(next_step(slots, cfg, channel), slots, cfg, channel)
+    if q is None:
+        return None
+    return OpenQuestion(key=q[0], fills=q[1], fixed=slots.pending is not None)
+
+
 def readiness(slots: Slots, cfg: TenantConfig, channel: str) -> Readiness:
     """What is known, what is missing with its legal choices, and what may be called.
 
@@ -897,9 +921,38 @@ def readiness(slots: Slots, cfg: TenantConfig, channel: str) -> Readiness:
     )
 
 
+# What every mid-request brief ends with. The side-question path and the honesty rule are
+# the same at every step, and a brief that left either out would be the one place the model
+# could believe it may claim an outcome (memo §7 decision 1).
+_BRIEF_TAIL = (
+    " If they ask you something else, call answer_question and answer them. The system "
+    "decides what is stored and what is asked next, and the system speaks every outcome "
+    "itself: never say a request has been sent, filed, passed on or booked."
+)
+
+# Vapi's anti-autocorrect rule, in effect: a recogniser's "payment" for Peyman is a
+# transcription problem, and a model that tidies it up hides it (voice-regression-V1, open
+# item 2). The steps whose value is a person's own words get it said out loud.
+_STEP_EXTRA = {
+    Step.NAME: (
+        " Take the name exactly as they say it: never modify it, never autocorrect it, "
+        "never guess a spelling."
+    ),
+    Step.PHONE: (
+        " Pass the digits exactly as they say them: never modify, autocorrect or guess."
+    ),
+}
+
+
 def step_message(step: Step, slots: Slots, cfg: TenantConfig, channel: str) -> str:
-    """One short brief for the model: what is known, what is open, which tool takes the
-    answer. It replaces the booking bullets that used to sit in the middle of the prompt."""
+    """The readiness report as one paragraph: what is known, what is still needed with its
+    legal choices, and which tool takes the answer.
+
+    It used to end "Do not ask a question yourself; one short acknowledgement at most",
+    which was the prompt half of the answering machine the founder heard. It now *invites*
+    the question: the runtime keeps which slot is open and what may be stored, and gives up
+    choosing the words (memo §7 decision 1; OSS §8.2).
+    """
     if step == Step.QA:
         return (
             f"{STEP_MARKER} No request is open. Answer questions from the facts. The moment the "
@@ -908,57 +961,66 @@ def step_message(step: Step, slots: Slots, cfg: TenantConfig, channel: str) -> s
             "own: never say that you will start, file or pass on a request, and never ask for "
             "their name or number; the system asks the questions from there."
         )
-    report = readiness(slots, cfg, channel)
-    known_text = ("Known: " + ", ".join(report.known) + ". ") if report.known else ""
+    known_text = ("Known: " + ", ".join(_known(slots, cfg)) + ". ") if _known(slots, cfg) else ""
     if step == Step.COMPLETE:
         return (
             f"{STEP_MARKER} {known_text}Everything is collected. Call file_request now. "
             "Say nothing about the result."
         )
-    tool = report.missing.tool if report.missing else _answer_tool(step, slots, cfg, channel)
+    m = _missing(step, slots, cfg, channel)
+    tool = m.tool if m else _answer_tool(step, slots, cfg, channel)
+    wanted = m.description if m else "nothing: everything the request needs is on the record"
     if slots.digression is not None:
         # The caller asked something else, and `answer_question` recorded the step it
         # interrupted. It comes ahead of the step's own briefs because answering the caller
         # is the turn's job; the open question follows it, in the model's words.
-        wanted = (
-            report.missing.description
-            if report.missing
-            else "nothing: everything the request needs is on the record"
-        )
         return (
             f"{STEP_MARKER} {known_text}They asked something else. Answer it from the facts "
             "in one or two sentences, then ask again, in your own words, for "
-            f"{wanted}, and put their answer in "
-            f"{tool}. Do not call answer_question again."
+            f"{wanted}, and put their answer in {tool}. Do not call answer_question again."
+            + _BRIEF_TAIL
+        )
+    if slots.pending is not None and slots.pending.kind not in ("offers", "which"):
+        # A value the resolver could not settle is read back in the tenant's own words, so
+        # the runtime has this question and the model must not guess at it.
+        return (
+            f"{STEP_MARKER} {known_text}The system has just read something back to the caller "
+            "in its own words and is waiting for a yes or a no. Call answer with yes or no and "
+            "say nothing else." + _BRIEF_TAIL
         )
     if step == Step.OFFERS and slots.pending is None:
         return (
             f"{STEP_MARKER} {known_text}The system has just asked whether they would like to hear "
             "the new-client offers. Call answer with yes or no and say nothing else: the system "
-            "reads the offers itself."
+            "reads the offers itself." + _BRIEF_TAIL
         )
     if step == Step.PHONE and slots.phone and not slots.misses.get("phone") and slots.pending is None:
         return (
             f"{STEP_MARKER} {known_text}The system has just asked whether the number they are calling "
             "from is the best one. 'Yes' or 'that's fine' is answer with yes; 'no', 'use a different "
             "one' or a new number is answer with no (the system asks for the digits next). Do not "
-            "call change_answer for this."
+            "call change_answer for this." + _BRIEF_TAIL
         )
     if step == Step.TEAM_NOTE:
         return (
             f"{STEP_MARKER} {known_text}The system has just asked whether there is anything for the "
             "team to know. 'No', 'nothing' or 'that's all' is the answer to that question: call "
             "answer with no. Do not end the conversation; the system files the request next."
+            + _BRIEF_TAIL
         )
     if slots.pending is not None and slots.pending.kind == "offers":
         return (
             f"{STEP_MARKER} {known_text}The caller named a kind of treatment. The system just "
             "offered two or three options or a consultation. If they want options, name two or "
             "three from the facts with prices in one breath and then wait; when they choose one, "
-            "call choose_service."
+            "call choose_service." + _BRIEF_TAIL
         )
+    choices = (" — one of: " + ", ".join(m.choices)) if (m and m.choices) else ""
     return (
-        f"{STEP_MARKER} {known_text}The system has just asked the caller a question. Put their "
-        f"answer in {tool}. If instead they change an earlier answer, call change_answer with "
-        "that slot. Do not ask a question yourself; one short acknowledgement at most."
+        f"{STEP_MARKER} {known_text}Still needed: {wanted}{choices}. Ask for it in one short "
+        f"question, in your own words, and put their answer in {tool}; when you record an "
+        "answer with a tool, ask the next question in the same reply. If instead they change "
+        "an earlier answer, call change_answer with that slot."
+        + _BRIEF_TAIL
+        + _STEP_EXTRA.get(step, "")
     )

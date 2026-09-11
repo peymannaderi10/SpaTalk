@@ -14,7 +14,9 @@ from pipecat.services.llm_service import FunctionCallParams
 
 from spatalk.brain.driver import run_tool
 from spatalk.brain.flow import next_step, rejection_text, tool_rejection
-from spatalk.voice.steps import next_question, sync_context
+from spatalk.ops.signals import signals_for
+from spatalk.voice.frames import ToolTurnDoneFrame
+from spatalk.voice.steps import next_question, open_question_text, sync_context
 from spatalk.brain.outcomes import Captured, Completed, LinkSent, Refused, Transferred
 from spatalk.brain.renderer import render, render_script
 from spatalk.brain.requests import TransferRequest
@@ -44,128 +46,144 @@ MAX_REJECTIONS_PER_TURN = 3
 
 def _make_handler(session: VoiceSession):
     async def handler(params: FunctionCallParams):
-        now = session.clock.now()
-        session.tool_called_this_turn = True
-        args = dict(params.arguments or {})
-        if params.function_name == "answer_question" and session.slots.digression is None:
-            # No `run_tool`: it writes nothing and speaks nothing. The frame records what the
-            # runtime was about to ask, the brief tells the model to answer and come back to
-            # it, and the turn is handed over (memo §2). The `run_llm=True` here replaces the
-            # one the first refused tool of a turn would have spent, so it buys no new call.
-            session.slots = session.slots.with_(
-                digression=next_step(session.slots, session.cfg, "voice")
-            )
-            session.record_signal("digression", step=session.slots.digression.value)
-            sync_context(session, now)
-            await params.result_callback(
-                {"spoken": False, "outcome": "none", "ignored": False},
-                properties=FunctionCallResultProperties(run_llm=True),
-            )
-            return
-        rejection = tool_rejection(
-            session.slots,
-            params.function_name,
-            args,
-            session.cfg,
-            session.ref.channel,
-            session.ref.caller_phone,
-        )
-        if rejection is not None:
-            # The call changed nothing: the step does not offer this tool, the record is not
-            # ready for it, the slot holds nothing to change, or the caller asked a question
-            # instead of answering. Nothing was written and nothing is said. The spec's
-            # answer was to re-ask the open question (slot engine design, §7), but on the
-            # founder's call that turned "can you book me that facial?" into a bare "What did
-            # you have in mind?" with no answer in front of it, twice. The model gets the
-            # turn back instead, now told what is missing and what it may call.
-            session.ignored_tools += 1
-            session.record_signal("tool_rejected", reason=rejection.reason, tool=rejection.tool)
-            logger.info(
-                "tool {} refused ({}): the model is told why", rejection.tool, rejection.reason
-            )
-            if session.ignored_tools > MAX_REJECTIONS_PER_TURN:
-                question = next_question(session, now)
-                if question and session.asked_already(question):
-                    logger.info("step question not repeated: {!r}", question)
-                    question = None
-                if question:
-                    session.remember_question(question)
-                    await params.llm.push_frame(
-                        TTSSpeakFrame(text=question, append_to_context=True)
-                    )
-                await params.result_callback(
-                    {"spoken": bool(question), "outcome": "none", "ignored": True},
-                    properties=FunctionCallResultProperties(run_llm=False),
-                )
-                return
-            await params.result_callback(
-                {
-                    # A reason the model can act on, rather than a silent no (2026-09-11
-                    # memo, decision 6). It is a function response: never spoken, never
-                    # sent, never stored.
-                    "rejection": rejection_text(rejection),
-                    "spoken": False,
-                    "outcome": "none",
-                    "ignored": True,
-                },
-                properties=FunctionCallResultProperties(run_llm=True),
-            )
-            return
-        slots, spoken, outcome, ended, _speaks = await run_tool(
-            session.caps,
-            session.ref,
-            session.slots,
-            params.function_name,
-            args,
-            now,
-        )
-        session.slots = slots
-        # The receipt goes in at the ledger's own word, before the frame that asserts it:
-        # the outcome scripts all claim a filing, and the guard holds every one of them that
-        # nothing backs (model-words memo, §3.3).
-        if isinstance(outcome, Captured):
-            session.remember_receipt("item", str(outcome.item_id))
-            session.band = (
-                3 if outcome.item_type.startswith("escalation_") else max(session.band, 2)
-            )
-        elif isinstance(outcome, LinkSent):
-            session.remember_receipt("link", outcome.service_id)
-        elif isinstance(outcome, Completed):
-            session.has_completed = True
-            session.remember_receipt("platform", outcome.platform_ref)
-        if session.slots.ended_flow:
-            session.slots = session.slots.with_(flow=None, ended_flow=False)
-        lines = list(spoken)
-        if not ended:
-            question = next_question(session, now)
-            if question and session.asked_already(question):
-                # The same rule as in `OutputGuardProcessor`: the caller has just heard those
-                # words and nothing in the record has moved, so the tool result is the whole
-                # of this turn. Reachable on the second refused call in a caller turn, whose
-                # fallback is the open question.
-                logger.info("step question not repeated: {!r}", question)
-            elif question:
-                lines.append(question)
-                # Recorded against the record the tool just moved, so the same question is
-                # not repeated word for word on a later side answer at the same step.
-                session.remember_question(question)
-        sync_context(session, now)
-        for text in lines:
-            await params.llm.push_frame(TTSSpeakFrame(text=text, append_to_context=True))
-        await params.result_callback(
-            {
-                "spoken": bool(lines),
-                "outcome": outcome.kind if outcome else "none",
-                "ignored": False,
-            },
-            properties=FunctionCallResultProperties(run_llm=False),
-        )
-        if ended:
-            session.ended = True
-            if session.worker is not None:
-                await session.worker.queue_frames([EndFrame()])
+        handed_back = True
+        try:
+            handed_back = await _run_one_tool(session, params)
+        finally:
+            # Last, and whatever happened. `OutputGuardProcessor` is waiting on this frame
+            # to decide what question the caller hears, so a handler that raised must not
+            # leave the turn hanging.
+            await params.llm.push_frame(ToolTurnDoneFrame(handed_back=handed_back))
 
     return handler
+
+
+async def _run_one_tool(session: VoiceSession, params: FunctionCallParams) -> bool:
+    """One tool call. True when the turn was handed back to the model for another reply.
+
+    What this speaks is the tenant's own wording and nothing else: the outcome lines the
+    engine produced, and a confirmation of a value the resolver could not settle. It never
+    appends a plain step question any more — that is the model's, from the readiness report
+    (memo §7 decision 1) — and it never re-runs the model to get one, because one model call
+    per caller turn is an invariant of this phase. The fallback for a reply that carried no
+    question at all is `next_question()`, spoken by the guard once it has seen both halves
+    of the turn.
+    """
+    now = session.clock.now()
+    session.tool_called_this_turn = True
+    args = dict(params.arguments or {})
+    if params.function_name == "answer_question" and session.slots.digression is None:
+        # No `run_tool`: it writes nothing and speaks nothing. The frame records what the
+        # runtime was about to ask, the brief tells the model to answer and come back to
+        # it, and the turn is handed over (memo §2). The `run_llm=True` here replaces the
+        # one the first refused tool of a turn would have spent, so it buys no new call.
+        session.slots = session.slots.with_(
+            digression=next_step(session.slots, session.cfg, "voice")
+        )
+        session.record_signal("digression", step=session.slots.digression.value)
+        sync_context(session, now)
+        await params.result_callback(
+            {"spoken": False, "outcome": "none", "ignored": False},
+            properties=FunctionCallResultProperties(run_llm=True),
+        )
+        return True
+    rejection = tool_rejection(
+        session.slots,
+        params.function_name,
+        args,
+        session.cfg,
+        session.ref.channel,
+        session.ref.caller_phone,
+    )
+    if rejection is not None:
+        # The call changed nothing: the step does not offer this tool, the record is not
+        # ready for it, the slot holds nothing to change, or the caller asked a question
+        # instead of answering. Nothing was written and nothing is said. The spec's
+        # answer was to re-ask the open question (slot engine design, §7), but on the
+        # founder's call that turned "can you book me that facial?" into a bare "What did
+        # you have in mind?" with no answer in front of it, twice. The model gets the
+        # turn back instead, now told what is missing and what it may call.
+        session.ignored_tools += 1
+        session.record_signal("tool_rejected", reason=rejection.reason, tool=rejection.tool)
+        logger.info(
+            "tool {} refused ({}): the model is told why", rejection.tool, rejection.reason
+        )
+        if session.ignored_tools > MAX_REJECTIONS_PER_TURN:
+            question = next_question(session, now)
+            if question and session.asked_already(question):
+                logger.info("step question not repeated: {!r}", question)
+                question = None
+            if question:
+                session.remember_question(question)
+                session.runtime_asked_this_turn = True
+                await params.llm.push_frame(TTSSpeakFrame(text=question, append_to_context=True))
+            await params.result_callback(
+                {"spoken": bool(question), "outcome": "none", "ignored": True},
+                properties=FunctionCallResultProperties(run_llm=False),
+            )
+            return False
+        await params.result_callback(
+            {
+                # A reason the model can act on, rather than a silent no (2026-09-11
+                # memo, decision 6). It is a function response: never spoken, never
+                # sent, never stored.
+                "rejection": rejection_text(rejection),
+                "spoken": False,
+                "outcome": "none",
+                "ignored": True,
+            },
+            properties=FunctionCallResultProperties(run_llm=True),
+        )
+        return True
+    before = session.slots
+    slots, spoken, outcome, ended, _speaks = await run_tool(
+        session.caps,
+        session.ref,
+        session.slots,
+        params.function_name,
+        args,
+        now,
+    )
+    session.slots = slots
+    # The receipt goes in at the ledger's own word, before the frame that asserts it:
+    # the outcome scripts all claim a filing, and the guard holds every one of them that
+    # nothing backs (model-words memo, §3.3).
+    if isinstance(outcome, Captured):
+        session.remember_receipt("item", str(outcome.item_id))
+        session.band = 3 if outcome.item_type.startswith("escalation_") else max(session.band, 2)
+    elif isinstance(outcome, LinkSent):
+        session.remember_receipt("link", outcome.service_id)
+    elif isinstance(outcome, Completed):
+        session.has_completed = True
+        session.remember_receipt("platform", outcome.platform_ref)
+    if session.slots.ended_flow:
+        session.slots = session.slots.with_(flow=None, ended_flow=False)
+    lines = list(spoken)
+    pair = None if ended else open_question_text(session, now)
+    if pair is not None and pair[0].fixed:
+        # A confirmation of a value the resolver could not settle: the wording is law, so
+        # the runtime says it and does not pay for a model turn to rephrase it.
+        lines.append(pair[1])
+        session.remember_question(pair[1])
+        session.runtime_asked_this_turn = True
+    for kind, detail in signals_for(before, session.slots):
+        session.record_signal(kind, **detail)
+    sync_context(session, now)
+    for text in lines:
+        await params.llm.push_frame(TTSSpeakFrame(text=text, append_to_context=True))
+    await params.result_callback(
+        {
+            "spoken": bool(lines),
+            "outcome": outcome.kind if outcome else "none",
+            "ignored": False,
+        },
+        properties=FunctionCallResultProperties(run_llm=False),
+    )
+    if ended:
+        session.ended = True
+        if session.worker is not None:
+            await session.worker.queue_frames([EndFrame()])
+    return False
 
 
 def _make_transfer_handler(session: VoiceSession):

@@ -3,6 +3,18 @@ from pathlib import Path
 BUNDLE = Path(__file__).resolve().parents[1] / "tenants" / "skincentrix"
 
 
+def _said(pushed):
+    """What the caller would hear, which is the tenant's own wording and nothing else.
+
+    A tool turn also pushes one `ToolTurnDoneFrame` — the handler telling the guard its half
+    of the turn is over (model-words memo, A4) — so the frames are filtered by kind rather
+    than compared whole.
+    """
+    from pipecat.frames.frames import TTSSpeakFrame
+
+    return [f.text for f in pushed if isinstance(f, TTSSpeakFrame)]
+
+
 async def test_handler_speaks_rendered_text_and_disables_llm_rerun(fixed_clock):
     from pipecat.frames.frames import TTSSpeakFrame, EndFrame
     from spatalk.brain.flow import Slots
@@ -45,7 +57,8 @@ async def test_handler_speaks_rendered_text_and_disables_llm_rerun(fixed_clock):
     assert results[0][1].run_llm is False and session.band == 2 and ledger.items[0].type == "cancel"
     assert session.slots.flow is None
     await llm.registered["end_conversation"](Params("end_conversation", {}))
-    assert session.ended and isinstance(queued[-1], EndFrame) and "Thanks for calling" in pushed[1].text
+    assert session.ended and isinstance(queued[-1], EndFrame)
+    assert "Thanks for calling" in _said(pushed)[1]
 
 
 def _world(fixed_clock, slots=None):
@@ -105,7 +118,7 @@ async def test_an_ignored_tool_is_refused_in_words_that_name_what_is_missing(fix
     slots = Slots(flow="new_booking", returning_client=False, offers_done=True)
     session, llm, Params, pushed, _queued, results, _ledger = _world(fixed_clock, slots)
     await llm.registered["start_request"](Params("start_request", {"kind": "new_booking"}))
-    assert pushed == [], "an ignored tool spoke"
+    assert _said(pushed) == [], "an ignored tool spoke"
     assert results[0][1].run_llm is True
     assert results[0][0]["ignored"] is True and results[0][0]["spoken"] is False
     assert session.slots == slots
@@ -117,7 +130,7 @@ async def test_an_ignored_tool_is_refused_in_words_that_name_what_is_missing(fix
     for _ in range(MAX_REJECTIONS_PER_TURN):
         await llm.registered["start_request"](Params("start_request", {"kind": "new_booking"}))
     assert results[-1][1].run_llm is False
-    assert [f.text for f in pushed] == [session.cfg.scripts.ask_after_offers]
+    assert _said(pushed) == [session.cfg.scripts.ask_after_offers]
 
 
 async def test_the_ignored_budget_resets_when_the_caller_speaks(fixed_clock):
@@ -140,15 +153,30 @@ async def test_the_ignored_budget_resets_when_the_caller_speaks(fixed_clock):
     assert session.ignored_tools == 0
 
 
-async def test_a_tool_the_step_does_offer_still_speaks_the_next_question(fixed_clock):
+async def test_a_tool_the_step_does_offer_speaks_the_outcome_and_the_confirmation_only(fixed_clock):
+    """Was `…_still_speaks_the_next_question`. Memo §7 decision 1: "every outcome sentence
+    the caller hears is a tenant script; every question realises the act the runtime named."
+    So the tool result carries the tenant's outcome wording and a confirmation of a value the
+    resolver could not settle, and never a plain step question — that one is the model's, from
+    the same reply that called the tool, and `OutputGuardProcessor` speaks the script only if
+    that reply asked nothing."""
     from spatalk.brain.flow import Slots
 
     slots = Slots(flow="new_booking", returning_client=False, offers_done=True)
     session, llm, Params, pushed, _queued, results, _ledger = _world(fixed_clock, slots)
     await llm.registered["choose_service"](Params("choose_service", {"said": "mesojet facial"}))
     assert session.slots.service_id == "mesojet_facial"
-    assert [f.text for f in pushed] == [session.cfg.scripts.ask_practitioner]
+    assert _said(pushed) == [], "the tool result spoke a plain step question"
+    assert session.runtime_asked_this_turn is False
     assert results[0][1].run_llm is False and results[0][0]["ignored"] is False
+    # A value the resolver could not settle is the one question the runtime still asks here.
+    session2, llm2, Params2, pushed2, _q2, results2, _l2 = _world(
+        fixed_clock, Slots(flow="new_booking", returning_client=True)
+    )
+    await llm2.registered["choose_practitioner"](Params2("choose_practitioner", {"said": "Ellen"}))
+    assert _said(pushed2) == [session2.cfg.scripts.confirm_match.format(value="Helen")]
+    assert session2.runtime_asked_this_turn is True
+    assert results2[0][1].run_llm is False
 
 
 async def test_a_question_shaped_answer_hands_the_turn_back_with_a_reason(fixed_clock):
@@ -163,7 +191,7 @@ async def test_a_question_shaped_answer_hands_the_turn_back_with_a_reason(fixed_
     await llm.registered["choose_service"](
         Params("choose_service", {"said": "Sorry, what was the- what was the facial one again?"})
     )
-    assert pushed == [], "a refused tool call spoke"
+    assert _said(pushed) == [], "a refused tool call spoke"
     assert results[0][1].run_llm is True
     assert session.slots == slots
     assert results[0][0]["ignored"] is True and results[0][0]["spoken"] is False
@@ -186,12 +214,14 @@ async def test_a_tool_result_does_not_repeat_the_question_just_asked(fixed_clock
     session.remember_question(session.cfg.scripts.ask_after_offers)
     for _ in range(MAX_REJECTIONS_PER_TURN + 1):
         await llm.registered["start_request"](Params("start_request", {"kind": "new_booking"}))
-    assert pushed == [], "the fixed question came back on an unchanged record"
+    assert _said(pushed) == [], "the fixed question came back on an unchanged record"
     assert results[-1][1].run_llm is False
-    # It comes back the moment the record moves.
+    # And a tool the step does offer speaks no plain question at all now, on any turn: the
+    # only wording the handler adds is an outcome or a confirmation (memo §7 decision 1).
     session.ignored_tools = 0
     await llm.registered["choose_service"](Params("choose_service", {"said": "mesojet facial"}))
-    assert [f.text for f in pushed] == [session.cfg.scripts.ask_practitioner]
+    assert _said(pushed) == []
+    assert session.slots.service_id == "mesojet_facial"
 
 
 async def test_the_receipt_is_recorded_before_the_outcome_is_spoken(fixed_clock):
@@ -211,4 +241,4 @@ async def test_the_receipt_is_recorded_before_the_outcome_is_spoken(fixed_clock)
     assert session.receipts == [f"item:{ledger.items[0].id}"]
     # And the receipt was there before the sentence that asserts it: the guard would have
     # retracted `captured` otherwise.
-    assert pushed[0].text.startswith("I've sent that to the team as a request")
+    assert _said(pushed)[0].startswith("I've sent that to the team as a request")

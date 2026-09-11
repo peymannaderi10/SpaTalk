@@ -81,8 +81,11 @@ def test_the_static_prompt_no_longer_carries_the_booking_order():
         assert "when they want to book" not in p
         assert "ask for their first name" not in p
         assert "new-client offers" not in p
-        assert "the system asks the questions" in p
-        assert "never ask for a name or a number yourself" in p
+        # The system still owns the order and the record; since 2026-09-11 the model owns
+        # the wording of the question it asks for each one (memo §7 decision 1).
+        assert "the system tells you what it still needs" in p
+        assert "you ask for it in your own words" in p
+        assert "never ask for a name or a number yourself" not in p
 
 
 def test_the_faq_is_rendered_ahead_of_the_facts_and_only_when_there_is_one():

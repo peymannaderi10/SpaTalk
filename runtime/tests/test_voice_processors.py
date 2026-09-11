@@ -202,13 +202,13 @@ async def test_no_question_outside_a_flow(fixed_clock):
     assert not any(isinstance(f, TTSSpeakFrame) for f in down)
 
 
-async def test_the_model_does_not_ask_a_question_while_a_flow_is_open(fixed_clock):
-    """Founder call 2026-09-10 20:54:37. The model's answer ended "Would you like to hear
-    about any of those, or perhaps something else?" and the runtime then spoke "What did you
-    have in mind?" - two questions in one breath, the second one word for word the same on
-    every turn, which is what read as an assistant with no memory of the call. The slot
-    engine's invariant 4 is that every question the caller hears is a tenant script, so a
-    trailing question of the model's own is not spoken while a request is open."""
+async def test_the_models_own_question_is_spoken_when_the_runtime_has_none(fixed_clock):
+    """Was `test_the_model_does_not_ask_a_question_while_a_flow_is_open`, and it was right
+    for the runtime it was written against. Memo §3: "Then the trailing-question suppression
+    from `voice-regression-V1` is relaxed, because it was right for a runtime that asked its
+    own question on top and is wrong once the model owns the question." The V1 defect it was
+    written for — two questions in one breath, the second identical on every turn — is now
+    prevented at the source: the runtime asks nothing here."""
     from spatalk.brain.flow import Slots
     from spatalk.voice.processors import OutputGuardProcessor
 
@@ -221,20 +221,155 @@ async def test_the_model_does_not_ask_a_question_while_a_flow_is_open(fixed_cloc
         LLMFullResponseEndFrame(),
     ]
     down, _ = await run_test(
-        OutputGuardProcessor(session),
-        frames_to_send=frames,
+        OutputGuardProcessor(session), frames_to_send=frames,
+        expected_down_frames=[
+            LLMFullResponseStartFrame, LLMTextFrame, LLMTextFrame, LLMFullResponseEndFrame
+        ],
+        start_timeout=10.0,
+    )
+    said = [f.text.strip() for f in down if isinstance(f, LLMTextFrame)]
+    assert said == ["That's our fifty-dollar credit.", "Would you like to hear about any of those?"]
+    assert [f for f in down if isinstance(f, TTSSpeakFrame)] == []
+
+
+async def test_a_fixed_confirmation_still_beats_the_models_own_question(fixed_clock):
+    """The one case the hold survives: a `Pending` is open, the wording is law, and the
+    model's guess at it is dropped rather than asked alongside."""
+    from spatalk.brain.flow import Pending, Slots
+    from spatalk.voice.processors import OutputGuardProcessor
+
+    session, _ = _session(fixed_clock)
+    session.slots = Slots(
+        flow="new_booking", returning_client=True,
+        pending=Pending(kind="match", slot="practitioner", value="Helen Courbetis"),
+    )
+    frames = [
+        LLMFullResponseStartFrame(),
+        LLMTextFrame("Sure. "),
+        LLMTextFrame("Did you want Ellen or Helen?"),
+        LLMFullResponseEndFrame(),
+    ]
+    down, _ = await run_test(
+        OutputGuardProcessor(session), frames_to_send=frames,
         expected_down_frames=[
             LLMFullResponseStartFrame, LLMTextFrame, LLMFullResponseEndFrame, TTSSpeakFrame
         ],
         start_timeout=10.0,
     )
     said = [f.text.strip() for f in down if isinstance(f, LLMTextFrame)]
-    assert said == ["That's our fifty-dollar credit."]
-    spoken = [f.text for f in down if isinstance(f, TTSSpeakFrame)]
-    assert spoken == [session.cfg.scripts.ask_after_offers]
-    # A sentence that was never spoken is not something the echo scrubber may trim from the
-    # caller's next words.
-    assert "would you like" not in session.recent_bot_text
+    assert said == ["Sure."]
+    assert [f.text for f in down if isinstance(f, TTSSpeakFrame)] == [
+        session.cfg.scripts.confirm_match.format(value="Helen")
+    ]
+
+
+async def test_a_tool_turn_waits_for_the_handler_and_then_lets_the_models_question_out(fixed_clock):
+    """The orchestrator's amendment: one model call per caller turn, so the question the
+    caller hears on a slot-filling turn comes from the same reply that called the tool.
+
+    The guard cannot decide at the end of the completion, because Pipecat queues the
+    function calls and pushes `LLMFullResponseEndFrame` without waiting for them — verified
+    in the installed source: `pipecat/services/google/llm.py` calls
+    `run_function_calls(function_calls)` and pushes the end frame in its `finally`, and
+    `LLMService._run_sequential_function_calls` only puts the calls on a queue. So it waits
+    for the handler's `ToolTurnDoneFrame`, which arrives after the runtime's own lines."""
+    from pipecat.frames.frames import FunctionCallInProgressFrame
+
+    from spatalk.brain.flow import Slots
+    from spatalk.voice.frames import ToolTurnDoneFrame
+    from spatalk.voice.processors import OutputGuardProcessor
+
+    session, _ = _session(fixed_clock)
+    session.slots = Slots(flow="new_booking")
+    frames = [
+        LLMFullResponseStartFrame(),
+        LLMTextFrame("Got it. "),
+        LLMTextFrame("Who would you like to see?"),
+        FunctionCallInProgressFrame(
+            function_name="answer", tool_call_id="1", arguments={"value": "yes"}
+        ),
+        LLMFullResponseEndFrame(),
+        ToolTurnDoneFrame(),
+    ]
+    down, _ = await run_test(
+        OutputGuardProcessor(session), frames_to_send=frames,
+        expected_down_frames=[
+            LLMFullResponseStartFrame, LLMTextFrame, FunctionCallInProgressFrame,
+            LLMFullResponseEndFrame, LLMTextFrame
+        ],
+        start_timeout=10.0,
+    )
+    said = [f.text.strip() for f in down if isinstance(f, LLMTextFrame)]
+    assert said == ["Got it.", "Who would you like to see?"]
+    # And the runtime's own question is not asked on top of it.
+    assert [f for f in down if isinstance(f, TTSSpeakFrame)] == []
+
+
+async def test_a_tool_turn_with_no_question_from_the_model_gets_the_step_script(fixed_clock):
+    """The fallback A4 keeps. A reply that called the tool and asked nothing would otherwise
+    leave the caller with silence, so the runtime's own question fills it — after the
+    handler's lines, which is what the done frame is for."""
+    from pipecat.frames.frames import FunctionCallInProgressFrame
+
+    from spatalk.brain.flow import Slots
+    from spatalk.voice.frames import ToolTurnDoneFrame
+    from spatalk.voice.processors import OutputGuardProcessor
+
+    session, _ = _session(fixed_clock)
+    session.slots = Slots(flow="new_booking", returning_client=False, offers_done=True)
+    frames = [
+        LLMFullResponseStartFrame(),
+        FunctionCallInProgressFrame(
+            function_name="choose_service", tool_call_id="1", arguments={"said": "mesojet"}
+        ),
+        LLMFullResponseEndFrame(),
+        ToolTurnDoneFrame(),
+    ]
+    down, _ = await run_test(
+        OutputGuardProcessor(session), frames_to_send=frames,
+        expected_down_frames=[
+            LLMFullResponseStartFrame, FunctionCallInProgressFrame, LLMFullResponseEndFrame,
+            TTSSpeakFrame
+        ],
+        start_timeout=10.0,
+    )
+    assert [f.text for f in down if isinstance(f, TTSSpeakFrame)] == [
+        session.cfg.scripts.ask_after_offers
+    ]
+
+
+async def test_a_turn_handed_back_to_the_model_gets_no_question_from_the_runtime(fixed_clock):
+    """A refused tool or a side question: another completion is coming, so the runtime asks
+    nothing and the model's one-step-behind question does not go out on top of it."""
+    from pipecat.frames.frames import FunctionCallInProgressFrame
+
+    from spatalk.brain.flow import Slots
+    from spatalk.voice.frames import ToolTurnDoneFrame
+    from spatalk.voice.processors import OutputGuardProcessor
+
+    session, _ = _session(fixed_clock)
+    session.slots = Slots(flow="new_booking", returning_client=False, offers_done=True)
+    frames = [
+        LLMFullResponseStartFrame(),
+        LLMTextFrame("Sure. "),
+        LLMTextFrame("Shall I look that up?"),
+        FunctionCallInProgressFrame(
+            function_name="answer_question", tool_call_id="1", arguments={}
+        ),
+        LLMFullResponseEndFrame(),
+        ToolTurnDoneFrame(handed_back=True),
+    ]
+    down, _ = await run_test(
+        OutputGuardProcessor(session), frames_to_send=frames,
+        expected_down_frames=[
+            LLMFullResponseStartFrame, LLMTextFrame, FunctionCallInProgressFrame,
+            LLMFullResponseEndFrame
+        ],
+        start_timeout=10.0,
+    )
+    said = [f.text.strip() for f in down if isinstance(f, LLMTextFrame)]
+    assert said == ["Sure."]
+    assert [f for f in down if isinstance(f, TTSSpeakFrame)] == []
 
 
 async def test_a_question_in_the_middle_of_an_answer_is_still_spoken(fixed_clock):
@@ -361,6 +496,8 @@ async def test_the_step_question_is_not_repeated_word_for_word(fixed_clock):
     assert not any(isinstance(f, TTSSpeakFrame) for f in down2)
     said = [f.text.strip() for f in down2 if isinstance(f, LLMTextFrame)]
     assert said == ["The MesoJet facial is $295.", "Would you like to get that set up?"]
+    # And the call says so: a repeat the runtime declined is rung-0 evidence, not silence.
+    assert session.signals.counts()["repeat"] == 1
 
 
 async def test_the_step_question_comes_back_once_the_record_moves(fixed_clock):

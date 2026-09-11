@@ -33,6 +33,10 @@ class VoiceSession:
     # turn (a turn with none gets the open question re-asked after the model's words).
     slots: Slots = field(default_factory=Slots)
     tool_called_this_turn: bool = False
+    # True once the runtime has spoken a question on this model turn — a fixed confirmation
+    # from the tool handler, or the fallback step question from the guard. Whichever asked,
+    # the other stays quiet, so there is still exactly one question a turn.
+    runtime_asked_this_turn: bool = False
     # Tools the step did not offer, called since the caller last spoke. The first one hands
     # the turn back to the model so the caller's sentence gets answered from the whole
     # conversation (founder call 2026-09-10 20:55:35, where "can you book me that facial?"

@@ -42,14 +42,15 @@ from spatalk.brain.flow import (
     draft_from,
     next_step,
     open_flow,
+    open_question,
     pop_digression,
-    step_question,
 )
 from spatalk.brain.requests import EscalateRequest
 from spatalk.brain.rules import health_context_mentioned, is_fragment, rules_gate
 from spatalk.voice.echo import scrub_echo
+from spatalk.voice.frames import ToolTurnDoneFrame
 from spatalk.voice.session import VoiceSession
-from spatalk.voice.steps import next_question, sync_context
+from spatalk.voice.steps import sync_context
 
 SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
 
@@ -192,6 +193,7 @@ class RulesGateProcessor(FrameProcessor):
             # allowance for a tool the step did not offer.
             self._s.idle_nudges = 0
             self._s.ignored_tools = 0
+            self._s.runtime_asked_this_turn = False
             self._s.signals.next_turn()
             previous, self._last_final = self._last_final, frame.text
             if previous and len(previous.split()) >= CALLER_REPEAT_MIN_WORDS:
@@ -307,6 +309,13 @@ class OutputGuardProcessor(FrameProcessor):
         # turn ends: see `_emit`.
         self._held: str | None = None
         self._spoke_this_turn = False
+        # The two halves of a model turn. The question the caller hears is decided once both
+        # have arrived: the completion's end frame, and — on a turn that called a tool — the
+        # handler's `ToolTurnDoneFrame`, which arrives after the runtime's own fixed lines.
+        self._response_ended = False
+        self._tool_done = False
+        self._handed_back = False
+        self._finished = False
         # Guard-owned, not a parameter: set only while the guard's own replacement is on its
         # way out, because `cannot_complete` asserts a receipt itself and would otherwise
         # retract the retraction. Nothing outside this class can set it, and `_egress` takes
@@ -316,13 +325,6 @@ class OutputGuardProcessor(FrameProcessor):
 
     def _flow_open(self) -> bool:
         return bool(self._s.slots.flow) and not self._s.slots.ended_flow
-
-    def _question_key(self) -> str | None:
-        """The `scripts` key of the open step's question, for the rung-0 signals."""
-        q = step_question(
-            next_step(self._s.slots, self._s.cfg, "voice"), self._s.slots, self._s.cfg, "voice"
-        )
-        return q[0] if q else None
 
     async def _release_held(self):
         held, self._held = self._held, None
@@ -399,6 +401,67 @@ class OutputGuardProcessor(FrameProcessor):
         finally:
             self._retracting = False
 
+    async def _finish_turn(self) -> str | None:
+        """Decide the one question the caller hears, once the whole turn is in.
+
+        Returns the runtime's own question, for the caller to speak *after* the completion's
+        end frame the way it always has been — the assistant aggregator adds it as an
+        utterance of its own — while the model's released words go out inside the completion.
+
+        The runtime named the act and the model found the words (memo §7 decision 1), so the
+        model's own question carries the turn. Three things still belong to the runtime: a
+        confirmation of a value the resolver could not settle, whose wording is law and which
+        the tool handler has already spoken; the fallback for a reply that asked nothing, so
+        a turn is never left silent; and the rule that the same rendered question is never
+        spoken twice running on an unchanged record.
+        """
+        if self._finished:
+            return None
+        self._finished = True
+        if self._s.slots.digression is not None and self._spoke_this_turn:
+            # The model answered the side question, so the frame has done its job. The narrow
+            # fix took `_spoke_this_turn` out of the *repeat suppression* deliberately; it is
+            # still the right test for "did the model actually answer". A turn that said
+            # nothing leaves the frame open for the next one.
+            self._s.slots = pop_digression(self._s.slots, self._s.cfg, "voice")
+        if self._handed_back:
+            # A refusal or a side question: another completion is coming, so the runtime asks
+            # nothing and the model's one-step-behind question does not go out on top of it.
+            self._held = None
+            return None
+        q = open_question(self._s.slots, self._s.cfg, "voice")
+        question = None
+        if q is not None and not self._s.ended and not self._s.runtime_asked_this_turn:
+            rendered = render_script(q.key, self._s.cfg, self._s.clock.now(), urgent=False, **q.fills)
+            if self._s.asked_already(rendered):
+                # The caller has just heard those exact words and nothing in the record has
+                # moved, so there is nothing new to say. V1 made this conditional on the
+                # model having spoken, which let the script out twice more on the founder's
+                # call of 2026-09-11 (01:41:12.841 and 01:41:16.795, both on completions his
+                # next fragment had cancelled: `prompt tokens: 0, completion tokens: 0`).
+                # The rule holds whatever the turn contained; a caller who has stopped
+                # talking is picked up by the "still there?" nudge, not by a third repeat.
+                logger.info("step question not repeated: {!r}", rendered)
+                self._s.record_signal("repeat", script=q.key)
+            else:
+                question = rendered
+        if self._held is not None and not (q is not None and q.fixed):
+            # The model asked, and the wording is not the tenant's law: its question is the
+            # turn, and the runtime's stays unspoken.
+            await self._release_held()
+            return None
+        if self._held is not None:
+            logger.info("model question dropped for the fixed confirmation: {!r}", self._held)
+            self._held = None
+        if question:
+            if q.key.endswith("_again"):
+                # The same step asked a second time after a miss: the re-prompt count is
+                # half of the repair measurement the phase-B ladder is built from.
+                self._s.record_signal("reprompt", script=q.key)
+            self._s.remember_question(question)
+            self._s.runtime_asked_this_turn = True
+        return question
+
     async def _emit(self, sentence: str):
         # A bracketed tool name or aside is not speech (call on gpt-4.1-nano, 2026-09-03).
         sentence = drop_unknown_tags(sentence.strip())
@@ -408,12 +471,13 @@ class OutputGuardProcessor(FrameProcessor):
         # answer: it goes out ahead of this one.
         await self._release_held()
         if sentence.endswith("?") and self._flow_open():
-            # Invariant 4 of the slot engine: every question the caller hears is a tenant
-            # script. A trailing question of the model's own arrives on top of the runtime's
-            # and the caller gets two in a breath, the second identical on every turn
-            # (founder call 2026-09-10 20:54:37: "Would you like to hear about any of those,
-            # or perhaps something else?" then "What did you have in mind?"). Held until the
-            # end of the turn, when it is known whether the runtime has a question of its own.
+            # A trailing question is the model taking the turn, and since 2026-09-11 that is
+            # what it is for: the runtime names the act and the model finds the words. It is
+            # still held to the end of the turn, because until then it is not known whether
+            # the record wants a confirmation in the tenant's own wording instead — which is
+            # what kept the caller from hearing two questions in one breath on the founder's
+            # call of 2026-09-10 20:54:37 ("Would you like to hear about any of those, or
+            # perhaps something else?" then "What did you have in mind?").
             self._held = sentence
             return
         await self._egress(sentence, model_words=True)
@@ -423,7 +487,10 @@ class OutputGuardProcessor(FrameProcessor):
         if isinstance(frame, LLMFullResponseStartFrame):
             self._buffer, self._dropping, self._held = "", False, None
             self._spoke_this_turn = False
+            self._response_ended = self._tool_done = self._finished = False
+            self._handed_back = False
             self._s.tool_called_this_turn = False
+            self._s.runtime_asked_this_turn = False
             # A fresh completion began, so an error after this one is a new failed *turn*
             # and not another error from the turn that already apologised (llm failover
             # plan, Task F2). The count itself is cleared only by words coming back: a
@@ -445,50 +512,28 @@ class OutputGuardProcessor(FrameProcessor):
         elif isinstance(frame, LLMFullResponseEndFrame):
             await self._emit(self._buffer)
             self._buffer, self._dropping = "", False
-            # A side answer mid-flow ("the Classic facial is $125"): the open question is
-            # asked again after it, by the runtime, from the script (slot engine, §4.3).
-            question = (
-                next_question(self._s, self._s.clock.now())
-                if not self._s.tool_called_this_turn and not self._s.ended
-                else None
-            )
-            if question and self._s.asked_already(question):
-                # The caller has just heard those exact words and nothing in the record has
-                # moved, so there is nothing new to say. V1 made this conditional on the
-                # model having spoken, which let the script out twice more on the founder's
-                # call of 2026-09-11 (01:41:12.841 and 01:41:16.795, both on completions his
-                # next fragment had cancelled: `prompt tokens: 0, completion tokens: 0`).
-                # The rule holds whatever the turn contained; a caller who has stopped
-                # talking is picked up by the "still there?" nudge, not by a third repeat.
-                logger.info("step question not repeated: {!r}", question)
-                key = self._question_key()
-                if key:
-                    self._s.record_signal("repeat", script=key)
-                question = None
-            if self._s.slots.digression is not None and self._spoke_this_turn:
-                # The model answered the side question, so the frame has done its job. The
-                # narrow fix took `_spoke_this_turn` out of the *repeat suppression*
-                # deliberately; it is still the right test for "did the model actually
-                # answer". A turn that said nothing leaves the frame open for the next one.
-                self._s.slots = pop_digression(self._s.slots, self._s.cfg, "voice")
-            if question is None and not self._s.tool_called_this_turn:
-                # The runtime has no question for this step, so the model's is all the caller
-                # would get: better its wording than a silent turn.
-                await self._release_held()
-            elif self._held is not None:
-                logger.info("model question dropped for the step script: {!r}", self._held)
-                self._held = None
+            self._response_ended = True
+            # On a turn with no tool the whole turn is in, so the model's own words are
+            # released inside the completion. On a tool turn the runtime's own lines are
+            # still on their way — Pipecat queues the function calls and pushes this frame
+            # without waiting for them — so the decision waits for the handler's
+            # `ToolTurnDoneFrame`.
+            question = None
+            if not self._s.tool_called_this_turn or self._tool_done:
+                question = await self._finish_turn()
             await self.push_frame(frame, direction)
             if question:
-                key = self._question_key()
-                if key and key.endswith("_again"):
-                    # The same step asked a second time after a miss: the re-prompt count is
-                    # half of the repair measurement the phase-B ladder is built from.
-                    self._s.record_signal("reprompt", script=key)
-                self._s.remember_question(question)
                 await self._egress(question, model_words=False)
+        elif isinstance(frame, ToolTurnDoneFrame):
+            self._tool_done = True
+            self._handed_back = frame.handed_back
+            if self._response_ended:
+                question = await self._finish_turn()
+                if question:
+                    await self._egress(question, model_words=False)
         elif isinstance(frame, InterruptionFrame):
             self._buffer, self._dropping, self._held = "", False, None
+            self._response_ended = self._tool_done = self._finished = False
             self._s.record_signal("bargein")
             await self.push_frame(frame, direction)
         else:
