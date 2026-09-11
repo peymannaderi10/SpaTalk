@@ -176,6 +176,62 @@ async def test_a_latency_reading_is_taken_once_per_frame_too(fixed_clock):
     assert session.stage_ttfb_ms["llm"] == [840]
 
 
+async def test_the_seconds_the_assistant_spoke_are_metered(fixed_clock):
+    """The vendor bills speech by the hour it generates; we counted characters we sent.
+
+    On the founder's call of 2026-09-10 the runtime sent 2,691 characters to be spoken and
+    the line carried 107.1 seconds of audio: at the 1,087 characters a spoken minute the
+    uninterrupted spans of that call actually run at, 751 of those characters (28%) were
+    cut off by a barge-in and never heard. The websocket is torn down on an interruption
+    (`WebsocketTTSService._handle_interruption` disconnects and reconnects), so the audio
+    the vendor never generated is audio it cannot bill for. Seconds of speech are what the
+    price is quoted in, so seconds are what we meter.
+    """
+    from pipecat.frames.frames import BotStartedSpeakingFrame, BotStoppedSpeakingFrame
+    from spatalk.voice.observers import UsageObserver
+
+    session = _voice_session(fixed_clock)
+    observer = UsageObserver(session)
+
+    await _push(observer, BotStartedSpeakingFrame())
+    fixed_clock.advance(seconds=11)
+    await _push(observer, BotStoppedSpeakingFrame())
+    await _push(observer, BotStartedSpeakingFrame())
+    fixed_clock.advance(seconds=6.5)
+    await _push(observer, BotStoppedSpeakingFrame())
+
+    assert session.usage["tts_seconds"] == pytest.approx(17.5, abs=0.01)
+
+
+async def test_a_speaking_span_is_counted_once_per_frame_too(fixed_clock):
+    from pipecat.frames.frames import BotStartedSpeakingFrame, BotStoppedSpeakingFrame
+    from spatalk.voice.observers import UsageObserver
+
+    session = _voice_session(fixed_clock)
+    observer = UsageObserver(session)
+    started, stopped = BotStartedSpeakingFrame(), BotStoppedSpeakingFrame()
+
+    # Both frames travel the pipeline and are seen at every hop; upstream and downstream.
+    for _ in range(3):
+        await _push(observer, started)
+    fixed_clock.advance(seconds=4)
+    for _ in range(3):
+        await _push(observer, stopped)
+
+    assert session.usage["tts_seconds"] == pytest.approx(4.0, abs=0.01)
+
+
+async def test_a_stop_with_no_start_is_not_a_span(fixed_clock):
+    """The disclosure can finish before the observer sees its start on a cold pipeline."""
+    from pipecat.frames.frames import BotStoppedSpeakingFrame
+    from spatalk.voice.observers import UsageObserver
+
+    session = _voice_session(fixed_clock)
+    observer = UsageObserver(session)
+    await _push(observer, BotStoppedSpeakingFrame())
+    assert session.usage["tts_seconds"] == 0.0
+
+
 # --- the estimate -----------------------------------------------------------------------
 
 
@@ -223,6 +279,37 @@ def test_the_estimate_prices_the_live_stack_not_the_research_recommendation():
     tts = r["tts"][live["tts"]]
     assert estimate_cad({"tts_chars": 1_000_000}) == pytest.approx(
         tts["per_1m_chars"] * float(r["usd_to_cad"]), abs=1e-4
+    )
+
+
+def test_speech_is_priced_by_the_second_when_the_seconds_are_there():
+    """`tts_seconds` is to `tts_chars` what `telephony_seconds` is to `call_minutes`: the
+    exact unit when the call recorded it, the older one when it did not. Characters are a
+    proxy for audio and the proxy over-states an interrupted turn."""
+    from spatalk.rates import components_cad, live_stack, load_rates
+
+    r = load_rates()
+    tts = r["tts"][live_stack(r)["tts"]]
+    fx = float(r["usd_to_cad"])
+
+    by_second = components_cad({"tts_seconds": 107.1, "tts_chars": 2691})
+    assert by_second["tts"] == pytest.approx(107.1 / 60 * tts["per_spoken_min"] * fx, abs=1e-6)
+    # The characters this call sent price it higher, because 28% of them were never spoken.
+    by_char = components_cad({"tts_chars": 2691})
+    assert by_char["tts"] > by_second["tts"]
+    assert by_char["tts"] == pytest.approx(2691 / 1_000_000 * tts["per_1m_chars"] * fx, abs=1e-6)
+
+
+def test_the_per_second_and_per_character_prices_are_the_same_price():
+    """The per-character rate is the per-hour rate divided by the measured speaking rate;
+    if the two drift the quote and the invoice stop agreeing."""
+    from spatalk.rates import live_stack, load_rates
+
+    r = load_rates()
+    tts = r["tts"][live_stack(r)["tts"]]
+    chars_per_spoken_min = r["assumptions"]["chars_per_spoken_minute"]
+    assert tts["per_1m_chars"] == pytest.approx(
+        tts["per_spoken_min"] / chars_per_spoken_min * 1_000_000, abs=0.05
     )
 
 

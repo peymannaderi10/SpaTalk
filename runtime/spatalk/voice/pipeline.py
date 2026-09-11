@@ -436,6 +436,12 @@ async def _finalize(ctx, session: VoiceSession, context: LLMContext) -> None:
         ctx.sf, tenant_id, cid, "voice", ctx.settings.tts_provider, "tts_chars",
         session.usage["tts_chars"],
     )
+    # Both units, every call: characters are what we sent and seconds are what the caller
+    # heard, and the gap between them is the speech a barge-in cut off (cost gap C1).
+    await record_usage(
+        ctx.sf, tenant_id, cid, "voice", ctx.settings.tts_provider, "tts_seconds",
+        session.usage["tts_seconds"],
+    )
     await record_usage(
         ctx.sf, tenant_id, cid, "voice", ctx.settings.llm_model, "llm_input_tokens",
         session.usage["llm_input_tokens"],

@@ -415,6 +415,8 @@ async def test_usage_observer_accumulates_llm_and_tts_metrics(fixed_clock):
         "llm_cached_tokens": 1600.0,
         "llm_output_tokens": 180.0,
         "tts_chars": 824.0,
+        # Metered from the bot's speaking spans, not from a metrics frame; no speech here.
+        "tts_seconds": 0.0,
     }
 
 

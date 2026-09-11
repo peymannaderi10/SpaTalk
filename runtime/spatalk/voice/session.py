@@ -49,6 +49,9 @@ class VoiceSession:
     usage: dict[str, float] = field(
         default_factory=lambda: {
             "tts_chars": 0.0,
+            # Seconds of audio the line actually carried, which is the unit the voice is
+            # priced in; characters over-state an utterance a caller talked over.
+            "tts_seconds": 0.0,
             "llm_input_tokens": 0.0,
             "llm_cached_tokens": 0.0,
             "llm_output_tokens": 0.0,

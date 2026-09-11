@@ -206,6 +206,13 @@ def lines(calls: list[CallCost], total: CallCost, tenant_id: str) -> list[str]:
             f"tokens ({total.units.get('llm_cached_tokens', 0) / total.turns:,.0f} cached), "
             f"{total.units.get('llm_output_tokens', 0) / total.turns:,.0f} output",
             f"per call minute: {total.turns / total.minutes:.2f} turns, "
-            f"{total.units.get('tts_chars', 0) / total.minutes:,.0f} spoken characters",
+            f"{total.units.get('tts_chars', 0) / total.minutes:,.0f} characters sent to be spoken",
         ]
+        spoken = total.units.get("tts_seconds", 0.0)
+        if spoken:
+            out.append(
+                f"the assistant spoke for {spoken / 60:,.2f} minutes, "
+                f"{spoken / 60 / total.minutes * 100:.0f}% of the clock, at "
+                f"{total.units.get('tts_chars', 0) / (spoken / 60):,.0f} characters a spoken minute"
+            )
     return out

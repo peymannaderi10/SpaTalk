@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import time
+from datetime import datetime
 
 from pipecat.frames.frames import (
     BotStartedSpeakingFrame,
+    BotStoppedSpeakingFrame,
     MetricsFrame,
     UserStoppedSpeakingFrame,
 )
@@ -66,20 +68,39 @@ class UsageObserver(BaseObserver):
     Keyed on the frame's id rather than on the pipeline's shape: a processor added or moved
     changes the hop count, and a meter that has to be re-derived every time the pipeline is
     edited is a meter that will be wrong again.
+
+    Speech is metered twice over, in characters sent and in seconds heard. The vendor quotes
+    a price per hour of generated speech, and the two diverge the moment a caller talks over
+    the assistant: the websocket is torn down on an interruption, so the sentences already
+    queued are billed for the audio they produced and not for the characters they held. On
+    the founder's call of 2026-09-10 that was 2,691 characters sent against 107.1 seconds of
+    audio — 28% of the characters never reached the caller's ear.
     """
 
     def __init__(self, session: VoiceSession):
         super().__init__()
         self._s = session
         self._seen: set[int] = set()
+        self._spoke_from: datetime | None = None
 
     async def on_push_frame(self, data: FramePushed):
         f = data.frame
-        if not isinstance(f, MetricsFrame):
+        if not isinstance(f, (MetricsFrame, BotStartedSpeakingFrame, BotStoppedSpeakingFrame)):
             return
         if f.id in self._seen:
             return
         self._seen.add(f.id)
+        if isinstance(f, BotStartedSpeakingFrame):
+            self._spoke_from = self._s.clock.now()
+            return
+        if isinstance(f, BotStoppedSpeakingFrame):
+            # A stop with no start is not a span: the disclosure can finish before this
+            # observer sees its start on a cold pipeline.
+            if self._spoke_from is not None:
+                seconds = (self._s.clock.now() - self._spoke_from).total_seconds()
+                self._s.usage["tts_seconds"] += max(seconds, 0.0)
+                self._spoke_from = None
+            return
         for d in f.data:
             if isinstance(d, LLMUsageMetricsData):
                 v = d.value

@@ -37,6 +37,7 @@ PRICED_UNITS: tuple[str, ...] = (
     "telephony_seconds",
     "call_minutes",
     "stt_seconds",
+    "tts_seconds",
     "tts_chars",
     "llm_input_tokens",
     "llm_cached_tokens",
@@ -106,6 +107,15 @@ def components_cad(usage: Mapping[str, float], rates: dict | None = None) -> dic
             return 0.0
 
     minutes = q("telephony_seconds") / 60 if usage.get("telephony_seconds") else q("call_minutes")
+    # Speech is priced by the hour the vendor generates. `tts_seconds` is the exact unit and
+    # `tts_chars` the older proxy, which over-states an utterance a caller talked over: the
+    # socket is dropped on an interruption, so the audio that was never generated was never
+    # billed. Seconds win when the call recorded them and the priced row carries the rate.
+    spoken_min = tts.get("per_spoken_min")
+    if usage.get("tts_seconds") and spoken_min is not None:
+        tts_usd = q("tts_seconds") / 60 * spoken_min
+    else:
+        tts_usd = q("tts_chars") / 1_000_000 * tts["per_1m_chars"]
     cached = q("llm_cached_tokens")
     # The input count already holds the cached count; the difference is what is billed full.
     uncached = max(q("llm_input_tokens") - cached, 0.0)
@@ -113,7 +123,7 @@ def components_cad(usage: Mapping[str, float], rates: dict | None = None) -> dic
         "telephony": minutes
         * (tel["inbound_per_min"] + tel.get("stream_per_min", 0) + tel.get("record_per_min", 0)),
         "stt": q("stt_seconds") / 60 * stt["per_min"],
-        "tts": q("tts_chars") / 1_000_000 * tts["per_1m_chars"],
+        "tts": tts_usd,
         "llm_input": uncached / 1_000_000 * llm["in"],
         "llm_cached": cached / 1_000_000 * llm["cached_in"],
         "llm_output": q("llm_output_tokens") / 1_000_000 * llm["out"],

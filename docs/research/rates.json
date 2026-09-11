@@ -17,7 +17,7 @@
   "assumptions": {
     "avg_call_minutes": 3.0,
     "agent_speaking_fraction": 0.5,
-    "chars_per_spoken_minute": 825,
+    "chars_per_spoken_minute": 1100,
     "turns_per_minute": 3.0,
     "input_tokens_uncached_per_turn": 600,
     "input_tokens_cached_per_turn": 5000,
@@ -111,8 +111,9 @@
       "per_1m_chars": 50.0
     },
     "soniox_tts": {
-      "per_1m_chars": 14.1,
-      "_note": "soniox.com/pricing 2026-09-02: ~$0.70 per hour of generated speech ($4/1M input text tokens + $21.50/1M output audio tokens); converted at 825 chars per spoken minute -> $0.0117/min -> $14.1 per 1M chars. Latency unbenchmarked. No-training statement covers audio and transcripts; TTS not explicitly named."
+      "per_spoken_min": 0.011667,
+      "per_1m_chars": 10.61,
+      "_note": "soniox.com/pricing 2026-09-02: ~$0.70 per hour of generated speech ($4/1M input text tokens + $21.50/1M output audio tokens) = $0.011667 per spoken minute, which is the unit the vendor quotes and the unit `tts_seconds` meters. The per-character figure is that price divided by the measured speaking rate: 1,100 characters a spoken minute, from the uninterrupted speaking spans of four real calls (2026-09-03 call17/18/19 and 2026-09-10: 1,193, 1,144, 1,136 and 1,087 chars/min, mean 1,140), not the 825 the September 1 sheet assumed -> $10.61 per 1M chars. Latency unbenchmarked. No-training statement covers audio and transcripts; TTS not explicitly named."
     }
   },
   "llm": {
