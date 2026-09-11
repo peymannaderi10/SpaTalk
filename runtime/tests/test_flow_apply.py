@@ -293,6 +293,8 @@ def test_change_answer_for_a_slot_that_holds_nothing_is_ignored():
     s = Slots(flow="new_booking", returning_client=False, offers_done=True)
     a = _apply(s, "change_answer", {"slot": "service"})
     assert a.ignored and a.slots == s
+    # And the model is told which way it was wrong, so it stops guessing (2026-09-11 memo).
+    assert a.rejection.reason == "bad_value" and a.rejection.detail == "empty_slot"
     # A slot that does hold something is still reopened.
     b = _apply(s.with_(service_id="mesojet_facial"), "change_answer", {"slot": "service"})
     assert not b.ignored and b.slots.service_id is None
@@ -315,8 +317,12 @@ def test_a_question_shaped_answer_is_refused_with_a_reason():
     moved on to the practitioner with the caller's question unanswered. A question is not an
     answer: nothing is resolved, nothing is written, and the tool result tells the model to
     answer it. The rejection is a function response to the model, never spoken and never
-    stored."""
-    from spatalk.brain.flow import Slots
+    stored.
+
+    `Applied.rejection` carries the Parlant shape from 2026-09-11 rather than a flat
+    sentence, so each assertion below reads it through `rejection_text` and now also pins
+    the reason code and the detail. Nothing that was asserted before has been removed."""
+    from spatalk.brain.flow import Slots, rejection_text
 
     s = Slots(flow="new_booking", returning_client=False, offers_done=True)   # open: SERVICE
     for said in (
@@ -325,7 +331,8 @@ def test_a_question_shaped_answer_is_refused_with_a_reason():
     ):
         a = _apply(s, "choose_service", {"said": said})
         assert a.ignored and a.slots == s, said
-        assert a.rejection and "question" in a.rejection.lower(), said
+        assert a.rejection and "question" in rejection_text(a.rejection).lower(), said
+        assert a.rejection.reason == "bad_value" and a.rejection.detail == "question_shaped", said
     # The control still resolves: the same words without the question.
     c = _apply(s, "choose_service", {"said": "the facial one"})
     assert not c.ignored and c.rejection is None
@@ -333,12 +340,14 @@ def test_a_question_shaped_answer_is_refused_with_a_reason():
     p = Slots(flow="new_booking", returning_client=True)                      # open: PRACTITIONER
     d = _apply(p, "choose_practitioner", {"said": "what was the name again?"})
     assert d.ignored and d.slots == p and d.rejection
+    assert d.rejection.detail == "question_shaped"
     e = _apply(p, "choose_practitioner", {"said": "Helen"})
     assert not e.ignored and e.slots.practitioner == "Helen Courbetis"
     # `answer` carries a closed enum, so anything else in it is the same failure.
     r = Slots(flow="new_booking")                                             # open: RETURNING
     g = _apply(r, "answer", {"value": "what do you mean?"})
     assert g.ignored and g.rejection and g.slots.returning_client is None
+    assert g.rejection.reason == "bad_value" and g.rejection.detail == "not_a_choice"
     assert _apply(r, "answer", {"value": "unsure"}).slots.returning_client is False
 
 

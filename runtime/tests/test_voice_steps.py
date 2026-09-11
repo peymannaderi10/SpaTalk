@@ -107,32 +107,34 @@ async def test_file_request_speaks_the_outcome_and_the_item_has_the_records_cont
     assert ledger.items[0].contact.name == "Dana" and s.band == 2 and s.slots.flow is None
 
 
-async def test_a_tool_the_step_did_not_offer_is_ignored_and_the_model_answers(fixed_clock):
-    """Nothing is written and nothing is said, whatever happens next.
+async def test_a_tool_the_step_did_not_offer_is_refused_in_words_the_model_can_read(fixed_clock):
+    """Was `…_is_ignored_and_the_model_answers`. The V1 behaviour — first call silent with
+    the turn handed back, second call falls back to the fixed question — was the best a
+    *silent* refusal could do. The model is now told why, every time, so the retry counter
+    stops being the strategy and becomes only a ceiling (OSS §8.1(e)); the fourth rejection
+    in one caller turn speaks the fixed question rather than buying a fourth model call.
 
-    The spec's answer was to re-ask the open question (slot engine design, §7), which is what
-    the second call below still does. But on the founder's call 2026-09-10 20:55:35 the first
-    one turned "can you book me that facial?" into a bare "What did you have in mind?" with
-    no answer in front of it, so the caller repeated himself. The first ignored call in a
-    caller's turn now hands the turn back to the model, which has the step's tools and the
-    whole conversation; the second falls back to the script so nothing can loop.
-    """
+    Everything the old case pinned still holds: nothing written, nothing filed, nothing
+    spoken, the turn handed back."""
     from spatalk.brain.flow import Slots
-    from spatalk.voice.handlers import _make_handler
+    from spatalk.voice.handlers import MAX_REJECTIONS_PER_TURN, _make_handler
 
     s, ledger = _session(fixed_clock)
     s.slots = Slots(flow="new_booking")
     llm = _LLM()
     handler = _make_handler(s)
-    first = _Params("give_name", {"first_name": "Ellen"}, llm)
-    await handler(first)
-    assert s.slots.first_name is None and ledger.items == []
-    assert _spoken(llm) == [] and first.results[0][1].run_llm is True
-    second = _Params("give_name", {"first_name": "Ellen"}, llm)
-    await handler(second)
-    assert s.slots.first_name is None and ledger.items == []
+    for _ in range(MAX_REJECTIONS_PER_TURN):
+        p = _Params("give_name", {"first_name": "Ellen"}, llm)
+        await handler(p)
+        assert s.slots.first_name is None and ledger.items == []
+        assert _spoken(llm) == [] and p.results[0][1].run_llm is True
+        reason = p.results[0][0]["rejection"]
+        assert "give_name" in reason and "answer" in reason and "yes" in reason
+    last = _Params("give_name", {"first_name": "Ellen"}, llm)
+    await handler(last)
     assert _spoken(llm) == [s.cfg.scripts.ask_returning]
-    assert second.results[0][1].run_llm is False
+    assert last.results[0][1].run_llm is False
+    assert s.signals.counts()["tool_rejected"] == MAX_REJECTIONS_PER_TURN + 1
 
 
 async def test_a_side_question_hands_the_turn_over_and_says_nothing(fixed_clock):

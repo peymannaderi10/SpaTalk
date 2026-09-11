@@ -38,7 +38,7 @@ def _mask_intent(text: str) -> str:
     return INTENT_BEFORE_COMPLETION.sub(lambda m: m.group(0)[: m.start(1) - m.start(0)] + "arranged", text)
 
 
-# An outcome-implying stall (memo §3.2; OpenAI's chat-supervisor filler clause, quoted in
+# An outcome-implying stall (memo §3.2; the chat-supervisor filler clause quoted in
 # OSS §8.2): a holding phrase "must NOT indicate whether you can or cannot fulfill an
 # action; they should be neutral and not imply any outcome." The assistant cannot book,
 # schedule, cancel, reschedule, confirm, file or send, so "let me book that for you" is a

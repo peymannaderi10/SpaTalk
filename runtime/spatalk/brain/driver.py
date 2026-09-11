@@ -36,6 +36,7 @@ from spatalk.brain.flow import (
     next_step,
     open_flow,
     pop_digression,
+    rejection_text,
     step_message,
     step_question,
     step_tools,
@@ -463,7 +464,15 @@ async def run_tool(
     cfg = ref.tenant
     applied = apply(slots, name, args or {}, cfg, ref.channel, ref.caller_phone)
     if applied.ignored:
-        logger.warning("tool {} ignored at this step with args {}", name, args)
+        # The refusal's own words, so the log says what the model would have been told. On a
+        # text channel it is not handed back: a turn there is one completion with no
+        # tool-result round trip (model-words memo; phase B's driver change carries it).
+        logger.info(
+            "tool {} refused ({}): {}",
+            name,
+            applied.rejection.reason if applied.rejection else "unknown",
+            rejection_text(applied.rejection) if applied.rejection else "no reason recorded",
+        )
         return slots, [], None, False, False
     spoken = [render_script(key, cfg, now, urgent=False, **fills) for key, fills in applied.say]
     outcome: Outcome | None = None

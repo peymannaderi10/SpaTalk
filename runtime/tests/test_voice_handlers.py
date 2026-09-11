@@ -90,14 +90,17 @@ def _world(fixed_clock, slots=None):
     return session, llm, Params, pushed, queued, results, ledger
 
 
-async def test_an_ignored_tool_hands_the_turn_back_to_the_model(fixed_clock):
+async def test_an_ignored_tool_is_refused_in_words_that_name_what_is_missing(fixed_clock):
     """Founder call 2026-09-10 20:55:35. Mid-booking the caller said "can you book me that
     facial?"; the model called start_request, which the treatment step does not offer, the
     engine ignored it (`tool start_request ignored at this step with args {'kind': 'booking'}`)
     and the handler spoke "What did you have in mind?" with run_llm=False. The caller's
     sentence was never answered, so he said it again. An ignored call says nothing and lets
-    the model answer from the whole conversation instead."""
+    the model answer from the whole conversation instead — and, since 2026-09-11, is told
+    what the record is waiting on and what it may call instead rather than only that
+    something was refused."""
     from spatalk.brain.flow import Slots
+    from spatalk.voice.handlers import MAX_REJECTIONS_PER_TURN
 
     slots = Slots(flow="new_booking", returning_client=False, offers_done=True)
     session, llm, Params, pushed, _queued, results, _ledger = _world(fixed_clock, slots)
@@ -106,10 +109,14 @@ async def test_an_ignored_tool_hands_the_turn_back_to_the_model(fixed_clock):
     assert results[0][1].run_llm is True
     assert results[0][0]["ignored"] is True and results[0][0]["spoken"] is False
     assert session.slots == slots
-    # A model that keeps calling the tool cannot loop: the second ignored call in the same
-    # caller turn falls back to the fixed question and stops the model.
-    await llm.registered["start_request"](Params("start_request", {"kind": "new_booking"}))
-    assert results[1][1].run_llm is False
+    reason = results[0][0]["rejection"]
+    assert "start_request" in reason and "which treatment they want" in reason
+    assert "choose_service" in reason and "answer_question" in reason
+    # A model that keeps calling the tool cannot loop: past the ceiling the runtime speaks
+    # the open question itself and stops re-running the model.
+    for _ in range(MAX_REJECTIONS_PER_TURN):
+        await llm.registered["start_request"](Params("start_request", {"kind": "new_booking"}))
+    assert results[-1][1].run_llm is False
     assert [f.text for f in pushed] == [session.cfg.scripts.ask_after_offers]
 
 
@@ -161,23 +168,26 @@ async def test_a_question_shaped_answer_hands_the_turn_back_with_a_reason(fixed_
     assert session.slots == slots
     assert results[0][0]["ignored"] is True and results[0][0]["spoken"] is False
     assert "question" in results[0][0]["rejection"].lower()
+    # And what the record is still waiting on, so the model has somewhere to go.
+    assert "which treatment" in results[0][0]["rejection"]
 
 
 async def test_a_tool_result_does_not_repeat_the_question_just_asked(fixed_clock):
     """The other path into the same fixed question. V1 suppressed a repeat only inside
     `OutputGuardProcessor`, so the tool-result path could still speak a question the caller
     had just heard on a record that had not moved. The second ignored call in a caller turn
-    is the reachable case: its fallback is the open question, and by then the caller has
-    already been asked it."""
+    is the reachable case: past the ceiling its fallback is the open question, and by then
+    the caller has already been asked it."""
     from spatalk.brain.flow import Slots
+    from spatalk.voice.handlers import MAX_REJECTIONS_PER_TURN
 
     slots = Slots(flow="new_booking", returning_client=False, offers_done=True)
     session, llm, Params, pushed, _queued, results, _ledger = _world(fixed_clock, slots)
     session.remember_question(session.cfg.scripts.ask_after_offers)
-    for _ in range(2):
+    for _ in range(MAX_REJECTIONS_PER_TURN + 1):
         await llm.registered["start_request"](Params("start_request", {"kind": "new_booking"}))
     assert pushed == [], "the fixed question came back on an unchanged record"
-    assert results[1][1].run_llm is False
+    assert results[-1][1].run_llm is False
     # It comes back the moment the record moves.
     session.ignored_tools = 0
     await llm.registered["choose_service"](Params("choose_service", {"said": "mesojet facial"}))

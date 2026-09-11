@@ -13,7 +13,7 @@ from pipecat.frames.frames import EndFrame, FunctionCallResultProperties, TTSSpe
 from pipecat.services.llm_service import FunctionCallParams
 
 from spatalk.brain.driver import run_tool
-from spatalk.brain.flow import next_step, tool_refusal
+from spatalk.brain.flow import next_step, rejection_text, tool_rejection
 from spatalk.voice.steps import next_question, sync_context
 from spatalk.brain.outcomes import Captured, Completed, LinkSent, Refused, Transferred
 from spatalk.brain.renderer import render, render_script
@@ -34,7 +34,12 @@ def register_tool_handlers(llm, session: VoiceSession) -> None:
         llm.register_function(TRANSFER_TOOL, _make_transfer_handler(session))
 
 
-IGNORED_TOOL_RETRIES = 1
+# A rejection is a message, not a retry: the model is told what was wrong and gets the turn
+# back to act on it, which is what retires the old counter as a *strategy* (OSS §8.1(e)).
+# What stays is a ceiling, because every handed-back turn is a model call and a model in a
+# tight loop would otherwise spend the call while the caller hears nothing. Past the ceiling
+# the runtime speaks the open question itself and stops re-running the model.
+MAX_REJECTIONS_PER_TURN = 3
 
 
 def _make_handler(session: VoiceSession):
@@ -57,7 +62,7 @@ def _make_handler(session: VoiceSession):
                 properties=FunctionCallResultProperties(run_llm=True),
             )
             return
-        ignored, rejection = tool_refusal(
+        rejection = tool_rejection(
             session.slots,
             params.function_name,
             args,
@@ -65,28 +70,45 @@ def _make_handler(session: VoiceSession):
             session.ref.channel,
             session.ref.caller_phone,
         )
-        if ignored and session.ignored_tools < IGNORED_TOOL_RETRIES:
-            # The call changed nothing: the step does not offer this tool, the slot holds
-            # nothing to change, or the caller asked a question instead of answering. Nothing
-            # was written and nothing is said. The spec's answer was to re-ask the open
-            # question (slot engine design, §7), but on the founder's call that turned "can
-            # you book me that facial?" into a bare "What did you have in mind?" with no
-            # answer in front of it, twice. The model gets the turn back instead, with the
-            # step's own tools and the whole conversation in its context; the budget above
-            # stops it looping.
+        if rejection is not None:
+            # The call changed nothing: the step does not offer this tool, the record is not
+            # ready for it, the slot holds nothing to change, or the caller asked a question
+            # instead of answering. Nothing was written and nothing is said. The spec's
+            # answer was to re-ask the open question (slot engine design, §7), but on the
+            # founder's call that turned "can you book me that facial?" into a bare "What did
+            # you have in mind?" with no answer in front of it, twice. The model gets the
+            # turn back instead, now told what is missing and what it may call.
             session.ignored_tools += 1
+            session.record_signal("tool_rejected", reason=rejection.reason, tool=rejection.tool)
             logger.info(
-                "tool {} refused; the model answers instead: {}",
-                params.function_name,
-                rejection or "not offered at this step",
+                "tool {} refused ({}): the model is told why", rejection.tool, rejection.reason
             )
-            result = {"spoken": False, "outcome": "none", "ignored": True}
-            if rejection:
-                # A reason the model can act on, rather than a silent no (2026-09-11 memo,
-                # decision 6). It is a function response: never spoken, never stored.
-                result["rejection"] = rejection
+            if session.ignored_tools > MAX_REJECTIONS_PER_TURN:
+                question = next_question(session, now)
+                if question and session.asked_already(question):
+                    logger.info("step question not repeated: {!r}", question)
+                    question = None
+                if question:
+                    session.remember_question(question)
+                    await params.llm.push_frame(
+                        TTSSpeakFrame(text=question, append_to_context=True)
+                    )
+                await params.result_callback(
+                    {"spoken": bool(question), "outcome": "none", "ignored": True},
+                    properties=FunctionCallResultProperties(run_llm=False),
+                )
+                return
             await params.result_callback(
-                result, properties=FunctionCallResultProperties(run_llm=True)
+                {
+                    # A reason the model can act on, rather than a silent no (2026-09-11
+                    # memo, decision 6). It is a function response: never spoken, never
+                    # sent, never stored.
+                    "rejection": rejection_text(rejection),
+                    "spoken": False,
+                    "outcome": "none",
+                    "ignored": True,
+                },
+                properties=FunctionCallResultProperties(run_llm=True),
             )
             return
         slots, spoken, outcome, ended, _speaks = await run_tool(
@@ -134,7 +156,7 @@ def _make_handler(session: VoiceSession):
             {
                 "spoken": bool(lines),
                 "outcome": outcome.kind if outcome else "none",
-                "ignored": ignored,
+                "ignored": False,
             },
             properties=FunctionCallResultProperties(run_llm=False),
         )
