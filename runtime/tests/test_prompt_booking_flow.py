@@ -48,6 +48,20 @@ def test_the_new_client_offers_are_short_enough_to_hear():
     assert "underarm" in offers
 
 
+def test_the_hard_rules_put_the_callers_question_before_the_next_one():
+    """Defect 5, prompt half. Call 14ea2579: "How much does it cost?" was recorded as the
+    treatment answer at 15:55:02 and the next question asked in the same breath; the price
+    arrived at 15:55:09 after the caller asked twice more. The rule that said to ask the next
+    question in the same reply now says what to do when those same words asked something.
+    """
+    from spatalk.brain.prompt import build_system_prompt
+
+    for channel in ("voice", "sms"):
+        p = build_system_prompt(_cfg(), channel, NOW)
+        assert "If the same words also asked you something, answer that first" in p, channel
+        assert "a question the caller has to repeat is one you did not answer" in p, channel
+
+
 def test_the_offer_wording_stays_out_of_the_prompt():
     from spatalk.brain.prompt import build_system_prompt
 

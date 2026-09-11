@@ -104,3 +104,21 @@ def test_three_in_a_breath_is_still_the_ceiling():
     p = build_system_prompt(_cfg(), "voice", NOW).lower()
     assert "more than three" in p
     assert "treatments or three people" in p
+
+
+# --- defect 5, the prompt half (task P2) --------------------------------------------------
+
+
+def test_the_question_is_answered_before_the_answer_is_recorded():
+    """15:55:00 "How much does it cost?" was recorded as the answer to the treatment slot and
+    never answered: `choose_service{'said': 'MesoJet and Sound Therapy facial'}` at 15:55:02,
+    and 11 milliseconds later "Is there someone in particular you'd like to see". The caller
+    said "I said how much" twice more; the price arrived at 15:55:09, three turns and 8.4
+    seconds after it was asked, out of facts the prompt already carried.
+    """
+    from spatalk.brain.prompt import build_system_prompt
+
+    p = build_system_prompt(_cfg(), "voice", NOW)
+    assert "ask the next question in the same reply" in p
+    assert "If the same words also asked you something, answer that first" in p
+    assert "a question the caller has to repeat is one you did not answer" in p
