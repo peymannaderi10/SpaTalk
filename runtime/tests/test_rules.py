@@ -175,3 +175,47 @@ def test_digits_are_content_so_a_phone_number_is_always_a_turn():
         assert not is_fragment(text, yes_no_step=True), text
     # Nothing but punctuation is still nothing.
     assert is_fragment("...") and is_fragment("") and is_fragment("   ")
+
+
+def test_a_short_utterance_asking_for_the_floor_is_a_stop_request():
+    """The words English uses to take a turn back. Founder call 14ea2579, 2026-09-11: at
+    15:55:02.691 a one-word final transcription was destroyed by the barge-in floor before
+    any model saw it, and the assistant talked straight over it. True only when the WHOLE
+    utterance is the caller asking for the floor: a sentence that merely contains one of
+    these words is a sentence, and the caller wants it answered, not acted on."""
+    from spatalk.brain.rules import is_stop_request
+
+    for text in (
+        "Stop.", "Hello?", "Wait.", "Hold on.", "Um, hold on a sec.", "Excuse me.",
+        "One sec.", "Sorry?", "Uh, wait wait.",
+    ):
+        assert is_stop_request(text), text
+    for text in (
+        "Sorry, I meant Tuesday.", "Can you stop talking?",
+        "Hello, I'd like to book an appointment.", "Um.", "", "   ", "Seizure.",
+    ):
+        assert not is_stop_request(text), text
+
+
+def test_a_stop_request_is_never_a_band_three_escalation():
+    """The safety invariant the new hold depends on, stated once so a later lexicon edit
+    breaks this test and not a call: a caller asking for the floor must never be held back
+    on a word that would otherwise have reached the 911, callback or complaint script."""
+    from spatalk.brain.rules import STOP_REQUESTS, rules_gate
+
+    cfg = _cfg()
+    for phrase in STOP_REQUESTS:
+        assert rules_gate(phrase, cfg) is None, phrase
+        assert rules_gate(phrase, cfg, name_step=True) is None, phrase
+
+
+def test_the_barge_in_floor_has_one_value():
+    """`spatalk/voice/processors.py` cannot import `spatalk/voice/pipeline.py` — pipeline
+    imports processors — so the floor lives in `brain/rules.py` as a leaf constant and
+    pipeline.py keeps the literal it configures Pipecat with. The duplication is deliberate
+    and temporary: the follow-up, out of this batch, is to point pipeline.py at rules.py and
+    delete the literal. Until then this pins the two equal."""
+    from spatalk.brain import rules
+    from spatalk.voice import pipeline
+
+    assert rules.INTERRUPT_MIN_WORDS == pipeline.INTERRUPT_MIN_WORDS

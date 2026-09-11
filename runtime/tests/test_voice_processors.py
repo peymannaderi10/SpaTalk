@@ -1097,3 +1097,221 @@ async def test_a_held_fragment_does_not_reset_the_speech_budget(fixed_clock):
     assert session.spoken_sentences == 3
     assert session.spoken_items == 4
     assert session.turn_capped is True
+
+
+# --- a caller who cannot get a word in stops the audio (founder call 14ea2579) ------------
+#
+# Two independent gates in two processes swallowed the founder between 15:54:32.19 and
+# 15:54:35.555 — 3.37 s of being talked over. GATE 1: `_turn_text` returns None for a
+# content-free utterance and `process_frame` returns without pushing, so a held fragment
+# never reaches `MinWordsUserTurnStartStrategy` at all ("fragment held" at 15:54:32.984 and
+# 15:54:34.537, with no min_words line at either instant). GATE 2, the worse half: "Hello?"
+# and "Stop." are NOT fragments, so they pass this gate and are killed downstream by
+# min_words=3 — and not merely ignored, DELETED, because the strategy's else branch calls
+# `trigger_reset_aggregation` AFTER `_handle_transcription` appended the text. At 15:55:02.691
+# a one-word final was reset away: no "fragment held" line, no such word in the stored
+# transcript, and nothing in the Gemini context (compare the dumps at 15:55:00.944 and
+# 15:55:06.645). The gate is the only layer upstream of both, so it acts here.
+
+
+def _marker():
+    """An ordinary data frame the gate forwards untouched, used to pin the order in which a
+    gate-driven interruption arrives relative to the utterance that caused it."""
+    return TTSSpeakFrame(text="--marker--")
+
+
+async def test_a_second_cut_in_while_the_assistant_speaks_stops_the_audio(fixed_clock):
+    """One held fragment is a backchannel ("Oh."). Two is a caller who cannot get in."""
+    from pipecat.frames.frames import (BotStartedSpeakingFrame, BotStoppedSpeakingFrame,
+                                       InterruptionFrame)
+    from pipecat.tests.utils import SleepFrame
+
+    from spatalk.voice.processors import RulesGateProcessor
+
+    session, _ = _session(fixed_clock)
+    down, up = await run_test(
+        RulesGateProcessor(session),
+        frames_to_send=[
+            BotStartedSpeakingFrame(), BotStoppedSpeakingFrame(), BotStartedSpeakingFrame(),
+            TranscriptionFrame(text="Um, what's the, uh.", user_id="u", timestamp="t"),
+            SleepFrame(sleep=0.2),
+            _marker(),
+            SleepFrame(sleep=0.2),
+            TranscriptionFrame(text="What's the, uh.", user_id="u", timestamp="t"),
+            SleepFrame(sleep=0.2),
+        ],
+        start_timeout=10.0,
+    )
+    assert [f for f in down if isinstance(f, TranscriptionFrame)] == []
+    assert len([f for f in down if isinstance(f, InterruptionFrame)]) == 1
+    assert len([f for f in up if isinstance(f, InterruptionFrame)]) == 1
+    order = [type(f).__name__ for f in down if isinstance(f, (TTSSpeakFrame, InterruptionFrame))]
+    assert order == ["TTSSpeakFrame", "InterruptionFrame"], (
+        f"the cut-in did not wait for the second fragment: {order}"
+    )
+
+
+async def test_a_single_stop_word_while_the_assistant_speaks_stops_the_audio_without_a_model_turn(
+    fixed_clock,
+):
+    """"Hello?" is not a fragment and not an escalation, so on 2026-09-11 it went straight to
+    the aggregator and was deleted there. It asks for the floor, so it gets the floor at
+    once — and it still runs no model turn, because one word is not an answer."""
+    from pipecat.frames.frames import (BotStartedSpeakingFrame, BotStoppedSpeakingFrame,
+                                       InterruptionFrame)
+    from pipecat.tests.utils import SleepFrame
+
+    from spatalk.voice.processors import RulesGateProcessor
+
+    class Ctx:
+        def __init__(self):
+            self.messages = []
+
+        def add_message(self, message):
+            self.messages.append(message)
+
+    session, _ = _session(fixed_clock)
+    session.context = Ctx()
+    down, _ = await run_test(
+        RulesGateProcessor(session),
+        frames_to_send=[
+            BotStartedSpeakingFrame(), BotStoppedSpeakingFrame(), BotStartedSpeakingFrame(),
+            TranscriptionFrame(text="Hello?", user_id="u", timestamp="t"),
+            SleepFrame(sleep=0.2),
+            BotStoppedSpeakingFrame(),
+            TranscriptionFrame(text="What was the first one?", user_id="u", timestamp="t"),
+            SleepFrame(sleep=0.2),
+        ],
+        start_timeout=10.0,
+    )
+    assert len([f for f in down if isinstance(f, InterruptionFrame)]) == 1
+    said = [f.text for f in down if isinstance(f, TranscriptionFrame)]
+    assert len(said) == 1, said
+    assert said[0].startswith("Hello?") and said[0].endswith("What was the first one?")
+    assert session.context.messages == [], "the stop word ran a model turn of its own"
+
+
+async def test_a_short_word_the_bargein_gate_would_delete_is_held_not_forwarded(fixed_clock):
+    """The 15:55:02.691 loss. One word the founder said reached no transcript, no context and
+    no model, because the aggregator deleted it on the three-word floor. It is held here
+    instead, and goes in front of the next utterance that carries content."""
+    from pipecat.frames.frames import (BotStartedSpeakingFrame, BotStoppedSpeakingFrame,
+                                       InterruptionFrame)
+    from pipecat.tests.utils import SleepFrame
+
+    from spatalk.voice.processors import RulesGateProcessor
+
+    session, _ = _session(fixed_clock)
+    down, up = await run_test(
+        RulesGateProcessor(session),
+        frames_to_send=[
+            BotStartedSpeakingFrame(), BotStoppedSpeakingFrame(), BotStartedSpeakingFrame(),
+            TranscriptionFrame(text="What?", user_id="u", timestamp="t"),
+            SleepFrame(sleep=0.2),
+            _marker(),
+            SleepFrame(sleep=0.2),
+            BotStoppedSpeakingFrame(),
+            TranscriptionFrame(text="I said how much.", user_id="u", timestamp="t"),
+            SleepFrame(sleep=0.2),
+        ],
+        start_timeout=10.0,
+    )
+    # "What?" is not a stop request and it is the first cut-in, so nothing is interrupted yet.
+    assert [f for f in down if isinstance(f, InterruptionFrame)] == []
+    assert [f for f in up if isinstance(f, InterruptionFrame)] == []
+    said = [f.text for f in down if isinstance(f, TranscriptionFrame)]
+    assert len(said) == 1, said
+    assert "What?" in said[0] and "I said how much." in said[0]
+
+
+async def test_a_long_cut_in_is_left_to_the_aggregator(fixed_clock):
+    """At or above the floor the aggregator does the right thing itself, so the gate does
+    nothing: no double interruption and no double barge-in count."""
+    from pipecat.frames.frames import (BotStartedSpeakingFrame, BotStoppedSpeakingFrame,
+                                       InterruptionFrame)
+    from pipecat.tests.utils import SleepFrame
+
+    from spatalk.brain.rules import INTERRUPT_MIN_WORDS
+    from spatalk.voice.processors import RulesGateProcessor
+
+    session, _ = _session(fixed_clock)
+    said_by_caller = "Can you stop talking? Hello?"
+    assert len(said_by_caller.split()) >= INTERRUPT_MIN_WORDS
+    down, up = await run_test(
+        RulesGateProcessor(session),
+        frames_to_send=[
+            BotStartedSpeakingFrame(), BotStoppedSpeakingFrame(), BotStartedSpeakingFrame(),
+            TranscriptionFrame(text=said_by_caller, user_id="u", timestamp="t"),
+            SleepFrame(sleep=0.2),
+        ],
+        start_timeout=10.0,
+    )
+    assert [f.text for f in down if isinstance(f, TranscriptionFrame)] == [said_by_caller]
+    assert [f for f in down if isinstance(f, InterruptionFrame)] == []
+    assert [f for f in up if isinstance(f, InterruptionFrame)] == []
+
+
+async def test_the_disclosure_cannot_be_cut_off(fixed_clock):
+    """The gate sits upstream of `MuteUntilFirstBotCompleteUserMuteStrategy`, which suppresses
+    interruptions until the bot's first BotStoppedSpeakingFrame, so it has to mirror that
+    itself or it fires a pointless upstream interruption into STT during the disclosure."""
+    from pipecat.frames.frames import BotStartedSpeakingFrame, InterruptionFrame
+    from pipecat.tests.utils import SleepFrame
+
+    from spatalk.voice.processors import RulesGateProcessor
+
+    session, _ = _session(fixed_clock)
+    down, up = await run_test(
+        RulesGateProcessor(session),
+        frames_to_send=[
+            BotStartedSpeakingFrame(),
+            TranscriptionFrame(text="Um.", user_id="u", timestamp="t"),
+            SleepFrame(sleep=0.2),
+            TranscriptionFrame(text="Hello?", user_id="u", timestamp="t"),
+            SleepFrame(sleep=0.2),
+            TranscriptionFrame(text="Stop.", user_id="u", timestamp="t"),
+            SleepFrame(sleep=0.2),
+        ],
+        start_timeout=10.0,
+    )
+    assert [f for f in down if isinstance(f, InterruptionFrame)] == []
+    assert [f for f in up if isinstance(f, InterruptionFrame)] == []
+
+
+async def test_a_band_three_word_over_the_assistant_stops_the_audio_before_its_script(fixed_clock):
+    """A band-3 word must not queue its 911 script behind the sentence the caller cut into."""
+    from pipecat.frames.frames import (BotStartedSpeakingFrame, BotStoppedSpeakingFrame,
+                                       InterruptionFrame)
+    from pipecat.tests.utils import SleepFrame
+
+    from spatalk.voice.processors import RulesGateProcessor
+
+    class Ctx:
+        def __init__(self):
+            self.messages = []
+
+        def add_message(self, message):
+            self.messages.append(message)
+
+    session, ledger = _session(fixed_clock)
+    session.context = Ctx()
+
+    class FakeWorker:
+        async def queue_frames(self, frames):
+            pass
+
+    session.worker = FakeWorker()
+    down, _ = await run_test(
+        RulesGateProcessor(session),
+        frames_to_send=[
+            BotStartedSpeakingFrame(), BotStoppedSpeakingFrame(), BotStartedSpeakingFrame(),
+            TranscriptionFrame(text="Seizure.", user_id="u", timestamp="t"),
+            SleepFrame(sleep=0.2),
+        ],
+        start_timeout=10.0,
+    )
+    spoken = [f for f in down if isinstance(f, (InterruptionFrame, TTSSpeakFrame))]
+    assert [type(f).__name__ for f in spoken] == ["InterruptionFrame", "TTSSpeakFrame"]
+    assert "911" in spoken[1].text
+    assert len(ledger.items) == 1 and ledger.items[0].type == "escalation_emergency"
+    assert session.context.messages == [{"role": "user", "content": "Seizure."}]
