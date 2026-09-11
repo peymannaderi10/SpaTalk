@@ -34,6 +34,13 @@ Flow = Literal[
 NAME_REQUIRED_FLOWS = ("new_booking", "callback", "reschedule", "cancel", "question", "clinical")
 BOOKING_LIKE = ("new_booking", "callback")
 
+# The two tools whose argument is the caller's own words — exactly the two that already run
+# `is_question` on that argument. On the founder's call of 2026-09-11 15:55:02 the model
+# rewrote "How much does it cost?" into a treatment name it had inferred two turns earlier,
+# so `is_question` saw no question at all and the price went unanswered for three turns.
+# `apply` therefore also looks at what the caller actually said, not only at the argument.
+ANSWER_FIRST_TOOLS: tuple[str, ...] = ("choose_service", "choose_practitioner")
+
 
 class Step(str, Enum):
     QA = "qa"
@@ -363,6 +370,10 @@ class Applied(BaseModel, frozen=True):
     # True when the model's own words are the content of the turn (the offers, two or three
     # options from the facts) rather than a one-line acknowledgement.
     model_speaks: bool = False
+    # A fact about the turn, never a value on the record: the slot was recorded and the
+    # caller's own words in that same turn asked something the reply has not answered.
+    # `draft_from` does not read it and `Slots` does not carry it.
+    answer_owed: bool = False
 
 
 # What the model is told when a call is refused. Never caller-facing, so not tenant config:
@@ -497,26 +508,103 @@ def unfiled_record(slots: Slots, cfg: TenantConfig, channel: str) -> bool:
 
 
 def apply(
-    slots: Slots, name: str, args: dict, cfg: TenantConfig, channel: str, caller_phone: str | None
+    slots: Slots,
+    name: str,
+    args: dict,
+    cfg: TenantConfig,
+    channel: str,
+    caller_phone: str | None,
+    *,
+    caller_said: str = "",
 ) -> Applied:
-    """Move the record on one tool call. Answers land only in the open slot (§3.3)."""
-    return _finalize(_apply(slots, name, args, cfg, channel, caller_phone), cfg, channel, name)
+    """Move the record on one tool call. Answers land only in the open slot (§3.3).
+
+    `caller_said` is the caller's own final transcription for this turn, read and thrown
+    away: it decides nothing about the record, only whether the turn left a question of
+    theirs unanswered. Nothing of it is stored.
+    """
+    a = _finalize(_apply(slots, name, args, cfg, channel, caller_phone), cfg, channel, name)
+    if (
+        name in ANSWER_FIRST_TOOLS
+        and not a.ignored
+        and not a.file
+        and not a.send_link
+        and not a.end
+        and not a.escalate
+        and a.slots.pending is None
+        and is_question(caller_said)
+    ):
+        return a.model_copy(update={"answer_owed": True})
+    return a
+
+
+def answer_owed(
+    slots: Slots,
+    name: str,
+    args: dict,
+    cfg: TenantConfig,
+    channel: str,
+    caller_phone: str | None,
+    *,
+    caller_said: str,
+) -> bool:
+    """Would this call record a slot while leaving a question of the caller's unanswered?
+
+    The boolean sibling of `tool_rejection`; `apply` is pure, so this just asks it.
+    """
+    return apply(
+        slots, name, args or {}, cfg, channel, caller_phone, caller_said=caller_said
+    ).answer_owed
+
+
+def answer_first_text(slots: Slots, cfg: TenantConfig, channel: str) -> str:
+    """What the model is told when it recorded an answer and left the caller's question
+    unanswered. A function response, like `rejection_text`: never spoken, never sent, never
+    stored, never on an item. Built from the record AFTER the write."""
+    r = readiness(slots, cfg, channel)
+    lines = [
+        "Recorded. The caller asked you something in that same turn and has not been "
+        "answered. Answer it now from the facts, in one or two sentences, and say nothing "
+        "about what the system recorded."
+    ]
+    if r.missing is not None:
+        lines.append(
+            f"Then ask for {r.missing.description} in your own words and put their answer "
+            f"in {r.missing.tool}."
+        )
+    return " ".join(lines)
 
 
 def tool_refusal(
-    slots: Slots, name: str, args: dict, cfg: TenantConfig, channel: str, caller_phone: str | None
+    slots: Slots,
+    name: str,
+    args: dict,
+    cfg: TenantConfig,
+    channel: str,
+    caller_phone: str | None,
+    *,
+    caller_said: str = "",
 ) -> tuple[bool, str | None]:
     """Would this call change nothing and say nothing, and why? `apply` is pure, so this just
     asks it. The reason is for the model to read as the tool result; it is never spoken."""
-    a = apply(slots, name, args, cfg, channel, caller_phone)
+    a = apply(slots, name, args, cfg, channel, caller_phone, caller_said=caller_said)
     return a.ignored, (rejection_text(a.rejection) if a.rejection is not None else None)
 
 
 def tool_rejection(
-    slots: Slots, name: str, args: dict, cfg: TenantConfig, channel: str, caller_phone: str | None
+    slots: Slots,
+    name: str,
+    args: dict,
+    cfg: TenantConfig,
+    channel: str,
+    caller_phone: str | None,
+    *,
+    caller_said: str = "",
 ) -> Rejection | None:
     """The structured sibling of `tool_refusal`: why this call would be refused, or None."""
-    return apply(slots, name, args or {}, cfg, channel, caller_phone).rejection
+    return apply(
+        slots, name, args or {}, cfg, channel, caller_phone, caller_said=caller_said
+    ).rejection
 
 
 def tool_ignored(

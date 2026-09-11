@@ -336,6 +336,78 @@ async def test_a_model_called_complaint_escalation_leaves_the_line_open(fixed_cl
     assert _said(pushed) == [session.cfg.scripts.complaint]
 
 
+async def test_a_slot_recorded_on_a_question_turn_hands_the_turn_back_once(fixed_clock):
+    """Founder call 14ea2579, 2026-09-11 15:55:00.682 to 15:55:09.081. The caller asked "How
+    much does it cost?"; the model recorded the treatment it had inferred two turns earlier
+    and the runtime spoke `ask_practitioner` 11 ms later. The price took three turns and
+    8.4 s to arrive. The write stands; the turn goes back so the question gets answered."""
+    from spatalk.brain.flow import Slots
+    from spatalk.voice.frames import ToolTurnDoneFrame
+
+    slots = Slots(flow="new_booking", returning_client=False, offers_done=True)
+    session, llm, Params, pushed, _queued, results, _ledger = _world(fixed_clock, slots)
+    session.caller_said = "How much does it cost?"
+    session.caller_asked = True
+    await llm.registered["choose_service"](
+        Params("choose_service", {"said": "MesoJet and Sound Therapy facial"})
+    )
+    assert session.slots.service_id == "mesojet_facial", "the write did not survive"
+    assert _said(pushed) == [], "ask_practitioner was spoken over the caller's question"
+    assert session.runtime_asked_this_turn is False
+    assert results[0][1].run_llm is True
+    assert "answer_first" in results[0][0]
+    assert "choose_practitioner" in results[0][0]["answer_first"]
+    done = [f for f in pushed if isinstance(f, ToolTurnDoneFrame)]
+    assert done and done[-1].handed_back is True
+    assert session.signals.counts()["model_rerun"] == 1
+
+
+async def test_the_hand_back_is_spent_once_per_caller_turn(fixed_clock):
+    from spatalk.brain.flow import Slots
+
+    slots = Slots(flow="new_booking", returning_client=False, offers_done=True)
+    session, llm, Params, pushed, _queued, results, _ledger = _world(fixed_clock, slots)
+    session.caller_said = "How much does it cost?"
+    session.caller_asked = True
+    await llm.registered["choose_service"](
+        Params("choose_service", {"said": "MesoJet and Sound Therapy facial"})
+    )
+    spoken_before = _said(pushed)
+    await llm.registered["choose_practitioner"](Params("choose_practitioner", {"said": "anyone"}))
+    assert results[-1][1].run_llm is False
+    assert "answer_first" not in results[-1][0]
+    assert _said(pushed) == spoken_before
+
+
+async def test_an_answer_with_no_question_in_it_still_costs_one_model_call(fixed_clock):
+    """The no-regression pin on today's one-call-per-turn path."""
+    from spatalk.brain.flow import Slots
+
+    slots = Slots(flow="new_booking", returning_client=False, offers_done=True)
+    session, llm, Params, pushed, _queued, results, _ledger = _world(fixed_clock, slots)
+    session.caller_said = "the mesojet one"
+    session.caller_asked = False
+    await llm.registered["choose_service"](Params("choose_service", {"said": "mesojet facial"}))
+    assert results[0][1].run_llm is False
+    assert "answer_first" not in results[0][0]
+    assert _said(pushed) == []
+
+
+async def test_a_confirmation_the_runtime_owes_beats_the_hand_back(fixed_clock):
+    """Fixed wording is still law, and a `Pending` never buys a model turn."""
+    from spatalk.brain.flow import Slots
+
+    session, llm, Params, pushed, _queued, results, _ledger = _world(
+        fixed_clock, Slots(flow="new_booking", returning_client=True)
+    )
+    session.caller_said = "How much does it cost?"
+    session.caller_asked = True
+    await llm.registered["choose_practitioner"](Params("choose_practitioner", {"said": "Ellen"}))
+    assert _said(pushed) == [session.cfg.scripts.confirm_match.format(value="Helen")]
+    assert results[0][1].run_llm is False
+    assert "answer_first" not in results[0][0]
+
+
 async def test_the_receipt_is_recorded_before_the_outcome_is_spoken(fixed_clock):
     """The order is the honest one: the ledger answers, the receipt is written, then the
     sentence that asserts it goes out. A ledger that returns nothing gets no receipt and the

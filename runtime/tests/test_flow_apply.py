@@ -530,6 +530,78 @@ def test_a_generic_category_entry_does_not_fill_the_treatment_slot():
     assert key == "ask_service_kind"
 
 
+# --- a slot recorded on a question turn owes the caller an answer (defect 5) ---------------
+
+
+def test_a_slot_recorded_on_a_question_turn_owes_the_caller_an_answer():
+    """Founder call 14ea2579, 2026-09-11 15:55:00.682. The caller said exactly "How much does
+    it cost?". At 15:55:02.028 the model called choose_service{'said':'MesoJet and Sound
+    Therapy facial'} — it rewrote the caller's turn into a service name inferred two turns
+    earlier, so `is_question`, which runs on the ARGUMENT, never saw a question. The write was
+    right; the price was never answered. The caller asked twice more and got it at
+    15:55:09.081: three turns and 8.4 s."""
+    from spatalk.brain.flow import ANSWER_FIRST_TOOLS, Slots, apply
+
+    cfg = _cfg()
+    s = Slots(flow="new_booking", returning_client=False, offers_done=True)
+    a = apply(s, "choose_service", {"said": "MesoJet and Sound Therapy facial"}, cfg, "voice",
+              "+19055550101", caller_said="How much does it cost?")
+    assert a.slots.service_id == "mesojet_facial"
+    assert a.answer_owed is True
+    for said in ("the mesojet one", ""):
+        b = apply(s, "choose_service", {"said": "MesoJet and Sound Therapy facial"}, cfg,
+                  "voice", "+19055550101", caller_said=said)
+        assert b.slots.service_id == "mesojet_facial", said
+        assert b.answer_owed is False, said
+    assert ANSWER_FIRST_TOOLS == ("choose_service", "choose_practitioner")
+
+
+def test_only_the_two_tools_that_take_the_callers_words_can_owe_an_answer():
+    from spatalk.brain.flow import Slots, answer_owed
+
+    cfg = _cfg()
+    asked = "How much does it cost?"
+    window_open = Slots(
+        flow="new_booking", returning_client=False, offers_done=True, practitioner="any",
+        service_id="mesojet_facial", first_name="Payman", phone="+19055550101",
+        phone_confirmed=True,
+    )
+    assert answer_owed(window_open, "choose_window", {"date": "Thursday"}, cfg, "voice",
+                       "+19055550101", caller_said=asked) is False
+    assert answer_owed(Slots(flow="new_booking"), "answer", {"value": "no"}, cfg, "voice",
+                       "+19055550101", caller_said=asked) is False
+    name_open = Slots(
+        flow="new_booking", returning_client=False, offers_done=True, practitioner="any",
+        service_id="mesojet_facial",
+    )
+    assert answer_owed(name_open, "give_name", {"first_name": "Dana"}, cfg, "voice",
+                       "+19055550101", caller_said=asked) is False
+
+
+def test_a_debt_is_never_owed_on_a_filing_a_confirmation_or_a_refusal():
+    from spatalk.brain.flow import Slots, apply
+    from spatalk.brain.requests import PreferredWindow
+
+    cfg = _cfg()
+    asked = "How much does it cost?"
+    last_slot = Slots(
+        flow="callback", returning_client=True, practitioner="any", first_name="Dana",
+        phone="+19055550101", phone_confirmed=True, preferred_window=PreferredWindow(),
+        team_note_asked=True,
+    )
+    filing = apply(last_slot, "choose_service", {"said": "mesojet facial"}, cfg, "voice",
+                   "+19055550101", caller_said=asked)
+    assert filing.file is True and filing.answer_owed is False
+    confirm = apply(Slots(flow="new_booking", returning_client=True), "choose_practitioner",
+                    {"said": "Ellen"}, cfg, "voice", "+19055550101", caller_said=asked)
+    assert confirm.slots.pending.kind == "match" and confirm.answer_owed is False
+    refused = apply(Slots(flow="new_booking", returning_client=False, offers_done=True),
+                    "choose_service", {"said": "what was the facial one again?"}, cfg, "voice",
+                    "+19055550101", caller_said=asked)
+    assert refused.ignored is True and refused.rejection.detail == "question_shaped"
+    assert refused.answer_owed is False
+
+
 # --- the side question gets a turn of its own (memo §2) -----------------------------------
 
 
