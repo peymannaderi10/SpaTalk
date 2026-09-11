@@ -61,6 +61,92 @@ def test_file_request_takes_no_arguments():
     assert tool.properties == {} and tool.required == []
 
 
+def test_the_link_offer_never_leads_with_the_link():
+    """Founder call 14ea2579, 2026-09-11. `ask_route` put the link branch first and that
+    branch wrote nothing to the ledger. The offer that replaced it is an extra after a
+    filing, so it never leads, and the line before it never asks a second question."""
+    from pathlib import Path as _Path
+
+    from spatalk.tenants.bundle import load_bundle
+
+    cfg = load_bundle(_Path(RUNTIME) / "tenants" / "skincentrix")
+    assert not cfg.scripts.link_offer.startswith("I can text")
+    assert "also" in cfg.scripts.link_offer
+    assert "?" not in cfg.scripts.captured_booking
+
+
+def test_the_link_step_can_never_write_an_item():
+    """One request, one row. The ledger has no amend path, so a second filing is a second
+    job for the team and a caller told twice that it was sent."""
+    from pathlib import Path as _Path
+
+    from spatalk.brain.flow import Slots, Step, apply, step_tools
+    from spatalk.brain.requests import PreferredWindow
+    from spatalk.tenants.bundle import load_bundle
+
+    cfg = load_bundle(_Path(RUNTIME) / "tenants" / "skincentrix")
+    filed = Slots(
+        flow="new_booking", returning_client=False, offers_done=True, practitioner="any",
+        service_id="mesojet_facial", first_name="Payman", phone="+19055550101",
+        phone_confirmed=True, preferred_window=PreferredWindow(), team_note_asked=True,
+        filed=True,
+    )
+    for tool in step_tools(Step.LINK_OFFER, filed, cfg, "voice", transfer_enabled=True):
+        for args in ({"value": "yes"}, {"value": "no"}, {}):
+            a = apply(filed, tool.name, args, cfg, "voice", "+19055550101")
+            assert a.file is False, (tool.name, args)
+
+
+def test_no_step_holds_a_complete_record_out_of_the_ledger():
+    """The defect of 2026-09-11 15:56 in one sentence: a question stood between a complete
+    record and the ledger, and the call ended before it was answered. Walking any flow on any
+    channel to its last required slot must reach the ledger on that same call."""
+    from pathlib import Path as _Path
+
+    from spatalk.brain.flow import (
+        Slots,
+        Step,
+        apply,
+        next_step,
+        step_question,
+    )
+    from spatalk.tenants.bundle import load_bundle
+
+    cfg = load_bundle(_Path(RUNTIME) / "tenants" / "skincentrix")
+    fill = {
+        Step.RETURNING: ("answer", {"value": "no"}),
+        Step.OFFERS: ("answer", {"value": "no"}),
+        Step.PRACTITIONER: ("choose_practitioner", {"said": "anyone"}),
+        Step.SERVICE: ("choose_service", {"said": "mesojet facial"}),
+        Step.NAME: ("give_name", {"first_name": "Dana"}),
+        Step.PHONE: ("answer", {"value": "yes"}),
+        Step.WINDOW: ("choose_window", {"date": "Thursday", "part_of_day": "afternoon"}),
+        Step.TEAM_NOTE: ("answer", {"value": "no"}),
+    }
+    flows = ("new_booking", "callback", "reschedule", "cancel", "question", "training_enquiry")
+    for channel in ("voice", "sms", "chat"):
+        for flow in flows:
+            s = Slots(flow=flow, phone="+19055550101", preferred_window=None)
+            landed = None
+            for _ in range(12):
+                step = next_step(s, cfg, channel)
+                if step in (Step.COMPLETE, Step.QA, Step.LINK_OFFER):
+                    break
+                name, args = fill[step]
+                landed = apply(s, name, args, cfg, channel, "+19055550101")
+                assert not landed.ignored, (flow, channel, step, landed.rejection)
+                s = landed.slots
+            assert landed is not None, (flow, channel)
+            # The call that filled the last slot is the call that reached the ledger.
+            assert landed.file or landed.send_link, (flow, channel)
+            assert s.filed or landed.send_link, (flow, channel)
+            # And nothing is left standing in front of it except the post-filing extra.
+            after = next_step(s, cfg, channel)
+            assert after in (Step.QA, Step.LINK_OFFER), (flow, channel, after)
+            if after == Step.LINK_OFFER:
+                assert step_question(after, s, cfg, channel) == ("link_offer", {})
+
+
 def test_the_notes_live_on_the_conversation_and_nowhere_else():
     from spatalk.brain.ports import ItemDraft
     from spatalk.models import Conversation, Item

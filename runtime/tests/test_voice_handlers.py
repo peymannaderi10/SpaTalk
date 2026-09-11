@@ -224,6 +224,50 @@ async def test_a_tool_result_does_not_repeat_the_question_just_asked(fixed_clock
     assert session.slots.service_id == "mesojet_facial"
 
 
+def _one_slot_short_booking():
+    """The founder's record at 15:56:02, one answer short of complete (14ea2579)."""
+    from spatalk.brain.flow import Slots
+    from spatalk.brain.requests import PreferredWindow
+
+    return Slots(
+        flow="new_booking", returning_client=False, offers_done=True, service_id="mesojet_facial",
+        practitioner="any", first_name="Dana", phone="+19055550101", phone_confirmed=True,
+        preferred_window=PreferredWindow(part_of_day="afternoon"),
+    )
+
+
+async def test_the_captured_line_is_followed_by_the_tenants_link_offer(fixed_clock):
+    """Founder call 14ea2579, 2026-09-11 15:56:02.950. The route question was asked in front
+    of the ledger and talked over; the booking never became an item. The filing happens on
+    the turn the last slot lands, and the link is put after it as an extra."""
+    session, llm, Params, pushed, _queued, results, ledger = _world(
+        fixed_clock, _one_slot_short_booking()
+    )
+    cfg = session.cfg
+    await llm.registered["answer"](Params("answer", {"value": "no"}))
+    assert _said(pushed) == [cfg.scripts.captured_booking, cfg.scripts.link_offer]
+    assert session.slots.filed is True
+    assert session.slots.flow == "new_booking"
+    assert session.receipts == [f"item:{ledger.items[0].id}"]
+    assert session.band == 2
+    assert session.runtime_asked_this_turn is True
+    assert results[0][1].run_llm is False
+
+
+async def test_the_link_offer_answer_sends_the_link_and_files_nothing_more(fixed_clock):
+    session, llm, Params, pushed, _queued, _results, ledger = _world(
+        fixed_clock, _one_slot_short_booking()
+    )
+    await llm.registered["answer"](Params("answer", {"value": "no"}))
+    await llm.registered["answer"](Params("answer", {"value": "yes"}))
+    assert len(ledger.items) == 1
+    assert len(session.caps._sms.sent) == 1
+    assert _said(pushed)[-1] == session.cfg.scripts.link_sent.format(
+        service="MesoJet and Sound Therapy facial"
+    )
+    assert session.slots.flow is None
+
+
 async def test_the_receipt_is_recorded_before_the_outcome_is_spoken(fixed_clock):
     """The order is the honest one: the ledger answers, the receipt is written, then the
     sentence that asserts it goes out. A ledger that returns nothing gets no receipt and the

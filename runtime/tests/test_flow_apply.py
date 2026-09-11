@@ -124,7 +124,23 @@ def test_sms_takes_the_sender_number_without_asking():
     assert a.slots.preferred_window.date == "Thursday"
 
 
+def _filled_booking():
+    """The founder's record at 15:56:02: every required slot of a new-client booking."""
+    from spatalk.brain.flow import Slots
+    from spatalk.brain.requests import PreferredWindow
+
+    return Slots(
+        flow="new_booking", returning_client=False, offers_done=True,
+        service_id="mesojet_facial", practitioner="any", first_name="Payman",
+        phone="+19055550101", phone_confirmed=True,
+        preferred_window=PreferredWindow(part_of_day="afternoon"), team_note_asked=True,
+    )
+
+
 def test_complete_files_and_route_sends_the_link():
+    """MOVED 2026-09-11: the two ROUTE assertions became the link-offer pair below, because
+    the route question stood between a complete record and the ledger (founder call
+    14ea2579). What this test still pins is `file_request` and the premature refusal."""
     from spatalk.brain.flow import Slots
     from spatalk.brain.requests import PreferredWindow
 
@@ -134,14 +150,62 @@ def test_complete_files_and_route_sends_the_link():
         preferred_window=PreferredWindow(), team_note_asked=True,
     )
     a = _apply(done, "file_request", {})
-    assert a.file and a.slots.ended_flow
-    booking = done.with_(flow="new_booking")
-    link = _apply(booking, "answer", {"value": "yes"})           # ROUTE: yes = the link
-    assert link.send_link and link.slots.ended_flow
-    call = _apply(booking, "answer", {"value": "no"})            # ROUTE: no = the team calls
-    assert call.file and call.slots.ended_flow
+    assert a.file and a.slots.ended_flow and a.slots.filed is True
     early = _apply(Slots(flow="callback"), "file_request", {})
     assert early.ignored and not early.file
+
+
+def test_a_voice_booking_files_at_the_last_slot_and_then_offers_the_link():
+    """Founder call 14ea2579, 2026-09-11 15:56:02.948. The last slot landed and the runtime
+    asked the route question instead of filing; the call ended with the booking nowhere but
+    the transcript. The record files on that same call, and the link becomes an extra."""
+    from spatalk.brain.flow import Step, next_step, step_question
+
+    cfg = _cfg()
+    one_short = _filled_booking().with_(team_note_asked=False)
+    a = _apply(one_short, "answer", {"value": "no"})
+    assert a.file is True and a.send_link is False
+    assert a.slots.filed is True and a.slots.ended_flow is False
+    assert next_step(a.slots, cfg, "voice") == Step.LINK_OFFER
+    assert step_question(Step.LINK_OFFER, a.slots, cfg, "voice") == ("link_offer", {})
+
+
+def test_yes_to_the_link_sends_it_and_no_says_so_and_neither_files_again():
+    filed = _filled_booking().with_(filed=True)
+    yes = _apply(filed, "answer", {"value": "yes"})
+    assert yes.send_link is True and yes.file is False
+    assert yes.slots.link_offered is True and yes.slots.ended_flow is True
+    no = _apply(filed, "answer", {"value": "no"})
+    assert no.file is False and no.send_link is False
+    assert no.say == (("link_declined", {}),)
+    assert no.slots.link_offered is True and no.slots.ended_flow is True
+
+
+def test_a_filed_record_can_never_file_twice():
+    """The ledger has no amend path, so a second row for one request is a second job for the
+    team. Nothing the link step offers may file, and neither may a record forced back to
+    COMPLETE with the offer already answered."""
+    from spatalk.brain.flow import Step, next_step, step_tools
+
+    cfg = _cfg()
+    filed = _filled_booking().with_(filed=True)
+    assert next_step(filed, cfg, "voice") == Step.LINK_OFFER
+    for tool in step_tools(Step.LINK_OFFER, filed, cfg, "voice"):
+        for args in ({"value": "yes"}, {"value": "no"}, {}):
+            assert _apply(filed, tool.name, args).file is False, (tool.name, args)
+    answered = filed.with_(link_offered=True)
+    assert next_step(answered, cfg, "voice") == Step.COMPLETE
+    assert _apply(answered, "answer", {"value": "no"}).file is False
+
+
+def test_no_sms_number_files_and_ends_in_one_move():
+    from spatalk.brain.flow import Step, apply, next_step
+
+    no_sms = _cfg().model_copy(update={"sms_from_number": None})
+    one_short = _filled_booking().with_(team_note_asked=False)
+    a = apply(one_short, "answer", {"value": "no"}, no_sms, "voice", "+19055550101")
+    assert a.file is True and a.slots.ended_flow is True
+    assert next_step(a.slots, no_sms, "voice") == Step.QA
 
 
 def test_the_record_files_itself_when_the_last_slot_lands():
@@ -219,6 +283,10 @@ def test_a_booking_on_a_text_channel_ends_with_the_link_and_a_call_without_sms_f
     )
     chat = _apply(booking, "answer", {"value": "no"}, channel="chat")     # TEAM_NOTE
     assert chat.send_link and not chat.file
+    # And a reader who already has the link is never asked whether they want one.
+    from spatalk.brain.flow import Step, next_step
+
+    assert next_step(chat.slots, _cfg(), "chat") == Step.QA
     from spatalk.brain.flow import apply
     no_sms = _cfg().model_copy(update={"sms_from_number": None})
     call = apply(booking, "answer", {"value": "no"}, no_sms, "voice", "+19055550101")

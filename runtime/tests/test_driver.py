@@ -176,17 +176,84 @@ async def test_volunteered_health_context_flags_item_and_proceeds(fixed_clock):
 
 
 async def test_booking_link_and_end(fixed_clock):
+    """MOVED 2026-09-11: the record is filed before the link is put, so the `answer yes` that
+    sends the link now lands on a record with `filed=True` rather than on the old route step.
+    What the case pins — the link goes to the caller's number, then the goodbye — is intact."""
     from spatalk.brain.driver import LLMResponse, ToolCall
     from spatalk.brain.flow import Slots
     from spatalk.brain.requests import PreferredWindow
     brain, ref, ledger, sms, _ = _world(fixed_clock, [
         LLMResponse(text=None, tool_calls=[ToolCall("answer", {"value": "yes"})]),
         LLMResponse(text=None, tool_calls=[ToolCall("end_conversation", {})])], sms_number="+18885550100")
-    # Every slot filled on a call with an SMS number: the route question is open.
+    # Filed on the call with an SMS number: the link offer is the one thing left.
     slots = Slots(flow="new_booking", returning_client=True, practitioner="any", service_id="facial",
                   first_name="Dana", phone="+19055550101", phone_confirmed=True,
-                  preferred_window=PreferredWindow(), team_note_asked=True)
+                  preferred_window=PreferredWindow(), team_note_asked=True, filed=True)
     r = await brain.turn(ref, [], "Text me the link", slots)
     assert r.outcomes[0].kind == "link_sent" and sms.sent[0][1] == "+19055550101"
     r2 = await brain.turn(ref, [], "That's all, thanks", r.slots)
     assert r2.ended and r2.reply.startswith("Thanks for calling")
+
+
+def _one_slot_short_booking():
+    """The founder's record at 15:56:02, one answer short of complete (14ea2579)."""
+    from spatalk.brain.flow import Slots
+    from spatalk.brain.requests import PreferredWindow
+
+    return Slots(
+        flow="new_booking", returning_client=False, offers_done=True, service_id="mesojet_facial",
+        practitioner="any", first_name="Dana", phone="+19055550101", phone_confirmed=True,
+        preferred_window=PreferredWindow(part_of_day="afternoon"),
+    )
+
+
+async def test_the_booking_is_filed_before_the_link_is_offered(fixed_clock):
+    """Founder call 14ea2579, 2026-09-11 15:56:02.948. The last slot landed and the route
+    question went out instead of the filing; the caller talked over it twice and the ledger
+    ended the call with one escalation and no booking."""
+    from spatalk.brain.driver import LLMResponse, ToolCall
+
+    brain, ref, ledger, sms, _ = _world(
+        fixed_clock, [LLMResponse(text=None, tool_calls=[ToolCall("answer", {"value": "no"})])]
+    )
+    cfg = ref.tenant
+    r = await brain.turn(ref, [], "no, nothing else", _one_slot_short_booking())
+    assert len(ledger.items) == 1
+    item = ledger.items[0]
+    assert item.type == "new_booking" and item.contact.name == "Dana"
+    assert item.service_id == "mesojet_facial"
+    assert ledger.drafts[0].preferred_window.part_of_day == "afternoon"
+    assert sms.sent == []
+    assert cfg.scripts.captured_booking in r.reply
+    assert r.reply.endswith(cfg.scripts.link_offer)
+    assert r.reply.count("?") == 1
+
+
+async def test_yes_to_the_offer_texts_the_link_and_files_nothing_more(fixed_clock):
+    from spatalk.brain.driver import LLMResponse, ToolCall
+
+    brain, ref, ledger, sms, _ = _world(fixed_clock, [
+        LLMResponse(text=None, tool_calls=[ToolCall("answer", {"value": "no"})]),
+        LLMResponse(text=None, tool_calls=[ToolCall("answer", {"value": "yes"})]),
+    ])
+    r = await brain.turn(ref, [], "no, nothing else", _one_slot_short_booking())
+    r2 = await brain.turn(ref, [], "yes please", r.slots)
+    assert sms.sent[0][1] == "+19055550101"
+    assert r2.outcomes[0].kind == "link_sent"
+    assert len(ledger.items) == 1
+
+
+async def test_no_to_the_offer_sends_nothing_and_claims_nothing(fixed_clock):
+    from spatalk.brain.driver import LLMResponse, ToolCall
+
+    brain, ref, ledger, sms, _ = _world(fixed_clock, [
+        LLMResponse(text=None, tool_calls=[ToolCall("answer", {"value": "no"})]),
+        LLMResponse(text=None, tool_calls=[ToolCall("answer", {"value": "no"})]),
+    ])
+    r = await brain.turn(ref, [], "no, nothing else", _one_slot_short_booking())
+    r2 = await brain.turn(ref, [], "no thanks", r.slots)
+    assert sms.sent == []
+    assert len(ledger.items) == 1
+    assert r2.reply == ref.tenant.scripts.link_declined
+    low = r2.reply.lower()
+    assert "text" not in low and "sent" not in low

@@ -165,10 +165,19 @@ class Scripts(BaseModel, frozen=True):
     phone_fallback: str = "No problem, I'll use the number you're calling from."
     ask_window: str = "Which day or time of day suits you best for the visit? Any is fine."
     ask_team_note: str = "Is there anything you'd like the team to know before they call?"
-    ask_route: str = (
-        "I can text you the booking link now, or have the team call you to book — which do "
-        "you prefer?"
+    # The booking's own capture line: spoken when the link offer follows in the same turn,
+    # so it must NOT end in a question (two in one breath is the 2026-09-10 20:54:37 defect).
+    captured_booking: str = (
+        "I've sent that to the team as a request. Someone will confirm with you as soon as "
+        "they're free."
     )
+    # The extra after the filing, never a choice between the link and a callback: the branch
+    # that led with the link wrote nothing to the ledger (founder call 14ea2579, 2026-09-11).
+    link_offer: str = (
+        "If you'd like to lock it in yourself right now, I can also text you the booking "
+        "link — want that?"
+    )
+    link_declined: str = "No problem. Is there anything else I can help with?"
     clinical_offer: str = (
         "That's one for our clinical team rather than me — would you like me to have them "
         "reach out to you?"

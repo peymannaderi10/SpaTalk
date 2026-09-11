@@ -485,7 +485,14 @@ async def run_tool(
         elif applied.file:
             draft = draft_from(applied.slots, cfg, health_context=ref.health_context)
             outcome = await caps.capture(ref, draft)
-            spoken.append(render(outcome, cfg, now, channel=ref.channel))
+            # The flow stays open exactly when the link offer follows in the same turn, so
+            # the captured line must not ask a question of its own (founder call 14ea2579).
+            spoken.append(
+                render(
+                    outcome, cfg, now, channel=ref.channel,
+                    more_follows=not applied.slots.ended_flow,
+                )
+            )
         elif applied.send_link:
             contact = ContactInfo(name=applied.slots.first_name, phone=applied.slots.phone)
             outcome = await caps.send_booking_link(

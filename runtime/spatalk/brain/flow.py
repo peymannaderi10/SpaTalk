@@ -45,14 +45,14 @@ class Step(str, Enum):
     PHONE = "phone"
     WINDOW = "window"
     TEAM_NOTE = "team_note"
-    ROUTE = "route"
+    LINK_OFFER = "link_offer"
     COMPLETE = "complete"
 
 
 class Pending(BaseModel, frozen=True):
     """A confirmation the caller owes an answer to before the slot can be filled."""
 
-    kind: Literal["match", "which", "name_staff", "phone", "not_service", "offers", "route"]
+    kind: Literal["match", "which", "name_staff", "phone", "not_service", "offers"]
     slot: str
     value: str | None = None
     candidates: tuple[str, ...] = ()
@@ -81,6 +81,12 @@ class Slots(BaseModel, frozen=True):
     # LIT R6). It is a closed value — a `Step` — and it never reaches an item: `draft_from`
     # reads named slots and this is not one of them.
     digression: Step | None = None
+    # Two more facts about the record rather than values on it, behind the same fence as
+    # `digression`: `draft_from` never reads either, so neither can reach an item.
+    # An item exists on the ledger for this record; it can never be written twice.
+    filed: bool = False
+    # The post-filing link offer has been put and answered.
+    link_offered: bool = False
 
     def with_(self, **changes) -> Slots:
         return self.model_copy(update=changes)
@@ -95,6 +101,22 @@ def _phone_needed(slots: Slots, channel: str) -> bool:
     if channel == "sms":
         return False
     return not (slots.phone and slots.phone_confirmed)
+
+
+def link_offer_open(slots: Slots, cfg: TenantConfig, channel: str) -> bool:
+    """The booking is already filed and the team already has it; the only thing left is
+    whether to text the caller the link as well."""
+    return (
+        channel == "voice"
+        and slots.flow == "new_booking"
+        and slots.filed
+        and not slots.link_offered
+        and not slots.ended_flow
+        and bool(cfg.sms_from_number)
+        and bool(slots.service_id)
+        and bool(slots.phone)
+        and slots.phone_confirmed
+    )
 
 
 def next_step(slots: Slots, cfg: TenantConfig, channel: str) -> Step:
@@ -124,8 +146,10 @@ def next_step(slots: Slots, cfg: TenantConfig, channel: str) -> Step:
         return Step.WINDOW
     if slots.flow in BOOKING_LIKE and not slots.team_note_asked:
         return Step.TEAM_NOTE
-    if slots.flow == "new_booking" and cfg.sms_from_number and channel == "voice":
-        return Step.ROUTE
+    # The link question comes *after* the filing, never before it (founder call 14ea2579,
+    # 2026-09-11 15:56): a step in front of the ledger is a booking the team never sees.
+    if link_offer_open(slots, cfg, channel):
+        return Step.LINK_OFFER
     return Step.COMPLETE
 
 
@@ -175,8 +199,6 @@ def step_question(
             }
         if p.kind == "offers":
             return "ask_service_kind", {"consultation": _consultation_name(cfg)}
-        if p.kind == "route":
-            return "ask_route", {}
     if step == Step.RETURNING:
         return "ask_returning", {}
     if step == Step.OFFERS:
@@ -198,8 +220,8 @@ def step_question(
         return "ask_window", {}
     if step == Step.TEAM_NOTE:
         return "ask_team_note", {}
-    if step == Step.ROUTE:
-        return "ask_route", {}
+    if step == Step.LINK_OFFER:
+        return "link_offer", {}
     return None
 
 
@@ -212,7 +234,7 @@ STEP_TOOL = {
     Step.NAME: "give_name",
     Step.WINDOW: "choose_window",
     Step.TEAM_NOTE: "answer",
-    Step.ROUTE: "answer",
+    Step.LINK_OFFER: "answer",
 }
 
 
@@ -236,15 +258,19 @@ def step_tools(
         tools.append(slot_tool("file_request", cfg))
     elif step == Step.NAME and slots.flow == "clinical" and not slots.offer_accepted:
         tools.append(slot_tool("answer", cfg))  # the clinical offer is answered yes/no first
+    elif step == Step.LINK_OFFER:
+        # No `file_request` and no `change_answer`: the item is already on the ledger, a
+        # second filing is a second job for the team, and the ledger has no amend path, so a
+        # reopened slot would leave a stale row. A correction here reaches the clinic through
+        # the transcript and the callback `captured_booking` promises.
+        tools.append(slot_tool("answer", cfg))
+        if cfg.sms_from_number and slots.phone and slots.phone_confirmed:
+            tools.append(slot_tool("send_link", cfg))
     else:
         tools.append(slot_tool(STEP_TOOL[step], cfg))
         if slots.pending is not None and STEP_TOOL[step] != "answer":
             tools.append(slot_tool("answer", cfg))
-        if step == Step.ROUTE:
-            tools.append(slot_tool("file_request", cfg))
-            if cfg.sms_from_number and slots.phone and slots.phone_confirmed:
-                tools.append(slot_tool("send_link", cfg))
-    if step != Step.QA:
+    if step not in (Step.QA, Step.LINK_OFFER):
         tools.append(slot_tool("change_answer", cfg))
     return tools + always_tools(cfg, transfer_enabled)
 
@@ -392,29 +418,39 @@ def _open(kind: str, previous: Slots, channel: str, caller_phone: str | None) ->
 open_flow = _open
 
 
-def _finalize(applied: Applied, cfg: TenantConfig, channel: str) -> Applied:
-    """The record files itself the moment the last required slot lands (the route step of a
-    booking on a call with an SMS number is the one question asked before it)."""
+def _finalize(applied: Applied, cfg: TenantConfig, channel: str, name: str = "") -> Applied:
+    """The record files itself the moment the last required slot lands, with nothing asked
+    in front of it (founder call 14ea2579, 2026-09-11 15:56). The link question comes after,
+    as an extra, and the flow stays open across it."""
     s = applied.slots
     if applied.ignored or applied.file or applied.send_link:
         return applied
-    if s.flow is None or s.ended_flow or s.pending is not None:
+    if s.flow is None or s.ended_flow or s.pending is not None or s.filed:
         return applied
-    if next_step(s, cfg, channel) == Step.COMPLETE:
-        done = s.with_(ended_flow=True)
-        if s.flow == "new_booking" and channel != "voice":
-            # Text channels show the booking link in the conversation itself (Task B4); a
-            # call without an SMS number files a callback instead.
-            return applied.model_copy(update={"slots": done, "send_link": True})
-        return applied.model_copy(update={"slots": done, "file": True})
-    return applied
+    if next_step(s, cfg, channel) != Step.COMPLETE:
+        return applied
+    if s.flow == "new_booking" and channel != "voice":
+        # Text channels show the booking link in the conversation itself (Task B4); a
+        # call without an SMS number files a callback instead.
+        return applied.model_copy(update={"slots": s.with_(ended_flow=True), "send_link": True})
+    filed = s.with_(filed=True)
+    if next_step(filed, cfg, channel) == Step.LINK_OFFER:
+        return applied.model_copy(update={"slots": filed, "file": True})
+    return applied.model_copy(update={"slots": filed.with_(ended_flow=True), "file": True})
+
+
+def unfiled_record(slots: Slots, cfg: TenantConfig, channel: str) -> bool:
+    """Every required slot is on the record and no item was ever written for it."""
+    if slots.flow is None or slots.filed or slots.pending is not None:
+        return False
+    return next_step(slots, cfg, channel) == Step.COMPLETE
 
 
 def apply(
     slots: Slots, name: str, args: dict, cfg: TenantConfig, channel: str, caller_phone: str | None
 ) -> Applied:
     """Move the record on one tool call. Answers land only in the open slot (§3.3)."""
-    return _finalize(_apply(slots, name, args, cfg, channel, caller_phone), cfg, channel)
+    return _finalize(_apply(slots, name, args, cfg, channel, caller_phone), cfg, channel, name)
 
 
 def tool_refusal(
@@ -517,9 +553,9 @@ def _apply(
         )
         return Applied(slots=slots.with_(preferred_window=window))
     if name == "file_request":
-        return Applied(slots=slots.with_(ended_flow=True), file=True)
+        return Applied(slots=slots.with_(ended_flow=True, filed=True), file=True)
     if name == "send_link":
-        return Applied(slots=slots.with_(ended_flow=True), send_link=True)
+        return Applied(slots=slots.with_(ended_flow=True, link_offered=True), send_link=True)
     # A name that passed `_tool_allowed` and is handled nowhere above: not reachable from
     # the tool list the model is given, and refused in words rather than in silence anyway.
     return _reject("not_offered", name, slots, cfg, channel)
@@ -591,8 +627,6 @@ def _answer(
             if consult is None:
                 return Applied(slots=slots.with_(pending=None))
             return _after_slot(slots.with_(pending=None, service_id=consult.id), cfg)
-        if p.kind == "route":
-            return _route(slots.with_(pending=None), yes, cfg)
     if slots.flow == "clinical" and not slots.offer_accepted and step == Step.NAME:
         # The clinical offer: yes goes on to the name, no closes with nothing filed.
         if yes:
@@ -615,15 +649,17 @@ def _answer(
         return Applied(slots=slots.miss("phone"))
     if step == Step.TEAM_NOTE:
         return Applied(slots=slots.with_(team_note_asked=True))
-    if step == Step.ROUTE:
-        return _route(slots, yes, cfg)
+    if step == Step.LINK_OFFER:
+        return _link_offer(slots, yes, cfg)
     return Applied(slots=slots, ignored=True)
 
 
-def _route(slots: Slots, yes: bool, cfg: TenantConfig) -> Applied:
+def _link_offer(slots: Slots, yes: bool, cfg: TenantConfig) -> Applied:
+    """The extra after the filing. Neither branch files: the item already exists."""
+    done = slots.with_(ended_flow=True, link_offered=True)
     if yes and cfg.sms_from_number and slots.phone_confirmed:
-        return Applied(slots=slots.with_(ended_flow=True), send_link=True)
-    return Applied(slots=slots.with_(ended_flow=True), file=True)
+        return Applied(slots=done, send_link=True)
+    return Applied(slots=done, say=(("link_declined", {}),))
 
 
 def _after_slot(slots: Slots, cfg: TenantConfig) -> Applied:
@@ -799,7 +835,13 @@ _MISSING: dict[Step, tuple[str, str, tuple[str, ...]]] = {
     Step.PHONE: ("phone", "the best number to reach them on", ()),
     Step.WINDOW: ("window", "which day or part of the day suits them", ("morning", "afternoon", "evening", "any")),
     Step.TEAM_NOTE: ("team_note", "whether there is anything the team should know before they call", ("yes", "no")),
-    Step.ROUTE: ("route", "whether to text them the booking link or have the team call them", ("the link", "a call")),
+    Step.LINK_OFFER: (
+        "link",
+        "whether they would ALSO like the booking link texted to them. Their request is "
+        "already filed and the team will call either way, so this is an extra and never a "
+        "condition: a no changes nothing",
+        ("yes", "no"),
+    ),
 }
 
 
@@ -884,10 +926,14 @@ def _missing(step: Step, slots: Slots, cfg: TenantConfig, channel: str) -> Missi
 class OpenQuestion(BaseModel, frozen=True):
     """The question the record is waiting on, and who owns its wording.
 
-    `fixed` is True exactly when a `Pending` is open: a value the resolver could not settle
-    is read back in the tenant's own words, because a wrong read-back is a wrong record
-    (candidates-not-verdicts is phase B). Everything else is a plain step question, and the
-    model words it from the readiness report (memo §7 decision 1).
+    `fixed` is True when a `Pending` is open — a value the resolver could not settle is read
+    back in the tenant's own words, because a wrong read-back is a wrong record
+    (candidates-not-verdicts is phase B) — and at `Step.LINK_OFFER`, where the question names
+    an action the runtime performs. Leaving the link offer to the model re-creates the very
+    defect of 2026-09-11 15:56 (a link-first forced binary), and an unfixed offer a model
+    wrapped in its own trailing question would leave the record sitting at that step for the
+    rest of the call. Everything else is a plain step question, and the model words it from
+    the readiness report (memo §7 decision 1).
     """
 
     key: str
@@ -899,10 +945,13 @@ def open_question(slots: Slots, cfg: TenantConfig, channel: str) -> OpenQuestion
     """The open step's question as a script key, or None when no flow is open."""
     if slots.flow is None or slots.ended_flow:
         return None
-    q = step_question(next_step(slots, cfg, channel), slots, cfg, channel)
+    step = next_step(slots, cfg, channel)
+    q = step_question(step, slots, cfg, channel)
     if q is None:
         return None
-    return OpenQuestion(key=q[0], fills=q[1], fixed=slots.pending is not None)
+    return OpenQuestion(
+        key=q[0], fills=q[1], fixed=slots.pending is not None or step == Step.LINK_OFFER
+    )
 
 
 def readiness(slots: Slots, cfg: TenantConfig, channel: str) -> Readiness:
@@ -978,6 +1027,14 @@ def step_message(step: Step, slots: Slots, cfg: TenantConfig, channel: str) -> s
             f"{STEP_MARKER} {known_text}They asked something else. Answer it from the facts "
             "in one or two sentences, then ask again, in your own words, for "
             f"{wanted}, and put their answer in {tool}. Do not call answer_question again."
+            + _BRIEF_TAIL
+        )
+    if step == Step.LINK_OFFER:
+        return (
+            f"{STEP_MARKER} {known_text}The request is filed and the system has already said so. "
+            "The only thing left is whether they would also like the booking link texted to "
+            "them now. Ask that as an extra, never as a choice between the link and a callback, "
+            "and never lead with the link. Call answer with yes or no and say nothing else."
             + _BRIEF_TAIL
         )
     if slots.pending is not None and slots.pending.kind not in ("offers", "which"):

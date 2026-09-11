@@ -29,6 +29,29 @@ def test_render_link_sent_names_service():
     assert "https://x" in shown and "texted" not in shown
 
 
+def test_a_booking_captured_before_the_link_offer_asks_nothing():
+    """Founder call 2026-09-10 20:54:37: two questions in one breath. The captured line for a
+    booking is followed by the link offer in the same turn, so it must not ask one itself."""
+    from spatalk.brain.outcomes import Captured
+    from spatalk.brain.renderer import render
+    cfg = _cfg()
+    out = Captured(item_id=7, urgency="normal", confirm_by=NOW + timedelta(hours=3), item_type="new_booking")
+    followed = render(out, cfg, NOW, more_follows=True)
+    assert followed == cfg.scripts.captured_booking
+    assert not followed.rstrip().endswith("?")
+    assert render(out, cfg, NOW) == cfg.scripts.captured
+    assert render(out, cfg, NOW, more_follows=False) == cfg.scripts.captured
+
+
+def test_more_follows_changes_nothing_for_an_escalation_a_send_link_or_a_callback():
+    from spatalk.brain.outcomes import Captured
+    from spatalk.brain.renderer import render
+    cfg = _cfg()
+    for item_type in ("escalation_clinical", "send_link", "callback"):
+        out = Captured(item_id=9, urgency="normal", confirm_by=NOW + timedelta(hours=3), item_type=item_type)
+        assert render(out, cfg, NOW, more_follows=True) == render(out, cfg, NOW), item_type
+
+
 def test_render_refused_never_claims_action():
     from spatalk.brain.outcomes import Refused
     from spatalk.brain.renderer import render
