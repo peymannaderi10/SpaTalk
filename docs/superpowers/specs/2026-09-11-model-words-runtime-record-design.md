@@ -89,6 +89,16 @@ Anthropic's rule, adopted: add complexity only when it demonstrably improves out
 5. **Model**: stay on Flash-Lite; Flash only via the trouble score. Recommended: yes.
 6. **Whether the interim fix for the 01:40 call ships before the demo** on the current engine (answer path, question-shaped utterances refused as answers, generic category entries resolve to a kind, no re-ask on a fragment). It is phase A's first half and is not wasted work.
 
+### 7.1 The call of 2026-09-11 15:51 (conversation 14ea2579-a14e-4be5-9786-8b5354499931)
+
+A new-client MesoJet booking reached every required slot by 15:56:02.948 and the ledger got one row for the call: an `escalation_clinical` with no name, no treatment and no window. Two things in the engine caused it, and both are now closed.
+
+**The route step was a gate in front of the ledger.** `next_step` put `Step.ROUTE` between `ask_team_note` and `COMPLETE` whenever the tenant had an `sms_from_number`, and `_finalize` filed only at `COMPLETE`. The question went out at 15:56:02.950 and again at 15:56:17.170 and was talked over both times (interruptions at 15:56:05.088 and 15:56:17.904), so the record never reached the ledger; and the branch the script offered first ("I can text you the booking link now") returned `send_link`, which captures nothing, so even a yes would have written no item. The step is now `Step.LINK_OFFER` and sits *after* the filing: the record files on the turn the last slot lands, and the link is an extra the caller may decline without changing anything. `Slots.filed` makes a second row impossible, and the step offers neither `file_request` nor `change_answer` — a real loss, since the ledger has no amend path, so a correction there reaches the clinic through the transcript and the callback `captured_booking` promises.
+
+**A model-called `escalate` did not follow the gate's own rule.** At 15:56:30.765 the model called `escalate {'reason':'clinical'}` for "does it hurt? like, that facial?", a pre-treatment question the rules lexicon deliberately excludes; the driver ended the call 38 ms later and the carrier leg was cut at 15:56:39.742. The rule the rules gate has had since voice-regression-V1 — only `reason="emergency"` ends a call, because only the emergency script tells the caller to hang up — now covers the tool as well. `reason="clinical"` opens the clinical flow and its offer, files nothing until the caller says yes, and **parks** the request that was in progress rather than discarding it; `close_flow` hands it back. And the offer is `Step.CLINICAL_OFFER` rather than a special case of `Step.NAME`, so a booking that already knows the caller's name cannot skip it.
+
+Two safety nets sit under both: a capture that failed leaves the record unfiled and unfinished rather than marked filed with nothing behind it, and a call that ends on a complete, unfiled record files it silently from `_finalize`.
+
 ## 8. What the evidence does not settle (LIT §9)
 
 Whether naturalness pays in task success at all, as opposed to satisfaction; where the trouble-score threshold sits for this caller population; whether Smart Turn re-scoring closes enough of the gap without endpoint anticipation; whether Flash-Lite's multi-turn unreliability is tolerable once the runtime holds the record. Each is a measurement, not a debate, and rung 0 makes all of them measurable on our own calls.

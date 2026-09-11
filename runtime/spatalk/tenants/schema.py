@@ -93,6 +93,9 @@ class Persona(BaseModel, frozen=True):
     assistant_name: str = "the assistant"
     tone: str = "warm, brief, plain-spoken"
     max_sentences_per_turn: int = 2
+    # Treatments or people the assistant may name in one breath; must match the "never name
+    # more than three" line in brain/prompt.py.
+    max_items_per_turn: int = 3
 
 
 class Scripts(BaseModel, frozen=True):
