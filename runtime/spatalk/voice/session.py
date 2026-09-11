@@ -88,6 +88,13 @@ class VoiceSession:
     model_turn_open: bool = False
     # Times the caller was asked whether they are still there since they last spoke.
     idle_nudges: int = 0
+    # --- one breath a caller turn (founder call 14ea2579, 2026-09-11) ---
+    # The breath the model has spent since the caller last spoke: sentences of its own words
+    # that reached the wire, and the catalogue entries inside them. Per caller turn, never
+    # persisted, never a word anybody said.
+    spoken_sentences: int = 0
+    spoken_items: int = 0
+    turn_capped: bool = False
     # --- operations (operations plan, Task E5) ---
     # Every TTFB reading of the call, in ms, filed under the stage that produced it. The
     # turn number in `latencies_ms` says the caller waited; this says which vendor made
@@ -115,6 +122,12 @@ class VoiceSession:
         from spatalk.voice.echo import remember
 
         self.recent_bot_text = remember(self.recent_bot_text, strip_audio_tags(text))
+
+    def reset_speech_budget(self) -> None:
+        """The caller spoke: the model gets a fresh breath."""
+        self.spoken_sentences = 0
+        self.spoken_items = 0
+        self.turn_capped = False
 
     def record_signal(self, kind: str, **detail) -> None:
         """Record a rung-0 signal, so a processor does not have to reach two levels deep."""
