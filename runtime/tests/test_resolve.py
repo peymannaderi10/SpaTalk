@@ -61,3 +61,32 @@ def test_sounds_like_and_first_name():
 
     assert first_name_of("Helen Courbetis") == "Helen"
     assert sounds_like("Ellen", "Helen") and not sounds_like("Dana", "Helen")
+
+
+def test_a_close_score_with_no_word_in_common_is_not_a_confirmation():
+    """Founder call 2026-09-10 20:54:17. The caller asked "what was the station one again?"
+    and the runtime answered "Did you mean Free virtual consultation?". `WRatio` scored
+    "station one" against "Free virtual consultation" at 0.70 on the letters "station" shares
+    with the middle of "consultation" — not one whole word in common. A confirmation is only
+    worth asking when some word of what the caller said is some word of the candidate."""
+    from spatalk.brain.resolve import match_service
+
+    cfg = _cfg()
+    assert match_service("the station one", cfg).kind == "none"
+    assert match_service("station one", cfg).kind == "none"
+    # A bare "one" used to pick two unrelated treatments to choose between.
+    assert match_service("one", cfg).kind == "none"
+    # The near-misses the 0.60 threshold exists for still confirm.
+    assert match_service("hydroabrasion", cfg).value == "hydrabrasion_facial"
+    assert match_service("hydroabrasion facial", cfg).value == "hydrabrasion_facial"
+    assert match_service("mirapeel", cfg).value == "mirapeel_facial"
+    assert match_service("carbon peel", cfg).value == "purecarbon_facial"
+
+
+def test_a_misheard_first_name_still_confirms():
+    """The shared-word rule must not close the door the phonetic and fuzzy paths open."""
+    from spatalk.brain.resolve import match_practitioner
+
+    cfg = _cfg()
+    assert match_practitioner("Ellen", cfg).value == "Helen Courbetis"
+    assert match_practitioner("Alexandre", cfg).value == "Alexandra Debski"

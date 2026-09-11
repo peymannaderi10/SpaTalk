@@ -17,6 +17,15 @@ from spatalk.tenants.schema import TenantConfig
 
 ACCEPT = 0.90
 CONFIRM = 0.60
+# A `WRatio` in the confirmation band is not on its own worth a "did you mean?": the score
+# rewards a substring, and a substring can be pure coincidence. "station one" scored 0.70
+# against "Free virtual consultation" on the letters "station" shares with the middle of
+# "consultation", and the caller who had asked *what* the offers were was answered with "Did
+# you mean Free virtual consultation?" (founder call 2026-09-10 20:54:17). So below ACCEPT a
+# match must also share a word: one of the caller's words is one of the candidate's, or its
+# beginning, or near enough in spelling that a recogniser could have produced it.
+WORD_MATCH = 0.80
+MIN_PREFIX_CHARS = 4
 
 ANY_WORDS = (
     "any", "anyone", "anybody", "whoever", "whoever's available", "no preference",
@@ -58,6 +67,24 @@ def _score(said: str, candidate: str) -> float:
     return fuzz.WRatio(said, candidate.lower()) / 100.0
 
 
+def _words_relate(said_word: str, label_word: str) -> bool:
+    """One word of the caller's could be one word of the label's."""
+    if said_word == label_word:
+        return True
+    shorter = min(len(said_word), len(label_word))
+    if shorter >= MIN_PREFIX_CHARS and (
+        said_word.startswith(label_word) or label_word.startswith(said_word)
+    ):
+        return True
+    return fuzz.ratio(said_word, label_word) / 100.0 >= WORD_MATCH
+
+
+def shares_a_word(said: str, label: str) -> bool:
+    """True when some word of `said` relates to some word of `label` (see WORD_MATCH)."""
+    label_words = _normalise(label).split()
+    return any(_words_relate(w, lw) for w in said.split() for lw in label_words)
+
+
 def _best(said: str, options: list[tuple[str, str]]) -> Match:
     """`options` are (value, label) pairs; labels are matched, values returned."""
     if not said or not options:
@@ -70,7 +97,13 @@ def _best(said: str, options: list[tuple[str, str]]) -> Match:
         return Match(kind="exact", value=exact[0])
     if len(exact) > 1:
         return Match(kind="which", candidates=tuple(exact[:2]))
+    labels = dict(options)
     scored = sorted(((_score(said, label), v) for v, label in options), reverse=True)
+    # Below ACCEPT the score alone is not evidence: a shared word has to back it up.
+    if scored[0][0] < ACCEPT:
+        scored = [(s, v) for s, v in scored if shares_a_word(said, labels[v])]
+        if not scored:
+            return Match(kind="none")
     top, value = scored[0]
     if len(scored) > 1 and abs(scored[0][0] - scored[1][0]) < 0.02 and top >= CONFIRM:
         return Match(kind="which", candidates=(scored[0][1], scored[1][1]))
