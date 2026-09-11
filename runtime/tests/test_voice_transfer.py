@@ -12,6 +12,18 @@ from pathlib import Path
 import pytest
 
 BUNDLE = Path(__file__).resolve().parents[1] / "tenants" / "skincentrix"
+
+
+def _spoken(llm):
+    """The tenant's own wording, filtered out of the frames the handler pushed.
+
+    A tool turn also pushes one `ToolTurnDoneFrame` — the handler telling
+    `OutputGuardProcessor` its half of the turn is over (model-words memo, A4).
+    """
+    from pipecat.frames.frames import TTSSpeakFrame
+
+    return [f.text for f in llm.pushed if isinstance(f, TTSSpeakFrame)]
+
 # Tuesday 2026-09-01 14:00 Toronto = 18:00 UTC. Skincentrix is open 10:00-18:00 on Tuesday.
 OPEN = datetime(2026, 9, 1, 18, 0, tzinfo=timezone.utc)
 # Tuesday 2026-09-01 23:30 UTC = 19:30 Toronto, half an hour after closing.
@@ -55,7 +67,7 @@ def test_tool_list_is_built_per_call_from_the_calendar_state():
     cfg = _cfg()
     # The Q&A set of the slot engine: start a request, escalate, end; the transfer only
     # when the calendar says the back-line is staffed.
-    qa = ["start_request", "escalate", "end_conversation"]
+    qa = ["start_request", "escalate", "end_conversation", "answer_question"]
     closed = [t.name for t in build_tools(cfg)]
     assert closed == qa and TRANSFER_TOOL not in closed
 
@@ -269,7 +281,7 @@ async def test_successful_transfer_speaks_the_script_and_leaves_the_leg_to_the_c
     params = _Params(llm, TRANSFER_TOOL, {})
     await llm.registered[TRANSFER_TOOL](params)
 
-    assert [f.text for f in llm.pushed] == [cfg.scripts.transferring]
+    assert _spoken(llm) == [cfg.scripts.transferring]
     assert port.calls == [("v3:abc", BACK_LINE)]
     assert session.transferred is True and session.band == 3
     # No item: the caller reached a person, so there is nothing for the team to call back.
@@ -291,7 +303,7 @@ async def test_failed_transfer_falls_back_to_a_captured_urgent_callback(fixed_cl
     params = _Params(llm, TRANSFER_TOOL, {})
     await llm.registered[TRANSFER_TOOL](params)
 
-    spoken = [f.text for f in llm.pushed]
+    spoken = _spoken(llm)
     assert spoken[0] == cfg.scripts.transferring
     assert spoken[1].startswith("Of course") and "call you back" in spoken[1]
     assert session.transferred is False and session.band == 3

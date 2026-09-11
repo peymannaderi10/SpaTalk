@@ -200,43 +200,51 @@ def _make_transfer_handler(session: VoiceSession):
     """
 
     async def handler(params: FunctionCallParams):
-        cfg, now = session.cfg, session.clock.now()
-        # Band 3 either way: the caller asked for a person, and that is what the nightly
-        # audit is looking for whether or not the carrier played along.
-        session.band = 3
+        try:
+            await _transfer(session, params)
+        finally:
+            # Same signal as every other tool turn: the guard is waiting on it before it
+            # decides what question the caller hears, and a carrier that refused leaves the
+            # call open.
+            await params.llm.push_frame(ToolTurnDoneFrame())
+
+    return handler
+
+
+async def _transfer(session: VoiceSession, params: FunctionCallParams) -> None:
+    cfg, now = session.cfg, session.clock.now()
+    # Band 3 either way: the caller asked for a person, and that is what the nightly
+    # audit is looking for whether or not the carrier played along.
+    session.band = 3
+    await params.llm.push_frame(
+        TTSSpeakFrame(
+            text=render_script("transferring", cfg, now, urgent=False),
+            append_to_context=True,
+        )
+    )
+    ok = await attempt_transfer(session.transfer, session.call_control_id, cfg.transfer_number)
+    if ok:
+        session.transferred = True
+        session.ended = True
+        suppress_auto_hangup(session.hangup_params)
+        outcome = Transferred(number_masked=mask_number(cfg.transfer_number or ""))
+        session.remember_receipt("transfer", outcome.number_masked)
+    else:
+        try:
+            outcome = await session.caps.transfer(session.ref, TransferRequest())
+        except Exception as e:  # noqa: BLE001  ledger down: nothing was filed either
+            logger.exception("transfer fallback could not file a callback: {}", e)
+            outcome = Refused(reason="unavailable")
+        if isinstance(outcome, Captured):
+            # The human-request wording asserts a filing, so the item comes first.
+            session.remember_receipt("item", str(outcome.item_id))
         await params.llm.push_frame(
             TTSSpeakFrame(
-                text=render_script("transferring", cfg, now, urgent=False),
+                text=render(outcome, cfg, now, channel=session.ref.channel),
                 append_to_context=True,
             )
         )
-        ok = await attempt_transfer(
-            session.transfer, session.call_control_id, cfg.transfer_number
-        )
-        if ok:
-            session.transferred = True
-            session.ended = True
-            suppress_auto_hangup(session.hangup_params)
-            outcome = Transferred(number_masked=mask_number(cfg.transfer_number or ""))
-            session.remember_receipt("transfer", outcome.number_masked)
-        else:
-            try:
-                outcome = await session.caps.transfer(session.ref, TransferRequest())
-            except Exception as e:  # noqa: BLE001  ledger down: nothing was filed either
-                logger.exception("transfer fallback could not file a callback: {}", e)
-                outcome = Refused(reason="unavailable")
-            if isinstance(outcome, Captured):
-                # The human-request wording asserts a filing, so the item comes first.
-                session.remember_receipt("item", str(outcome.item_id))
-            await params.llm.push_frame(
-                TTSSpeakFrame(
-                    text=render(outcome, cfg, now, channel=session.ref.channel),
-                    append_to_context=True,
-                )
-            )
-        await params.result_callback(
-            {"spoken": True, "outcome": outcome.kind},
-            properties=FunctionCallResultProperties(run_llm=False),
-        )
-
-    return handler
+    await params.result_callback(
+        {"spoken": True, "outcome": outcome.kind},
+        properties=FunctionCallResultProperties(run_llm=False),
+    )
