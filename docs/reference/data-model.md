@@ -97,6 +97,7 @@ runtime; `/internal/tenants/{id}/integrations` reports the display name and the 
 | notes | text null | a few sentences drafted from this conversation's own transcript by the `call_notes` job, for the staff member who returns the call [N1] |
 | notes_model | varchar(80) null | the model that drafted them, as `LLM_MODEL` names it [N1] |
 | notes_at | timestamptz null | when the drafting ran. Stamped even when the draft was empty, which is what makes the job idempotent; `notes` stays null rather than carrying a placeholder [N1] |
+| signals | jsonb null | rung zero of the evaluation ladder (model-words memo 2026-09-11, §6): `{counts, turns, signals}` — repeats, re-prompts, repairs, refused tools, barge-in-and-repeat, guard blocks and the turn analyser's verdicts, as exact counts plus the last 200 events. Closed labels and numbers only; `spatalk.ops.signals` refuses any value that could be a word somebody said, which is why retention keeps it |
 
 The notes are the one place in this schema where a model's own words are stored. They are a
 derived view of the transcript and are bound by the transcript's retention, and carry the
@@ -328,6 +329,7 @@ No portal model mirrors a runtime table.
 |---|---|---|
 | messages (transcripts), and `conversations.notes`, `notes_model`, `notes_at` with them | 30 days after `ended_at` | `retention_days` |
 | conversations | stub kept 400 days (no caller, no latency), then deleted | fixed |
+| `conversations.signals` | kept with the conversation stub (counts and closed labels only, no caller data) | fixed |
 | items | 400 days | fixed |
 | usage_events | 400 days | fixed |
 | audit_log | 2 years | fixed |
