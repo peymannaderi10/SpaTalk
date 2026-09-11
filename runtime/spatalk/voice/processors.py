@@ -37,7 +37,7 @@ from spatalk.brain.outcomes import Refused
 from spatalk.brain.renderer import render, render_script
 from spatalk.brain.flow import Slots, Step, draft_from, next_step, open_flow
 from spatalk.brain.requests import EscalateRequest
-from spatalk.brain.rules import health_context_mentioned, rules_gate
+from spatalk.brain.rules import health_context_mentioned, is_fragment, rules_gate
 from spatalk.voice.echo import scrub_echo
 from spatalk.voice.session import VoiceSession
 from spatalk.voice.steps import next_question, sync_context
@@ -72,6 +72,9 @@ class RulesGateProcessor(FrameProcessor):
         self._may_echo = False
         self._last_interim: str | None = None
         self._promotion: asyncio.Task | None = None
+        # Words from utterances that carried no content, waiting to go in front of the next
+        # one that does (see `_turn_text`).
+        self._held_fragment = ""
 
     async def _promote_stale_interim(self, frame: InterimTranscriptionFrame):
         await asyncio.sleep(STALE_INTERIM_SECS)
@@ -86,6 +89,24 @@ class RulesGateProcessor(FrameProcessor):
         if self._promotion is not None:
             task, self._promotion = self._promotion, None
             await self.cancel_task(task)
+
+    def _turn_text(self, text: str) -> str | None:
+        """What the caller has actually said, or None when this utterance is not a turn.
+
+        A final (or promoted) transcription of nothing but fillers and function words is a
+        hesitation, not an answer and not a question: on the founder's call of 2026-09-11
+        01:41 "Um.", "Well." and "What was the, uh-" each became a turn of its own. Held
+        rather than dropped, and put in front of the next utterance that does carry content,
+        so a word the caller meant is never lost.
+        """
+        if is_fragment(text):
+            self._held_fragment = f"{self._held_fragment} {text.strip()}".strip()
+            logger.info("fragment held, not a turn: {!r}", text)
+            return None
+        if self._held_fragment:
+            text = f"{self._held_fragment} {text.strip()}".strip()
+            self._held_fragment = ""
+        return text
 
     def _heard_while_assistant_spoke(self) -> bool:
         if self._bot_speaking:
@@ -112,10 +133,6 @@ class RulesGateProcessor(FrameProcessor):
         if isinstance(frame, TranscriptionFrame) and direction == FrameDirection.DOWNSTREAM:
             self._last_interim = None
             await self._cancel_promotion()
-            # The caller spoke: any \"still there?\" count starts over, and so does the
-            # allowance for a tool the step did not offer.
-            self._s.idle_nudges = 0
-            self._s.ignored_tools = 0
         if (
             isinstance(frame, (TranscriptionFrame, InterimTranscriptionFrame))
             and direction == FrameDirection.DOWNSTREAM
@@ -141,6 +158,18 @@ class RulesGateProcessor(FrameProcessor):
                 logger.info("echo trimmed: {!r} -> {!r}", frame.text, scrubbed)
                 frame.text = scrubbed
         if isinstance(frame, TranscriptionFrame) and direction == FrameDirection.DOWNSTREAM:
+            text = self._turn_text(frame.text)
+            if text is None:
+                # Not a turn: the caller is still assembling the sentence. Nothing goes to
+                # the aggregator, so no model runs and no step question is re-spoken; the
+                # words are kept for the next transcription and the idle nudge still holds
+                # the floor if the caller has in fact stopped.
+                return
+            frame.text = text
+            # The caller spoke: any "still there?" count starts over, and so does the
+            # allowance for a tool the step did not offer.
+            self._s.idle_nudges = 0
+            self._s.ignored_tools = 0
             if health_context_mentioned(frame.text, self._s.cfg) and not self._s.ref.health_context:
                 self._s.ref = self._s.ref.model_copy(update={"health_context": True})
             # A bare answer to "Could I get your first name?" is a name, whatever word the

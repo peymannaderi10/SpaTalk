@@ -111,3 +111,27 @@ def test_a_bare_answer_at_the_name_step_is_not_a_billing_or_complaint_escalation
     assert rules_gate("I can't breathe", cfg, name_step=True).reason == "emergency"
     assert rules_gate("Operator", cfg, name_step=True).reason == "human_request"
     assert rules_gate("Burning.", cfg, name_step=True).reason == "clinical"
+
+
+def test_a_fragment_with_no_content_words_is_not_a_turn():
+    """Founder call 2026-09-11 01:41:11 to 01:41:17. "Um.", "Well." and "What was the, uh-"
+    each arrived from the recogniser as a *final* transcription, each started and stopped a
+    user turn of its own, and each cost a model run and a re-spoken step question while the
+    caller was still assembling his sentence. A hesitation carries no answer and no question:
+    it is not a turn. A question mark is content, so "What?" still is one, and so is every
+    one-word answer the steps actually take."""
+    from spatalk.brain.rules import is_fragment
+
+    for text in ("Um.", " Well.", "What was the, uh-", "so, um", "Okay.", "the", "uh the"):
+        assert is_fragment(text), text
+    for text in (
+        "No.",              # V1 fixed the one-word "No"; it must stay a turn
+        "Yes",
+        "Sue",
+        "What?",            # a repair request: the caller wants the question again
+        "the facial one",
+        "Helen",
+        "Um, the mesojet",
+        "Seizure.",
+    ):
+        assert not is_fragment(text), text

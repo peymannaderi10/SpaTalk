@@ -70,6 +70,23 @@ BARE_ANSWER_LEAD = frozenset({
     "this", "is", "my", "name", "name's", "i'm", "im", "call", "me", "the", "a",
 })
 
+# Words that carry no answer and no question: disfluency, discourse markers and the function
+# words a sentence begins with. An utterance made of nothing but these is the caller thinking
+# aloud, not a turn (founder call 2026-09-11 01:41:11 to 01:41:17: "Um.", "Well." and "What
+# was the, uh-" were three final transcriptions, three model runs and two re-spoken step
+# questions). Deliberately absent: every word that is an answer to one of the steps ("yes",
+# "no", "sure", "any", "whoever"), and every repair word ("what" with a question mark,
+# "pardon", "sorry", "again"), because a caller asking for the question again has said
+# something and deserves an answer.
+NO_CONTENT_WORDS = frozenset({
+    "um", "umm", "ummm", "uhm", "uh", "uhh", "uhhh", "er", "err", "erm", "ah", "ahh", "oh",
+    "ooh", "hm", "hmm", "mm", "mmm", "mhm", "eh", "well", "so", "like", "okay", "ok",
+    "alright", "actually", "just", "anyway", "right", "the", "a", "an", "and", "or", "of",
+    "to", "it", "its", "that", "this", "there", "then", "i", "i'm", "im", "my", "you", "we",
+    "is", "was", "were", "am", "what", "what's", "whats",
+})
+
+
 # "Am I talking to a real person?" is a question about the assistant, not a request for a
 # person. The words overlap with the human-request lexicon ("real person", "a human"), so
 # the identity clause is blanked out before that lexicon runs; the model answers it honestly
@@ -112,6 +129,20 @@ def _is_bare_answer(text: str) -> bool:
     while words and words[0].lower() in BARE_ANSWER_LEAD:
         words.pop(0)
     return 0 < len(words) <= 2
+
+
+def is_fragment(text: str) -> bool:
+    """True when an utterance holds no word that carries content (see NO_CONTENT_WORDS).
+
+    Pure text, no tenant config and no model. A question mark means the caller asked
+    something, so it is never a fragment however few content words it has.
+    """
+    if "?" in (text or ""):
+        return False
+    words = re.sub(r"[^A-Za-z' ]+", " ", text or "").split()
+    if not words:
+        return True
+    return all(w.lower() in NO_CONTENT_WORDS for w in words)
 
 
 def rules_gate(

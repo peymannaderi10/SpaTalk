@@ -508,3 +508,45 @@ async def test_a_bare_answer_at_the_name_step_is_not_an_escalation(fixed_clock):
         expected_down_frames=[TranscriptionFrame], start_timeout=10.0,
     )
     assert ledger.items == [] and ended == [] and session.band == 1
+
+
+async def test_a_fragment_is_not_a_turn_and_its_words_are_kept(fixed_clock):
+    """Founder call 2026-09-11 01:41:11 to 01:41:17. Soniox sent "Um.", "Well." and "What was
+    the, uh-" as three final transcriptions; each one started a user turn, interrupted the
+    assistant, ran the model and re-spoke "What did you have in mind?". The gate sits between
+    STT and the aggregator, so it is the one layer that can decide an utterance is not a turn
+    at all: a content-free fragment goes no further, and its words are held and put in front
+    of the next transcription so nothing the caller said is lost."""
+    from pipecat.processors.frame_processor import FrameDirection
+    from spatalk.brain.flow import Slots
+    from spatalk.voice.processors import RulesGateProcessor
+
+    session, _ = _session(fixed_clock)
+    session.slots = Slots(flow="new_booking", returning_client=False, offers_done=True)
+    gate = RulesGateProcessor(session)
+    down = []
+
+    async def collect(frame, direction=FrameDirection.DOWNSTREAM):
+        down.append(frame)
+
+    gate.push_frame = collect
+    for text in ("Um.", "Well.", "What was the, uh-"):
+        await gate.process_frame(
+            TranscriptionFrame(text=text, user_id="u", timestamp="t"), FrameDirection.DOWNSTREAM
+        )
+    assert down == [], "a fragment reached the aggregator"
+    await gate.process_frame(
+        TranscriptionFrame(text="the station one again?", user_id="u", timestamp="t"),
+        FrameDirection.DOWNSTREAM,
+    )
+    forwarded = [f.text for f in down if isinstance(f, TranscriptionFrame)]
+    assert len(forwarded) == 1
+    assert forwarded[0].endswith("the station one again?")
+    for word in ("Um", "Well", "What was the"):
+        assert word in forwarded[0], f"{word!r} was dropped: {forwarded[0]!r}"
+    # A one-word answer is still a turn (V1's "No").
+    down.clear()
+    await gate.process_frame(
+        TranscriptionFrame(text="No.", user_id="u", timestamp="t"), FrameDirection.DOWNSTREAM
+    )
+    assert [f.text for f in down if isinstance(f, TranscriptionFrame)] == ["No."]
