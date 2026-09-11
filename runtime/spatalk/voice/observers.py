@@ -53,14 +53,33 @@ def stage_for_processor(name: str) -> str | None:
 
 
 class UsageObserver(BaseObserver):
+    """What the providers charged for, read once per frame.
+
+    An observer is called on every *push*, and a frame is pushed once per processor hop, so
+    a `MetricsFrame` the LLM service emits is seen once for each processor between it and
+    the end of the pipeline. Counting each sighting recorded the founder's call of
+    2026-09-10 as 667,689 input tokens where the provider reported 83,339 — exactly eight
+    times, the hops from the LLM service to the end of a ten-processor pipeline, and the TTS
+    characters four times from its own position. The reading is the frame, not the push, so
+    the id of every frame already metered is remembered and the later hops are ignored.
+
+    Keyed on the frame's id rather than on the pipeline's shape: a processor added or moved
+    changes the hop count, and a meter that has to be re-derived every time the pipeline is
+    edited is a meter that will be wrong again.
+    """
+
     def __init__(self, session: VoiceSession):
         super().__init__()
         self._s = session
+        self._seen: set[int] = set()
 
     async def on_push_frame(self, data: FramePushed):
         f = data.frame
         if not isinstance(f, MetricsFrame):
             return
+        if f.id in self._seen:
+            return
+        self._seen.add(f.id)
         for d in f.data:
             if isinstance(d, LLMUsageMetricsData):
                 v = d.value

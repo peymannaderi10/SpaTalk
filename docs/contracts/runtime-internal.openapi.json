@@ -3145,6 +3145,10 @@
             "type": "number",
             "title": "Call Minutes"
           },
+          "stt_seconds": {
+            "type": "number",
+            "title": "Stt Seconds"
+          },
           "sms_in": {
             "type": "integer",
             "title": "Sms In"
@@ -3191,6 +3195,7 @@
         "required": [
           "calls",
           "call_minutes",
+          "stt_seconds",
           "sms_in",
           "sms_out",
           "chats",
@@ -3234,6 +3239,10 @@
             "type": "number",
             "title": "Call Minutes"
           },
+          "stt_seconds": {
+            "type": "number",
+            "title": "Stt Seconds"
+          },
           "sms_in": {
             "type": "integer",
             "title": "Sms In"
@@ -3275,6 +3284,7 @@
         "required": [
           "calls",
           "call_minutes",
+          "stt_seconds",
           "sms_in",
           "sms_out",
           "chats",

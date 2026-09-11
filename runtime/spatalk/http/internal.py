@@ -152,6 +152,10 @@ class AuditIn(BaseModel):
 class UsageTotals(BaseModel):
     calls: int
     call_minutes: float
+    # Recogniser seconds are metered and priced like every other unit; until the cost-gap
+    # work they were the one priced unit the row did not show, so the founder's cost table
+    # read as though transcription were free (cost gap C1).
+    stt_seconds: float
     sms_in: int
     sms_out: int
     chats: int
@@ -679,6 +683,7 @@ async def tenant_usage(
         return {
             "calls": c.get("voice", 0),
             "call_minutes": round(u.get("telephony_seconds", 0.0) / 60, 2),
+            "stt_seconds": round(u.get("stt_seconds", 0.0), 2),
             "sms_in": int(u.get("sms_in", 0)),
             "sms_out": int(u.get("sms_out", 0)),
             "chats": c.get("chat", 0),

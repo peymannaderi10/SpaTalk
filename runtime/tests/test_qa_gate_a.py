@@ -393,16 +393,23 @@ async def test_usage_observer_accumulates_llm_and_tts_metrics(fixed_clock):
             TTSUsageMetricsData(processor="tts", value=412),
         ]
     )
-    for _ in range(2):
+    async def push(f):
         await observer.on_push_frame(
             FramePushed(
                 source=None,
                 destination=None,
-                frame=frame,
+                frame=f,
                 direction=FrameDirection.DOWNSTREAM,
                 timestamp=0,
             )
         )
+
+    # Two turns accumulate. The same frame seen twice does not: an observer is called on
+    # every push and a frame is pushed once per processor hop, so counting each sighting
+    # recorded one turn's tokens eight times (cost gap C1).
+    await push(frame)
+    await push(frame)
+    await push(MetricsFrame(data=list(frame.data)))
     assert session.usage == {
         "llm_input_tokens": 2400.0,
         "llm_cached_tokens": 1600.0,

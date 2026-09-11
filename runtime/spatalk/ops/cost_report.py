@@ -183,8 +183,15 @@ async def cost_report(ctx, month: str, price_cad: float = PRICE_CAD_PER_TENANT_M
     }
     per_provider: dict[str, float] = {}
 
+    # The bag, not the row, is what gets priced: a cached input count is only meaningful
+    # beside the input count it sits inside, and pricing each unit on its own billed the
+    # cached tokens twice (cost gap C1). Units of one model always share a tenant, a channel
+    # and a provider, so grouping on those three keeps the per-provider attribution exact.
+    bags: dict[tuple[str, str, str], dict[str, float]] = {}
     for tenant_id, channel, provider, unit, qty in await _metered(ctx, month):
-        cad = rates.estimate_cad({unit: qty})
+        bags.setdefault((tenant_id, channel, provider), {})[unit] = qty
+    for (tenant_id, channel, provider), bag in bags.items():
+        cad = rates.estimate_cad(bag)
         tenant = per_tenant.setdefault(tenant_id, {"fixed": fixed, "total": fixed})
         tenant[channel] = round(tenant.get(channel, 0.0) + cad, 4)
         tenant["total"] = round(tenant["total"] + cad, 4)

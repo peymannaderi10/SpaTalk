@@ -431,6 +431,10 @@ async def test_usage_groups_days_in_tenant_time_and_estimates_cost(client, seede
     assert today["call_minutes"] == 5.0
     assert today["llm_cached_tokens"] == 20000
     assert today["tts_chars"] == 1200
+    # Recogniser seconds have always been recorded and priced; until the cost-gap work the
+    # day row never showed them, so the founder's cost table read as though the
+    # transcription line were free (cost gap C1).
+    assert today["stt_seconds"] == 150
     assert today["est_cost_cad"] == estimate_cad(
         {
             "telephony_seconds": 300,
@@ -457,6 +461,7 @@ async def test_usage_groups_days_in_tenant_time_and_estimates_cost(client, seede
             "sms_out": 2,
         }
     )
+    assert body["totals"]["stt_seconds"] == 150
 
 
 async def test_usage_defaults_to_the_last_thirty_tenant_days(client, seeded):
@@ -652,22 +657,31 @@ def test_the_packaged_rates_match_the_researched_table():
     assert json.loads(RATES_PATH.read_text("utf-8")) == researched
 
 
-def test_estimate_cad_prices_the_recommended_stack():
+def test_estimate_cad_prices_the_live_stack():
+    """The stack priced is `live_stack` — what the calls run on and what the quote prices.
+
+    It used to price whichever candidate stack the September 1 research marked
+    `recommended`, so the portal's overview card and the quote page put two different
+    numbers on the same month (cost gap C1).
+    """
     from spatalk.rates import estimate_cad
 
     assert estimate_cad({}) == 0.0
-    # 5 minutes of telephony at 0.0095 + 0.0035, 2.5 minutes of Soniox, 1200 Inworld chars,
-    # and one Gemini 2.5 Flash turn, converted at the recorded USD->CAD rate.
+    # 5 minutes of telephony at 0.0095 + 0.0035, 5 minutes of Soniox stt at 0.002, 5400
+    # Soniox tts chars at 14.1/1M, and 30k input tokens of which 20k came from the model's
+    # cache, at Flash-Lite's 0.25/0.025/1.50. In USD:
+    #   0.065 + 0.010 + 0.07614 + 0.0025 + 0.0005 + 0.00045 = 0.15459
+    # at 1.3896 CAD to the dollar.
     assert estimate_cad(
         {
             "telephony_seconds": 300,
-            "stt_seconds": 150,
-            "tts_chars": 1200,
-            "llm_input_tokens": 5000,
+            "stt_seconds": 300,
+            "tts_chars": 5400,
+            "llm_input_tokens": 30000,
             "llm_cached_tokens": 20000,
             "llm_output_tokens": 300,
         }
-    ) == pytest.approx(0.1262, abs=5e-4)
+    ) == pytest.approx(0.2148, abs=5e-4)
     # one inbound and two outbound toll-free messages, carrier fees included
     assert estimate_cad({"sms_in": 1, "sms_out": 2}) == pytest.approx(0.0521, abs=5e-4)
 

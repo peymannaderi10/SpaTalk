@@ -395,6 +395,27 @@ def invoices_add(provider: str, month: str, amount_cad: float):
     typer.echo(f"{provider} {month}: CA${amount_cad:,.2f}")
 
 
+@cost.command("breakdown")
+def cost_breakdown_cmd(
+    tenant: str = typer.Option(..., "--tenant", help="the clinic to read"),
+    since: str = typer.Option(..., "--since", help="first tenant-local day, YYYY-MM-DD"),
+    until: str = typer.Option("", "--until", help="last tenant-local day; today if omitted"),
+):
+    """Per call: minutes, turns, tokens cached and uncached, characters, cost per component."""
+    from datetime import date as _date
+
+    from spatalk.ops import cost_breakdown as ops_breakdown
+
+    ctx = _ctx()
+    calls, total = asyncio.run(
+        ops_breakdown.call_costs(
+            ctx, tenant, _date.fromisoformat(since), _date.fromisoformat(until) if until else None
+        )
+    )
+    for line in ops_breakdown.lines(calls, total, tenant):
+        typer.echo(line)
+
+
 @cost.command("report")
 def cost_report_cmd(month: str):
     """Print the month's metered cost per provider and per tenant against the invoices."""
