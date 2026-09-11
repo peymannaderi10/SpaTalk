@@ -575,3 +575,98 @@ async def test_a_fragment_is_not_a_turn_and_its_words_are_kept(fixed_clock):
         TranscriptionFrame(text="No.", user_id="u", timestamp="t"), FrameDirection.DOWNSTREAM
     )
     assert [f.text for f in down if isinstance(f, TranscriptionFrame)] == ["No."]
+
+
+# --- one egress to the wire, and receipt-or-retract (model-words memo, §3) ----------------
+
+
+async def test_a_paraphrased_outcome_claim_is_retracted_when_nothing_was_filed(fixed_clock):
+    """The failure every surveyed project has (memo §6.3). The model says the true-sounding
+    thing before any tool ran; the completion lexicon never covered it."""
+    from spatalk.voice.processors import OutputGuardProcessor
+
+    session, ledger = _session(fixed_clock)
+    frames = [
+        LLMFullResponseStartFrame(),
+        LLMTextFrame("I've passed that to the team and someone will call you back. "),
+        LLMTextFrame("Anything else?"),
+        LLMFullResponseEndFrame(),
+    ]
+    down, _ = await run_test(
+        OutputGuardProcessor(session), frames_to_send=frames,
+        expected_down_frames=[LLMFullResponseStartFrame, LLMTextFrame, LLMFullResponseEndFrame],
+        start_timeout=10.0,
+    )
+    said = [f.text.strip() for f in down if isinstance(f, LLMTextFrame)]
+    assert said == [session.cfg.scripts.cannot_complete]
+    # The replacement sentence is true: an item exists, and its id is now a receipt.
+    assert len(ledger.items) == 1 and session.receipts == [f"item:{ledger.items[0].id}"]
+    assert session.guard_blocks == 1
+
+
+async def test_the_replacement_sentence_is_not_guarded_again(fixed_clock):
+    """`cannot_complete` itself says "I've passed it to the team". Without a guard-owned
+    re-entrancy flag the retraction retracts itself, forever."""
+    from spatalk.voice.processors import OutputGuardProcessor
+
+    session, ledger = _session(fixed_clock)
+    frames = [
+        LLMFullResponseStartFrame(),
+        LLMTextFrame("I've booked you in for Thursday."),
+        LLMFullResponseEndFrame(),
+    ]
+    down, _ = await run_test(
+        OutputGuardProcessor(session), frames_to_send=frames,
+        expected_down_frames=[LLMFullResponseStartFrame, LLMTextFrame, LLMFullResponseEndFrame],
+        start_timeout=10.0,
+    )
+    said = [f.text.strip() for f in down if isinstance(f, LLMTextFrame)]
+    assert said == [session.cfg.scripts.cannot_complete]
+    assert len(ledger.items) == 1, "the retraction filed exactly one item"
+
+
+async def test_a_stall_that_implies_an_outcome_never_reaches_the_wire(fixed_clock):
+    from spatalk.voice.processors import OutputGuardProcessor
+
+    session, _ledger = _session(fixed_clock)
+    frames = [
+        LLMFullResponseStartFrame(),
+        LLMTextFrame("Let me book that in for you."),
+        LLMFullResponseEndFrame(),
+    ]
+    down, _ = await run_test(
+        OutputGuardProcessor(session), frames_to_send=frames,
+        expected_down_frames=[LLMFullResponseStartFrame, LLMTextFrame, LLMFullResponseEndFrame],
+        start_timeout=10.0,
+    )
+    said = [f.text.strip() for f in down if isinstance(f, LLMTextFrame)]
+    assert said == [session.cfg.scripts.cannot_complete]
+
+
+async def test_a_fixed_script_from_upstream_goes_out_with_its_receipt_and_is_held_without_one(fixed_clock):
+    """A `TTSSpeakFrame` the gate or a tool handler pushed passes through the same egress.
+    With a receipt it goes out untouched; with none, the outcome script is retracted too —
+    which is what makes the guarantee structural rather than a matter of call order."""
+    from spatalk.voice.processors import OutputGuardProcessor
+
+    session, ledger = _session(fixed_clock)
+    captured = session.cfg.scripts.captured.format(confirm_by="by 4 pm")
+    session.remember_receipt("item", "42")
+    down, _ = await run_test(
+        OutputGuardProcessor(session),
+        frames_to_send=[TTSSpeakFrame(text=captured, append_to_context=True)],
+        expected_down_frames=[TTSSpeakFrame], start_timeout=10.0,
+    )
+    assert [f.text for f in down if isinstance(f, TTSSpeakFrame)] == [captured]
+    assert ledger.items == []
+
+    session2, ledger2 = _session(fixed_clock)
+    down2, _ = await run_test(
+        OutputGuardProcessor(session2),
+        frames_to_send=[TTSSpeakFrame(text=captured, append_to_context=True)],
+        expected_down_frames=[TTSSpeakFrame], start_timeout=10.0,
+    )
+    assert [f.text for f in down2 if isinstance(f, TTSSpeakFrame)] == [
+        session2.cfg.scripts.cannot_complete
+    ]
+    assert len(ledger2.items) == 1, "the retraction filed the item its sentence asserts"

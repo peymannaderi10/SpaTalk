@@ -209,6 +209,9 @@ class RulesGateProcessor(FrameProcessor):
                     logger.info(
                         "rules gate: {} ({!r}) -> item {}", gate.reason, gate.matched, out.item_id
                     )
+                    # Before the frame that asserts it. The `Refused` branch records nothing,
+                    # which is correct: `refuse_unavailable` asserts nothing.
+                    self._s.remember_receipt("item", str(out.item_id))
                 except Exception as e:  # noqa: BLE001  ledger down: say so, never promise a callback
                     logger.exception("rules gate could not file escalation: {}", e)
                     out = Refused(reason="unavailable")
@@ -258,7 +261,14 @@ class FillerProcessor(FrameProcessor):
 
 
 class OutputGuardProcessor(FrameProcessor):
-    """Sits between LLM and TTS. Blocks completion language unless the turn holds a Completed outcome."""
+    """Sits between LLM and TTS. One private egress is the only path from here to the wire.
+
+    Everything the caller hears on a call goes through `_egress` — the model's own words, a
+    tenant script the rules gate or a tool handler pushed from upstream, the step question,
+    the guard's own replacement — and everything that goes through it is guarded first
+    (model-words memo, §3.1). That is non-negotiable 1's "every model utterance passes
+    `guard()` before reaching a channel", made structural instead of conventional.
+    """
 
     def __init__(self, session: VoiceSession):
         super().__init__(name="output_guard")
@@ -269,6 +279,12 @@ class OutputGuardProcessor(FrameProcessor):
         # turn ends: see `_emit`.
         self._held: str | None = None
         self._spoke_this_turn = False
+        # Guard-owned, not a parameter: set only while the guard's own replacement is on its
+        # way out, because `cannot_complete` asserts a receipt itself and would otherwise
+        # retract the retraction. Nothing outside this class can set it, and `_egress` takes
+        # no argument that would let anything outside this class bypass the guard (memo §3.1;
+        # `tests/test_structural_honesty.py` refuses even the *name* of such an argument).
+        self._retracting = False
 
     def _flow_open(self) -> bool:
         return bool(self._s.slots.flow) and not self._s.slots.ended_flow
@@ -276,39 +292,81 @@ class OutputGuardProcessor(FrameProcessor):
     async def _release_held(self):
         held, self._held = self._held, None
         if held is not None:
-            await self._speak(held)
+            await self._egress(held, model_words=True)
 
-    async def _speak(self, sentence: str):
+    async def _egress(
+        self, text: str, *, model_words: bool, append_to_context: bool = True
+    ) -> None:
+        """The only path from this processor to TTS, and the only call site of `guard()`."""
+        text = drop_unknown_tags(text.strip())
+        if not text:
+            return
+        if not self._retracting:
+            g = guard(
+                text, self._s.has_completed, self._s.cfg,
+                replacement="", receipts=len(self._s.receipts),
+            )
+            if g.blocked:
+                await self._retract(
+                    text, g, model_words=model_words, append_to_context=append_to_context
+                )
+                return
         self._spoke_this_turn = True
-        self._s.remember_spoken(sentence)
-        # The trailing space is for the TTS text aggregator, which otherwise sees
-        # "Welcome!We have" and speaks it as one run-on sentence.
-        await self.push_frame(LLMTextFrame(text=sentence + " "))
+        self._s.remember_spoken(text)
+        frame = (
+            # The trailing space is for the TTS text aggregator, which otherwise sees
+            # "Welcome!We have" and speaks it as one run-on sentence.
+            LLMTextFrame(text=text + " ")
+            if model_words
+            else TTSSpeakFrame(text=text, append_to_context=append_to_context)
+        )
+        await self.push_frame(frame)
+
+    async def _retract(
+        self, sentence: str, g, *, model_words: bool, append_to_context: bool = True
+    ) -> None:
+        """File a real item, then speak the tenant's replacement, so the sentence the caller
+        hears is true. Everything after a blocked sentence belonged to the same false claim,
+        so the rest of the turn is dropped rather than half-spoken. The replacement takes the
+        frame the blocked sentence would have taken, so a retracted script is still a script.
+        """
+        self._dropping = True
+        self._held = None
+        self._s.guard_blocks += 1
+        self._s.band = max(self._s.band, 2)
+        now = self._s.clock.now()
+        out = None
+        try:
+            out = await self._s.caps.capture(
+                self._s.ref, draft_from(Slots(flow="question"), self._s.cfg)
+            )
+        except Exception as e:  # noqa: BLE001  ledger down: nothing was filed, promise nothing
+            logger.exception("guard could not file the blocked claim: {}", e)
+        item_id = getattr(out, "item_id", None)
+        if item_id is None:
+            # Nothing was filed, so nothing may be asserted: the refusal names the clinic's
+            # own number and claims no action at all.
+            spoken = render(
+                Refused(reason="unavailable"), self._s.cfg, now, channel=self._s.ref.channel
+            )
+        else:
+            # The receipt goes in before the sentence that asserts it, which is also what
+            # keeps the replacement from being retracted in its turn.
+            self._s.remember_receipt("item", str(item_id))
+            spoken = render_script("cannot_complete", self._s.cfg, now, urgent=False)
+        logger.warning("guard blocked {} ({}): {!r}", g.family, g.matched, sentence)
+        self._retracting = True
+        try:
+            await self._egress(
+                spoken, model_words=model_words, append_to_context=append_to_context
+            )
+        finally:
+            self._retracting = False
 
     async def _emit(self, sentence: str):
         # A bracketed tool name or aside is not speech (call on gpt-4.1-nano, 2026-09-03).
         sentence = drop_unknown_tags(sentence.strip())
         if not sentence or self._dropping:
-            return
-        g = guard(sentence, self._s.has_completed, self._s.cfg, replacement="")
-        if g.blocked:
-            # Everything after a blocked sentence belonged to the same false claim, so the
-            # rest of the turn is dropped rather than half-spoken.
-            self._dropping = True
-            self._s.guard_blocks += 1
-            self._s.band = max(self._s.band, 2)
-            now = self._s.clock.now()
-            try:
-                await self._s.caps.capture(self._s.ref, draft_from(Slots(flow="question"), self._s.cfg))
-                spoken = render_script("cannot_complete", self._s.cfg, now, urgent=False)
-            except Exception as e:  # noqa: BLE001  ledger down: nothing was filed, promise nothing
-                logger.exception("guard could not file the blocked claim: {}", e)
-                spoken = render(
-                    Refused(reason="unavailable"), self._s.cfg, now, channel=self._s.ref.channel
-                )
-            logger.warning("guard blocked ({}): {!r}", g.matched, sentence)
-            self._held = None
-            await self._speak(spoken)
             return
         # Whatever was held back was not the last sentence after all, so it was part of the
         # answer: it goes out ahead of this one.
@@ -322,7 +380,7 @@ class OutputGuardProcessor(FrameProcessor):
             # end of the turn, when it is known whether the runtime has a question of its own.
             self._held = sentence
             return
-        await self._speak(sentence)
+        await self._egress(sentence, model_words=True)
 
     async def process_frame(self, frame: Frame, direction: FrameDirection):
         await super().process_frame(frame, direction)
@@ -377,14 +435,18 @@ class OutputGuardProcessor(FrameProcessor):
                 self._held = None
             await self.push_frame(frame, direction)
             if question:
-                self._s.remember_spoken(question)
                 self._s.remember_question(question)
-                await self.push_frame(TTSSpeakFrame(text=question, append_to_context=True))
+                await self._egress(question, model_words=False)
         elif isinstance(frame, InterruptionFrame):
             self._buffer, self._dropping, self._held = "", False, None
             await self.push_frame(frame, direction)
         else:
             if isinstance(frame, TTSSpeakFrame) and direction == FrameDirection.DOWNSTREAM:
-                # Fixed scripts (the disclosure, outcomes) pass through here on their way to TTS.
-                self._s.remember_spoken(frame.text)
+                # Fixed scripts (the disclosure, the outcomes, the confirmations) reach TTS
+                # through the same one door as the model's words, so an outcome sentence with
+                # no receipt behind it is retracted whoever wrote it.
+                await self._egress(
+                    frame.text, model_words=False, append_to_context=frame.append_to_context
+                )
+                return
             await self.push_frame(frame, direction)

@@ -104,3 +104,61 @@ def test_item_drafts_in_the_request_path_come_only_from_draft_from():
     for rel in ("spatalk/brain/driver.py", "spatalk/voice/handlers.py", "spatalk/voice/processors.py"):
         src = (_Path(RUNTIME) / rel).read_text(encoding="utf-8")
         assert "ItemDraft(" not in src, rel
+
+
+# --- one egress to the wire (model-words memo, §3.1) --------------------------------------
+
+
+def test_only_the_egress_function_can_speak_on_a_call():
+    """Memo §3.1: "One private egress function is the only path to TTS, with `guard()` inside
+    it and a guard-owned re-entrancy flag; no `skip_guard` parameter anywhere."
+
+    Structural rather than behavioural on purpose. Every earlier false claim on a call
+    reached the wire through a code path that had not thought about the guard; the fix that
+    lasts is that there is only one path.
+    """
+    import ast
+    from pathlib import Path as _Path
+
+    src = (_Path(RUNTIME) / "spatalk" / "voice" / "processors.py").read_text(encoding="utf-8")
+    tree = ast.parse(src)
+    guard_cls = next(
+        n for n in ast.walk(tree)
+        if isinstance(n, ast.ClassDef) and n.name == "OutputGuardProcessor"
+    )
+    speakers = set()
+    for node in ast.walk(guard_cls):
+        if not isinstance(node, ast.Call):
+            continue
+        callee = node.func
+        if not (isinstance(callee, ast.Attribute) and callee.attr in ("push_frame", "queue_frame")):
+            continue
+        for arg in node.args:
+            if isinstance(arg, ast.Call) and isinstance(arg.func, ast.Name):
+                speakers.add(arg.func.id)
+    # The only frames this class constructs and pushes are speech frames, and they are
+    # constructed in exactly one method.
+    assert speakers <= {"LLMTextFrame", "TTSSpeakFrame"}, speakers
+    methods = [
+        m.name for m in guard_cls.body
+        if isinstance(m, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and any(
+            isinstance(c, ast.Call) and isinstance(c.func, ast.Name)
+            and c.func.id in ("LLMTextFrame", "TTSSpeakFrame")
+            for c in ast.walk(m)
+        )
+    ]
+    assert methods == ["_egress"], f"speech is constructed in {methods}, not only in _egress"
+    assert "skip_guard" not in src
+
+
+def test_no_model_utterance_reaches_a_channel_without_the_guard():
+    """`guard(` appears in `_egress` and nowhere else in the voice package."""
+    from pathlib import Path as _Path
+
+    for path in (_Path(RUNTIME) / "spatalk" / "voice").rglob("*.py"):
+        src = path.read_text(encoding="utf-8")
+        if "guard(" not in src:
+            continue
+        assert path.name == "processors.py", f"{path} calls guard() outside the egress"
+        assert src.count("guard(self") + src.count("= guard(") == 1, "more than one guard call"

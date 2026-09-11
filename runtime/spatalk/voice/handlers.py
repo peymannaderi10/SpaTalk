@@ -15,7 +15,7 @@ from pipecat.services.llm_service import FunctionCallParams
 from spatalk.brain.driver import run_tool
 from spatalk.brain.flow import tool_refusal
 from spatalk.voice.steps import next_question, sync_context
-from spatalk.brain.outcomes import Captured, Completed, Refused, Transferred
+from spatalk.brain.outcomes import Captured, Completed, LinkSent, Refused, Transferred
 from spatalk.brain.renderer import render, render_script
 from spatalk.brain.requests import TransferRequest
 from spatalk.brain.tools import TOOL_NAMES, TRANSFER_TOOL
@@ -83,12 +83,19 @@ def _make_handler(session: VoiceSession):
             now,
         )
         session.slots = slots
-        if isinstance(outcome, Completed):
-            session.has_completed = True
+        # The receipt goes in at the ledger's own word, before the frame that asserts it:
+        # the outcome scripts all claim a filing, and the guard holds every one of them that
+        # nothing backs (model-words memo, §3.3).
         if isinstance(outcome, Captured):
+            session.remember_receipt("item", str(outcome.item_id))
             session.band = (
                 3 if outcome.item_type.startswith("escalation_") else max(session.band, 2)
             )
+        elif isinstance(outcome, LinkSent):
+            session.remember_receipt("link", outcome.service_id)
+        elif isinstance(outcome, Completed):
+            session.has_completed = True
+            session.remember_receipt("platform", outcome.platform_ref)
         if session.slots.ended_flow:
             session.slots = session.slots.with_(flow=None, ended_flow=False)
         lines = list(spoken)
@@ -156,12 +163,16 @@ def _make_transfer_handler(session: VoiceSession):
             session.ended = True
             suppress_auto_hangup(session.hangup_params)
             outcome = Transferred(number_masked=mask_number(cfg.transfer_number or ""))
+            session.remember_receipt("transfer", outcome.number_masked)
         else:
             try:
                 outcome = await session.caps.transfer(session.ref, TransferRequest())
             except Exception as e:  # noqa: BLE001  ledger down: nothing was filed either
                 logger.exception("transfer fallback could not file a callback: {}", e)
                 outcome = Refused(reason="unavailable")
+            if isinstance(outcome, Captured):
+                # The human-request wording asserts a filing, so the item comes first.
+                session.remember_receipt("item", str(outcome.item_id))
             await params.llm.push_frame(
                 TTSSpeakFrame(
                     text=render(outcome, cfg, now, channel=session.ref.channel),

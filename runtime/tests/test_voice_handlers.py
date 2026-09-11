@@ -182,3 +182,23 @@ async def test_a_tool_result_does_not_repeat_the_question_just_asked(fixed_clock
     session.ignored_tools = 0
     await llm.registered["choose_service"](Params("choose_service", {"said": "mesojet facial"}))
     assert [f.text for f in pushed] == [session.cfg.scripts.ask_practitioner]
+
+
+async def test_the_receipt_is_recorded_before_the_outcome_is_spoken(fixed_clock):
+    """The order is the honest one: the ledger answers, the receipt is written, then the
+    sentence that asserts it goes out. A ledger that returns nothing gets no receipt and the
+    refusal wording, which asserts nothing."""
+    from spatalk.brain.flow import Slots
+    from spatalk.brain.requests import PreferredWindow
+
+    slots = Slots(
+        flow="callback", returning_client=True, practitioner="any", service_id="hydrabrasion_facial",
+        first_name="Dana", phone="+19055550101", phone_confirmed=True,
+        preferred_window=PreferredWindow(), team_note_asked=True,
+    )
+    session, llm, Params, pushed, _queued, _results, ledger = _world(fixed_clock, slots)
+    await llm.registered["file_request"](Params("file_request", {}))
+    assert session.receipts == [f"item:{ledger.items[0].id}"]
+    # And the receipt was there before the sentence that asserts it: the guard would have
+    # retracted `captured` otherwise.
+    assert pushed[0].text.startswith("I've sent that to the team as a request")

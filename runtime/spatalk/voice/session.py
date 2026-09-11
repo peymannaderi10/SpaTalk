@@ -45,6 +45,13 @@ class VoiceSession:
     last_question_slots: Slots | None = None
     ended: bool = False
     guard_blocks: int = 0
+    # What this call can actually show for itself: `item:<id>` for every item the ledger
+    # issued, `link:<service_id>` for a booking link the provider accepted, `transfer:<n>`
+    # for a leg the carrier took, `platform:<ref>` for a Tier A completion. Receipt-or-
+    # retract (model-words memo, §3.3) reads the length of this list and nothing else — the
+    # refs are here so a log line can name one, never so a sentence can. Per call, never
+    # persisted.
+    receipts: list[str] = field(default_factory=list)
     latencies_ms: list[int] = field(default_factory=list)
     usage: dict[str, float] = field(
         default_factory=lambda: {
@@ -98,6 +105,12 @@ class VoiceSession:
         from spatalk.voice.echo import remember
 
         self.recent_bot_text = remember(self.recent_bot_text, strip_audio_tags(text))
+
+    def remember_receipt(self, kind: str, ref: str) -> None:
+        """Record proof of an action, before the sentence that asserts it is spoken."""
+        if kind not in ("item", "link", "transfer", "platform"):
+            raise ValueError(f"unknown receipt kind {kind!r}")
+        self.receipts.append(f"{kind}:{ref}")
 
     def remember_question(self, text: str) -> None:
         """Record the step question the runtime just asked, with the record it was asked on."""

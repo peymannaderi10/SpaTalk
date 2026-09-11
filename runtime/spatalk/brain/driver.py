@@ -581,7 +581,18 @@ class Brain:
         ack, blocked = "", False
         if resp.text:
             has_completed = any(isinstance(o, Completed) for o in outcomes)
-            g = guard(resp.text, has_completed, cfg, replacement="")
+            # What this turn can show for itself (model-words memo, §3.3). This turn's, not
+            # the conversation's: a reply that restates a filing made on an earlier turn is
+            # retracted, which is stricter than it needs to be and has not been seen — the
+            # model is told "say nothing about the result" — and threading a conversation-wide
+            # count from `text/service.py` is a change to a second driver for a hazard nobody
+            # has hit. Phase B changes both drivers together.
+            receipts = sum(
+                1
+                for o in outcomes
+                if o.kind in ("captured", "link_sent", "transferred", "completed")
+            )
+            g = guard(resp.text, has_completed, cfg, replacement="", receipts=receipts)
             if g.blocked:
                 blocked = True
                 try:
