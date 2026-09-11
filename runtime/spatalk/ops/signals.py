@@ -30,6 +30,7 @@ SIGNAL_KINDS = (
     "guard_block",         # the guard replaced a sentence
     "turn_prediction",     # the turn analyser returned a verdict, with its probability
     "turn_no_prediction",  # the turn closed on the silence fallback, with no verdict
+    "truncated",           # the turn ran past its sentence or item budget; the rest of its words were dropped
 )
 
 # Everything a signal may carry. There is no key here that could hold a sentence, and
