@@ -129,6 +129,10 @@ def test_a_fragment_with_no_content_words_is_not_a_turn():
         "Yes",
         "Sue",
         "What?",            # a repair request: the caller wants the question again
+        "Mhm.",             # an affirmative backchannel is a yes, not a hesitation
+        "Mm",
+        "Right.",
+        "Alright",
         "the facial one",
         "Helen",
         "Um, the mesojet",

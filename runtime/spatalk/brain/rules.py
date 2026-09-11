@@ -74,16 +74,21 @@ BARE_ANSWER_LEAD = frozenset({
 # words a sentence begins with. An utterance made of nothing but these is the caller thinking
 # aloud, not a turn (founder call 2026-09-11 01:41:11 to 01:41:17: "Um.", "Well." and "What
 # was the, uh-" were three final transcriptions, three model runs and two re-spoken step
-# questions). Deliberately absent: every word that is an answer to one of the steps ("yes",
-# "no", "sure", "any", "whoever"), and every repair word ("what" with a question mark,
-# "pardon", "sorry", "again"), because a caller asking for the question again has said
-# something and deserves an answer.
+# questions).
+#
+# Deliberately absent: every word that is an answer to one of the steps, and every repair
+# word. "yes", "no", "sure", "any" and "whoever" answer a step outright. So do the affirmative
+# backchannels — "mhm", "mm", "right", "alright" are how a caller says yes to "have you been
+# in to see us before?", and swallowing one would leave them waiting for the "still there?"
+# nudge; "hm" and "hmm" stay, because those are the thinking-aloud ones. And "pardon",
+# "sorry", "again" and a "what" with a question mark are a caller asking for the question
+# again, which is something said and deserves an answer.
 NO_CONTENT_WORDS = frozenset({
     "um", "umm", "ummm", "uhm", "uh", "uhh", "uhhh", "er", "err", "erm", "ah", "ahh", "oh",
-    "ooh", "hm", "hmm", "mm", "mmm", "mhm", "eh", "well", "so", "like", "okay", "ok",
-    "alright", "actually", "just", "anyway", "right", "the", "a", "an", "and", "or", "of",
-    "to", "it", "its", "that", "this", "there", "then", "i", "i'm", "im", "my", "you", "we",
-    "is", "was", "were", "am", "what", "what's", "whats",
+    "ooh", "hm", "hmm", "eh", "well", "so", "like", "okay", "ok", "actually", "just",
+    "anyway", "the", "a", "an", "and", "or", "of", "to", "it", "its", "that", "this",
+    "there", "then", "i", "i'm", "im", "my", "you", "we", "is", "was", "were", "am", "what",
+    "what's", "whats",
 })
 
 
