@@ -223,6 +223,25 @@ class OutputGuardProcessor(FrameProcessor):
         self._s = session
         self._buffer = ""
         self._dropping = False
+        # A sentence ending in "?" that arrived while a request was open, kept back until the
+        # turn ends: see `_emit`.
+        self._held: str | None = None
+        self._spoke_this_turn = False
+
+    def _flow_open(self) -> bool:
+        return bool(self._s.slots.flow) and not self._s.slots.ended_flow
+
+    async def _release_held(self):
+        held, self._held = self._held, None
+        if held is not None:
+            await self._speak(held)
+
+    async def _speak(self, sentence: str):
+        self._spoke_this_turn = True
+        self._s.remember_spoken(sentence)
+        # The trailing space is for the TTS text aggregator, which otherwise sees
+        # "Welcome!We have" and speaks it as one run-on sentence.
+        await self.push_frame(LLMTextFrame(text=sentence + " "))
 
     async def _emit(self, sentence: str):
         # A bracketed tool name or aside is not speech (call on gpt-4.1-nano, 2026-09-03).
@@ -246,18 +265,28 @@ class OutputGuardProcessor(FrameProcessor):
                     Refused(reason="unavailable"), self._s.cfg, now, channel=self._s.ref.channel
                 )
             logger.warning("guard blocked ({}): {!r}", g.matched, sentence)
-            self._s.remember_spoken(spoken)
-            await self.push_frame(LLMTextFrame(text=spoken + " "))
+            self._held = None
+            await self._speak(spoken)
             return
-        self._s.remember_spoken(sentence)
-        # The trailing space is for the TTS text aggregator, which otherwise sees
-        # "Welcome!We have" and speaks it as one run-on sentence.
-        await self.push_frame(LLMTextFrame(text=sentence + " "))
+        # Whatever was held back was not the last sentence after all, so it was part of the
+        # answer: it goes out ahead of this one.
+        await self._release_held()
+        if sentence.endswith("?") and self._flow_open():
+            # Invariant 4 of the slot engine: every question the caller hears is a tenant
+            # script. A trailing question of the model's own arrives on top of the runtime's
+            # and the caller gets two in a breath, the second identical on every turn
+            # (founder call 2026-09-10 20:54:37: "Would you like to hear about any of those,
+            # or perhaps something else?" then "What did you have in mind?"). Held until the
+            # end of the turn, when it is known whether the runtime has a question of its own.
+            self._held = sentence
+            return
+        await self._speak(sentence)
 
     async def process_frame(self, frame: Frame, direction: FrameDirection):
         await super().process_frame(frame, direction)
         if isinstance(frame, LLMFullResponseStartFrame):
-            self._buffer, self._dropping = "", False
+            self._buffer, self._dropping, self._held = "", False, None
+            self._spoke_this_turn = False
             self._s.tool_called_this_turn = False
             # A fresh completion began, so an error after this one is a new failed *turn*
             # and not another error from the turn that already apologised (llm failover
@@ -280,16 +309,32 @@ class OutputGuardProcessor(FrameProcessor):
         elif isinstance(frame, LLMFullResponseEndFrame):
             await self._emit(self._buffer)
             self._buffer, self._dropping = "", False
-            await self.push_frame(frame, direction)
             # A side answer mid-flow ("the Classic facial is $125"): the open question is
             # asked again after it, by the runtime, from the script (slot engine, §4.3).
-            if not self._s.tool_called_this_turn and not self._s.ended:
-                question = next_question(self._s, self._s.clock.now())
-                if question:
-                    self._s.remember_spoken(question)
-                    await self.push_frame(TTSSpeakFrame(text=question, append_to_context=True))
+            question = (
+                next_question(self._s, self._s.clock.now())
+                if not self._s.tool_called_this_turn and not self._s.ended
+                else None
+            )
+            if question and self._spoke_this_turn and self._s.asked_already(question):
+                # The caller has just heard those exact words and nothing in the record has
+                # moved, so the answer above is the whole of this turn.
+                logger.info("step question not repeated: {!r}", question)
+                question = None
+            if question is None and not self._s.tool_called_this_turn:
+                # The runtime has no question for this step, so the model's is all the caller
+                # would get: better its wording than a silent turn.
+                await self._release_held()
+            elif self._held is not None:
+                logger.info("model question dropped for the step script: {!r}", self._held)
+                self._held = None
+            await self.push_frame(frame, direction)
+            if question:
+                self._s.remember_spoken(question)
+                self._s.remember_question(question)
+                await self.push_frame(TTSSpeakFrame(text=question, append_to_context=True))
         elif isinstance(frame, InterruptionFrame):
-            self._buffer, self._dropping = "", False
+            self._buffer, self._dropping, self._held = "", False, None
             await self.push_frame(frame, direction)
         else:
             if isinstance(frame, TTSSpeakFrame) and direction == FrameDirection.DOWNSTREAM:

@@ -200,3 +200,218 @@ async def test_no_question_outside_a_flow(fixed_clock):
                              expected_down_frames=[LLMFullResponseStartFrame, LLMTextFrame, LLMFullResponseEndFrame],
                              start_timeout=10.0)
     assert not any(isinstance(f, TTSSpeakFrame) for f in down)
+
+
+async def test_the_model_does_not_ask_a_question_while_a_flow_is_open(fixed_clock):
+    """Founder call 2026-09-10 20:54:37. The model's answer ended "Would you like to hear
+    about any of those, or perhaps something else?" and the runtime then spoke "What did you
+    have in mind?" - two questions in one breath, the second one word for word the same on
+    every turn, which is what read as an assistant with no memory of the call. The slot
+    engine's invariant 4 is that every question the caller hears is a tenant script, so a
+    trailing question of the model's own is not spoken while a request is open."""
+    from spatalk.brain.flow import Slots
+    from spatalk.voice.processors import OutputGuardProcessor
+
+    session, _ = _session(fixed_clock)
+    session.slots = Slots(flow="new_booking", returning_client=False, offers_done=True)
+    frames = [
+        LLMFullResponseStartFrame(),
+        LLMTextFrame("That's our fifty-dollar credit. "),
+        LLMTextFrame("Would you like to hear about any of those?"),
+        LLMFullResponseEndFrame(),
+    ]
+    down, _ = await run_test(
+        OutputGuardProcessor(session),
+        frames_to_send=frames,
+        expected_down_frames=[
+            LLMFullResponseStartFrame, LLMTextFrame, LLMFullResponseEndFrame, TTSSpeakFrame
+        ],
+        start_timeout=10.0,
+    )
+    said = [f.text.strip() for f in down if isinstance(f, LLMTextFrame)]
+    assert said == ["That's our fifty-dollar credit."]
+    spoken = [f.text for f in down if isinstance(f, TTSSpeakFrame)]
+    assert spoken == [session.cfg.scripts.ask_after_offers]
+    # A sentence that was never spoken is not something the echo scrubber may trim from the
+    # caller's next words.
+    assert "would you like" not in session.recent_bot_text
+
+
+async def test_a_question_in_the_middle_of_an_answer_is_still_spoken(fixed_clock):
+    """Only a *trailing* question takes the runtime's turn. One the model asks and then
+    answers itself is part of the answer and must reach the caller."""
+    from spatalk.brain.flow import Slots
+    from spatalk.voice.processors import OutputGuardProcessor
+
+    session, _ = _session(fixed_clock)
+    session.slots = Slots(flow="new_booking", returning_client=False, offers_done=True)
+    frames = [
+        LLMFullResponseStartFrame(),
+        LLMTextFrame("Do you mean the express one? "),
+        LLMTextFrame("Those are all ninety-nine dollars."),
+        LLMFullResponseEndFrame(),
+    ]
+    down, _ = await run_test(
+        OutputGuardProcessor(session),
+        frames_to_send=frames,
+        expected_down_frames=[
+            LLMFullResponseStartFrame, LLMTextFrame, LLMTextFrame,
+            LLMFullResponseEndFrame, TTSSpeakFrame
+        ],
+        start_timeout=10.0,
+    )
+    said = [f.text.strip() for f in down if isinstance(f, LLMTextFrame)]
+    assert said == ["Do you mean the express one?", "Those are all ninety-nine dollars."]
+
+
+async def test_a_question_is_the_models_own_outside_a_flow(fixed_clock):
+    """With no request open the model owns the conversation, so its question is spoken."""
+    from spatalk.voice.processors import OutputGuardProcessor
+
+    session, _ = _session(fixed_clock)
+    frames = [
+        LLMFullResponseStartFrame(),
+        LLMTextFrame("We open at nine. "),
+        LLMTextFrame("Would you like to book?"),
+        LLMFullResponseEndFrame(),
+    ]
+    down, _ = await run_test(
+        OutputGuardProcessor(session),
+        frames_to_send=frames,
+        expected_down_frames=[
+            LLMFullResponseStartFrame, LLMTextFrame, LLMTextFrame, LLMFullResponseEndFrame
+        ],
+        start_timeout=10.0,
+    )
+    said = [f.text.strip() for f in down if isinstance(f, LLMTextFrame)]
+    assert said == ["We open at nine.", "Would you like to book?"]
+
+
+async def test_a_turn_that_is_only_a_question_is_not_left_silent(fixed_clock):
+    """The held question is the last resort against a silent turn: at a step the runtime has
+    no question for, a model turn made of nothing but a question is still spoken."""
+    from spatalk.brain.flow import Slots
+    from spatalk.voice.processors import OutputGuardProcessor
+
+    session, _ = _session(fixed_clock)
+    # COMPLETE: every slot is in the record, so `step_question` is None.
+    session.slots = Slots(
+        flow="cancel", first_name="Dana", phone="+19055550101", phone_confirmed=True
+    )
+    frames = [
+        LLMFullResponseStartFrame(),
+        LLMTextFrame("Shall I pass that on?"),
+        LLMFullResponseEndFrame(),
+    ]
+    down, _ = await run_test(
+        OutputGuardProcessor(session),
+        frames_to_send=frames,
+        expected_down_frames=[
+            LLMFullResponseStartFrame, LLMTextFrame, LLMFullResponseEndFrame
+        ],
+        start_timeout=10.0,
+    )
+    said = [f.text.strip() for f in down if isinstance(f, LLMTextFrame)]
+    assert said == ["Shall I pass that on?"]
+
+
+async def test_the_step_question_is_not_repeated_word_for_word(fixed_clock):
+    """Founder call 2026-09-10: "What did you have in mind?" four times, twice in a row with
+    nothing but a model answer between them, which is what he described as the assistant
+    lacking the context of the whole conversation. The step question is the runtime's to ask,
+    but it is asked once: while the record has not moved and the caller has just heard those
+    exact words, a second identical ask adds nothing, so the model's own closing question
+    carries the turn instead."""
+    from spatalk.brain.flow import Slots
+    from spatalk.voice.processors import OutputGuardProcessor
+
+    session, _ = _session(fixed_clock)
+    session.slots = Slots(flow="new_booking", returning_client=False, offers_done=True)
+    guard_proc = OutputGuardProcessor(session)
+    first = [
+        LLMFullResponseStartFrame(),
+        LLMTextFrame("That's our fifty-dollar credit."),
+        LLMFullResponseEndFrame(),
+    ]
+    down, _ = await run_test(
+        guard_proc, frames_to_send=first,
+        expected_down_frames=[
+            LLMFullResponseStartFrame, LLMTextFrame, LLMFullResponseEndFrame, TTSSpeakFrame
+        ],
+        start_timeout=10.0,
+    )
+    assert [f.text for f in down if isinstance(f, TTSSpeakFrame)] == [
+        session.cfg.scripts.ask_after_offers
+    ]
+    # A second side answer at the same step: the script is not spoken again, and the model's
+    # own question is released rather than dropped, so the caller is not left without one.
+    second = [
+        LLMFullResponseStartFrame(),
+        LLMTextFrame("The MesoJet facial is $295. "),
+        LLMTextFrame("Would you like to get that set up?"),
+        LLMFullResponseEndFrame(),
+    ]
+    down2, _ = await run_test(
+        OutputGuardProcessor(session), frames_to_send=second,
+        expected_down_frames=[
+            LLMFullResponseStartFrame, LLMTextFrame, LLMTextFrame, LLMFullResponseEndFrame
+        ],
+        start_timeout=10.0,
+    )
+    assert not any(isinstance(f, TTSSpeakFrame) for f in down2)
+    said = [f.text.strip() for f in down2 if isinstance(f, LLMTextFrame)]
+    assert said == ["The MesoJet facial is $295.", "Would you like to get that set up?"]
+
+
+async def test_the_step_question_comes_back_once_the_record_moves(fixed_clock):
+    """The suppression is only against repeating itself: a step that moved on asks again."""
+    from spatalk.brain.flow import Slots
+    from spatalk.voice.processors import OutputGuardProcessor
+
+    session, _ = _session(fixed_clock)
+    session.slots = Slots(flow="new_booking", returning_client=False, offers_done=True)
+    frames = [
+        LLMFullResponseStartFrame(),
+        LLMTextFrame("The MesoJet facial is $295."),
+        LLMFullResponseEndFrame(),
+    ]
+    await run_test(
+        OutputGuardProcessor(session), frames_to_send=frames,
+        expected_down_frames=[
+            LLMFullResponseStartFrame, LLMTextFrame, LLMFullResponseEndFrame, TTSSpeakFrame
+        ],
+        start_timeout=10.0,
+    )
+    session.slots = session.slots.with_(service_id="mesojet_facial")
+    down, _ = await run_test(
+        OutputGuardProcessor(session), frames_to_send=frames,
+        expected_down_frames=[
+            LLMFullResponseStartFrame, LLMTextFrame, LLMFullResponseEndFrame, TTSSpeakFrame
+        ],
+        start_timeout=10.0,
+    )
+    assert [f.text for f in down if isinstance(f, TTSSpeakFrame)] == [
+        session.cfg.scripts.ask_practitioner
+    ]
+
+
+async def test_a_silent_model_turn_still_gets_the_question(fixed_clock):
+    """The suppression never leaves a turn with nothing in it: with no words from the model,
+    the script is spoken however recently it was last asked."""
+    from spatalk.brain.flow import Slots
+    from spatalk.voice.processors import OutputGuardProcessor
+
+    session, _ = _session(fixed_clock)
+    session.slots = Slots(flow="new_booking", returning_client=False, offers_done=True)
+    session.remember_question(session.cfg.scripts.ask_after_offers)
+    frames = [LLMFullResponseStartFrame(), LLMFullResponseEndFrame()]
+    down, _ = await run_test(
+        OutputGuardProcessor(session), frames_to_send=frames,
+        expected_down_frames=[
+            LLMFullResponseStartFrame, LLMFullResponseEndFrame, TTSSpeakFrame
+        ],
+        start_timeout=10.0,
+    )
+    assert [f.text for f in down if isinstance(f, TTSSpeakFrame)] == [
+        session.cfg.scripts.ask_after_offers
+    ]

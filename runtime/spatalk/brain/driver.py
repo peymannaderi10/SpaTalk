@@ -436,6 +436,19 @@ def first_sentence(text: str) -> str:
     return parts[0] if parts else ""
 
 
+def drop_trailing_question(text: str) -> str:
+    """The model's answer without the question it signed off with.
+
+    Invariant 4 again: the question is the runtime's, from the tenant's scripts. Left in, the
+    model's own arrives in the same breath and the caller is asked two things at once, the
+    second one word for word identical on every turn (founder call 2026-09-10 20:54:37).
+    """
+    parts = [p for p in _SENTENCE_END.split(text.strip()) if p.strip()]
+    while parts and parts[-1].rstrip().endswith("?"):
+        parts.pop()
+    return " ".join(parts)
+
+
 async def run_tool(
     caps: Capabilities, ref: ConversationRef, slots: Slots, name: str, args: dict, now: datetime
 ) -> tuple[Slots, list[str], Outcome | None, bool, bool]:
@@ -581,6 +594,8 @@ class Brain:
             q = step_question(next_step(slots, cfg, ref.channel), slots, cfg, ref.channel)
             if q is not None:
                 question = render_script(q[0], cfg, now, urgent=False, **q[1])
+        if question and ack:
+            ack = drop_trailing_question(ack)
         if slots.ended_flow:
             slots = slots.with_(flow=None, ended_flow=False)
         reply = " ".join(p for p in [ack, *said, question] if p).strip()
