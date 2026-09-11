@@ -77,7 +77,16 @@ export type ConversationRow = Schema["ConversationRow"];
 export type Item = Omit<Schema["ItemOut"], "preferred_window"> & {
   preferred_window: JsonObject;
 };
-export type ConversationDetail = Omit<Schema["ConversationDetail"], "items"> & {
+/**
+ * `signals` is a free-shaped JSON document on the wire (the rung-0 trouble log, one key per
+ * count). The generated client types it `unknown`, which Wasp's `Payload` refuses, so it is
+ * narrowed to JSON here the same way `preferred_window` is on an item.
+ */
+export type ConversationFull = Omit<Schema["ConversationFull"], "signals"> & {
+  signals: JsonObject | null;
+};
+export type ConversationDetail = Omit<Schema["ConversationDetail"], "items" | "conversation"> & {
+  conversation: ConversationFull;
   items: Item[];
 };
 export type LatencyDay = Schema["LatencyDay"];
