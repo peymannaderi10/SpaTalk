@@ -438,7 +438,7 @@ class OutputGuardProcessor(FrameProcessor):
     def _flow_open(self) -> bool:
         return bool(self._s.slots.flow) and not self._s.slots.ended_flow
 
-    async def _release_held(self, *, as_statement: bool = False):
+    async def _release_held(self, *, as_statement: bool = False) -> None:
         """Let the held sentence out.
 
         `as_statement` is set by `_emit`, where the held sentence has turned out not to be
