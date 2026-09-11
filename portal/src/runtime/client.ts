@@ -1033,6 +1033,8 @@ export interface components {
             calls: number;
             /** Call Minutes */
             call_minutes: number;
+            /** Stt Seconds */
+            stt_seconds: number;
             /** Sms In */
             sms_in: number;
             /** Sms Out */
@@ -1069,6 +1071,8 @@ export interface components {
             calls: number;
             /** Call Minutes */
             call_minutes: number;
+            /** Stt Seconds */
+            stt_seconds: number;
             /** Sms In */
             sms_in: number;
             /** Sms Out */
