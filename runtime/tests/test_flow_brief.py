@@ -1,0 +1,98 @@
+"""The brief becomes a readiness report (OSS §8.2; LIT R1).
+
+It used to end "Do not ask a question yourself; one short acknowledgement at most", which is
+the prompt half of the answering machine the founder heard. It becomes Parlant's two
+sections — what is known, and what is missing with its legal choices — and it *invites* the
+question instead of forbidding it. What the runtime keeps is which slot is open and what may
+be stored; what it gives up is choosing the words.
+"""
+
+from pathlib import Path
+
+BUNDLE = Path(__file__).resolve().parents[1] / "tenants" / "skincentrix"
+
+
+def _cfg():
+    from spatalk.tenants.bundle import load_bundle
+
+    return load_bundle(BUNDLE)
+
+
+def test_the_brief_names_what_is_known_and_what_is_missing_and_asks_for_the_question():
+    from spatalk.brain.flow import STEP_MARKER, Slots, Step, step_message
+
+    cfg = _cfg()
+    s = Slots(flow="new_booking", returning_client=True, practitioner="Helen Courbetis")
+    brief = step_message(Step.SERVICE, s, cfg, "voice")
+    assert brief.startswith(STEP_MARKER)
+    assert "Known:" in brief and "returning client" in brief and "Helen" in brief
+    assert "which treatment they want" in brief
+    assert "in your own words" in brief and "choose_service" in brief
+    assert "do not ask a question" not in brief.lower()
+    assert "one short acknowledgement at most" not in brief
+
+
+def test_the_brief_never_licenses_a_claim():
+    from spatalk.brain.flow import Slots, Step, step_message
+
+    cfg = _cfg()
+    for step in Step:
+        brief = step_message(step, Slots(flow="new_booking"), cfg, "voice")
+        assert "answer_question" in brief or step in (Step.QA, Step.COMPLETE), step
+        assert "the system speaks every outcome" in brief or step in (Step.QA, Step.COMPLETE), step
+
+
+def test_the_name_and_number_steps_forbid_autocorrecting():
+    """Vapi's anti-autocorrect rule, verbatim in effect: a recogniser's "payment" for Peyman
+    is a transcription problem, and a model that tidies it up hides it (V1 open item 2)."""
+    from spatalk.brain.flow import Slots, Step, step_message
+
+    cfg = _cfg()
+    name = step_message(Step.NAME, Slots(flow="callback", returning_client=True), cfg, "voice")
+    assert "never modify" in name and "never autocorrect" in name and "never guess" in name
+    phone = step_message(
+        Step.PHONE, Slots(flow="callback", returning_client=True, first_name="Dana"), cfg, "voice"
+    )
+    assert "never modify, autocorrect or guess" in phone
+
+
+def test_the_brief_asks_for_the_answer_and_the_next_question_in_one_reply():
+    """The orchestrator's amendment of 2026-09-11: one model call per caller turn. The model
+    records the answer and asks what comes next in the same response, so the runtime never
+    has to buy a second round trip to get a question worded."""
+    from spatalk.brain.flow import Slots, Step, step_message
+
+    cfg = _cfg()
+    brief = step_message(Step.SERVICE, Slots(flow="new_booking", returning_client=True,
+                                             practitioner="any"), cfg, "voice")
+    assert "ask the next question in the same reply" in brief
+
+
+def test_a_pending_confirmation_is_the_runtimes_words_and_a_plain_step_question_is_not():
+    """Phase A's split. A confirmation of a value the resolver is unsure of is wording the
+    runtime still owns (candidates-not-verdicts is phase B); a plain step question is not."""
+    from spatalk.brain.flow import Pending, Slots, open_question
+
+    cfg = _cfg()
+    plain = open_question(Slots(flow="new_booking", returning_client=True), cfg, "voice")
+    assert plain.key == "ask_practitioner" and plain.fixed is False
+    pending = Slots(
+        flow="new_booking", returning_client=True,
+        pending=Pending(kind="match", slot="practitioner", value="Helen Courbetis"),
+    )
+    confirm = open_question(pending, cfg, "voice")
+    assert confirm.key == "confirm_match" and confirm.fixed is True
+    assert confirm.fills == {"value": "Helen"}
+    # And the brief tells the model the runtime has this one.
+    from spatalk.brain.flow import Step, step_message
+
+    brief = step_message(Step.PRACTITIONER, pending, cfg, "voice")
+    assert "read something back" in brief and "say nothing else" in brief
+
+
+def test_no_flow_no_open_question():
+    from spatalk.brain.flow import Slots, open_question
+
+    cfg = _cfg()
+    assert open_question(Slots(), cfg, "voice") is None
+    assert open_question(Slots(flow="question", ended_flow=True), cfg, "voice") is None

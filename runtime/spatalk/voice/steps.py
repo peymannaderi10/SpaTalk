@@ -13,7 +13,14 @@ from datetime import datetime
 
 from pipecat.adapters.schemas.tools_schema import ToolsSchema
 
-from spatalk.brain.flow import STEP_MARKER, next_step, step_message, step_question, step_tools
+from spatalk.brain.flow import (
+    STEP_MARKER,
+    OpenQuestion,
+    next_step,
+    open_question,
+    step_message,
+    step_tools,
+)
 from spatalk.brain.prompt import build_system_prompt
 from spatalk.brain.renderer import render_script
 from spatalk.voice.session import VoiceSession
@@ -62,16 +69,32 @@ def step_brief(session: VoiceSession) -> str:
     return step_message(step, session.slots, session.cfg, "voice")
 
 
-def next_question(session: VoiceSession, now: datetime) -> str | None:
-    """The fixed question for the open step, rendered, or None when no flow is open."""
-    if session.slots.flow is None or session.slots.ended_flow:
-        return None
-    q = step_question(
-        next_step(session.slots, session.cfg, "voice"), session.slots, session.cfg, "voice"
-    )
+def open_question_text(session: VoiceSession, now: datetime) -> tuple[OpenQuestion, str] | None:
+    """The open step's question and its rendered wording, or None when no flow is open.
+
+    The pair is what the caller of a tool turn needs: `fixed` says whether the wording is
+    the tenant's law (a `Pending` is open) or the model's to find (memo §7 decision 1).
+    """
+    q = open_question(session.slots, session.cfg, "voice")
     if q is None:
         return None
-    return render_script(q[0], session.cfg, now, urgent=False, **q[1])
+    return q, render_script(q.key, session.cfg, now, urgent=False, **q.fills)
 
 
-__all__ = ["STEP_MARKER", "next_question", "step_brief", "sync_context", "system_text"]
+def next_question(session: VoiceSession, now: datetime) -> str | None:
+    """The fixed question for the open step, rendered, or None when no flow is open.
+
+    Kept as the fallback for a turn the model left without a question of its own (A4).
+    """
+    pair = open_question_text(session, now)
+    return pair[1] if pair is not None else None
+
+
+__all__ = [
+    "STEP_MARKER",
+    "next_question",
+    "open_question_text",
+    "step_brief",
+    "sync_context",
+    "system_text",
+]

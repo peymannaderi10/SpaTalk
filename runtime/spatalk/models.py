@@ -104,6 +104,14 @@ class Conversation(Base):
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     notes_model: Mapped[str | None] = mapped_column(String(80), nullable=True)
     notes_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # --- rung 0 (model words / runtime record memo, §6) ---
+    # Counts and a capped tail of the call's own trouble signals: repeats, re-prompts,
+    # repairs, refused tools, barge-in-and-repeat, guard blocks, and what the turn analyser
+    # thought. Closed labels and numbers only — `spatalk.ops.signals` refuses anything that
+    # could hold a word somebody said — so unlike `latency_ms` and `flow` this is not nulled
+    # when the transcript goes: it is the phase-C trouble score's only history, and it dies
+    # with the conversation stub at 400 days.
+    signals: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
 
 class Message(Base):

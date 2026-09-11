@@ -206,6 +206,11 @@ class ConversationFull(ConversationRow):
     # transcript beside them.
     notes: str | None
     notes_at: datetime | None
+    # --- rung 0 (model-words memo, §6) ---
+    # The call's own trouble counts, for the page that shows the transcript beside them. It
+    # stays off the list view for the same reason the notes do: a page of conversations is a
+    # list of rows. Closed labels and numbers only, so it survives the transcript purge.
+    signals: dict | None
 
 
 # The name the call-notes plan gives the conversation output model. The model itself has
@@ -815,6 +820,7 @@ async def read_conversation(
             external_ref=conv.external_ref,
             notes=conv.notes,
             notes_at=conv.notes_at,
+            signals=conv.signals,
         ),
         messages=[MessageOut.model_validate(m) for m in messages],
         items=[item_out(i, cfg, conv.notes) for i in items],

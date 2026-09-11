@@ -10,6 +10,7 @@ from spatalk.brain.capabilities import Capabilities
 from spatalk.brain.flow import Slots
 from spatalk.brain.requests import ConversationRef
 from spatalk.clock import Clock
+from spatalk.ops.signals import SignalLog
 from spatalk.tenants.schema import TenantConfig
 
 
@@ -32,6 +33,10 @@ class VoiceSession:
     # turn (a turn with none gets the open question re-asked after the model's words).
     slots: Slots = field(default_factory=Slots)
     tool_called_this_turn: bool = False
+    # True once the runtime has spoken a question on this model turn — a fixed confirmation
+    # from the tool handler, or the fallback step question from the guard. Whichever asked,
+    # the other stays quiet, so there is still exactly one question a turn.
+    runtime_asked_this_turn: bool = False
     # Tools the step did not offer, called since the caller last spoke. The first one hands
     # the turn back to the model so the caller's sentence gets answered from the whole
     # conversation (founder call 2026-09-10 20:55:35, where "can you book me that facial?"
@@ -45,6 +50,18 @@ class VoiceSession:
     last_question_slots: Slots | None = None
     ended: bool = False
     guard_blocks: int = 0
+    # What this call can actually show for itself: `item:<id>` for every item the ledger
+    # issued, `link:<service_id>` for a booking link the provider accepted, `transfer:<n>`
+    # for a leg the carrier took, `platform:<ref>` for a Tier A completion. Receipt-or-
+    # retract (model-words memo, §3.3) reads the length of this list and nothing else — the
+    # refs are here so a log line can name one, never so a sentence can. Per call, never
+    # persisted.
+    receipts: list[str] = field(default_factory=list)
+    # --- rung 0 (model-words memo, §6) ---
+    # Every repeat, re-prompt, repair, refused tool, barge-in and turn verdict of this call,
+    # as counts and closed labels. `spatalk.ops.signals` refuses anything that could hold a
+    # word somebody said, and Task 7 writes it to the conversation record at the end.
+    signals: SignalLog = field(default_factory=SignalLog)
     latencies_ms: list[int] = field(default_factory=list)
     usage: dict[str, float] = field(
         default_factory=lambda: {
@@ -98,6 +115,16 @@ class VoiceSession:
         from spatalk.voice.echo import remember
 
         self.recent_bot_text = remember(self.recent_bot_text, strip_audio_tags(text))
+
+    def record_signal(self, kind: str, **detail) -> None:
+        """Record a rung-0 signal, so a processor does not have to reach two levels deep."""
+        self.signals.record(kind, **detail)
+
+    def remember_receipt(self, kind: str, ref: str) -> None:
+        """Record proof of an action, before the sentence that asserts it is spoken."""
+        if kind not in ("item", "link", "transfer", "platform"):
+            raise ValueError(f"unknown receipt kind {kind!r}")
+        self.receipts.append(f"{kind}:{ref}")
 
     def remember_question(self, text: str) -> None:
         """Record the step question the runtime just asked, with the record it was asked on."""

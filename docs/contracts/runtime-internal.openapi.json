@@ -2141,6 +2141,18 @@
               }
             ],
             "title": "Notes At"
+          },
+          "signals": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signals"
           }
         },
         "type": "object",
@@ -2159,7 +2171,8 @@
           "caller",
           "external_ref",
           "notes",
-          "notes_at"
+          "notes_at",
+          "signals"
         ],
         "title": "ConversationFull"
       },

@@ -99,6 +99,52 @@ async def test_guard_block_with_a_dead_ledger_refuses_and_claims_nothing(fixed_c
         assert claim not in low, f"refusal claimed an action: {r.reply!r}"
 
 
+async def test_a_text_reply_that_claims_a_filing_with_nothing_filed_is_retracted(fixed_clock):
+    """The same rule on SMS. The model called no tool and asserted a receipt."""
+    from spatalk.brain.driver import LLMResponse
+
+    brain, ref, ledger, *_ = _world(
+        fixed_clock, [LLMResponse(text="I've passed that to the team for you.", tool_calls=[])]
+    )
+    r = await brain.turn(ref, [], "can someone call me")
+    assert r.guard_blocked is True
+    assert r.reply.startswith(ref.tenant.scripts.cannot_complete.split(".")[0])
+    assert len(ledger.items) == 1
+
+
+async def test_a_reply_that_restates_the_filing_this_turn_made_is_not_retracted(fixed_clock):
+    """The receipt the turn earned. `file_request` ran and the ledger issued an item, so the
+    model restating it is backed by something and the reply is not replaced — and no second
+    item is filed for a claim that was true."""
+    from spatalk.brain.driver import LLMResponse, ToolCall
+
+    brain, ref, ledger, *_ = _world(
+        fixed_clock,
+        [
+            LLMResponse(
+                text="I've sent that to the team.",
+                tool_calls=[ToolCall(name="file_request", arguments={})],
+            )
+        ],
+    )
+    slots = _filled_callback()
+    r = await brain.turn(ref, [], "yes that's everything", slots)
+    assert r.guard_blocked is False
+    assert [o.kind for o in r.outcomes] == ["captured"]
+    assert len(ledger.items) == 1, "the guard filed a second item for a true claim"
+
+
+def _filled_callback():
+    from spatalk.brain.flow import Slots
+    from spatalk.brain.requests import PreferredWindow
+
+    return Slots(
+        flow="callback", returning_client=True, practitioner="any",
+        service_id="hydrabrasion_facial", first_name="Dana", phone="+19055550101",
+        phone_confirmed=True, preferred_window=PreferredWindow(), team_note_asked=True,
+    )
+
+
 async def test_rules_gate_offers_the_clinical_team_without_llm(fixed_clock):
     from spatalk.brain.driver import LLMResponse
     brain, ref, ledger, sms, llm = _world(fixed_clock, [LLMResponse(text="should not be used", tool_calls=[])])

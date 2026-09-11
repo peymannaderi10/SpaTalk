@@ -76,6 +76,11 @@ class Slots(BaseModel, frozen=True):
     pending: Pending | None = None
     misses: dict[str, int] = Field(default_factory=dict)
     ended_flow: bool = False
+    # A side question the caller asked mid-step, and the step it interrupted. One frame, not
+    # a stack: the stack is phase B, and one frame is all `answer_question` needs (memo §2,
+    # LIT R6). It is a closed value — a `Step` — and it never reaches an item: `draft_from`
+    # reads named slots and this is not one of them.
+    digression: Step | None = None
 
     def with_(self, **changes) -> Slots:
         return self.model_copy(update=changes)
@@ -244,6 +249,53 @@ def step_tools(
     return tools + always_tools(cfg, transfer_enabled)
 
 
+class Missing(BaseModel, frozen=True):
+    """What the record is waiting on, and what will take the answer.
+
+    `description` is an instruction to a model, never a sentence the caller hears, which is
+    why it lives in code (non-negotiable 3 is about what is spoken). `choices` is given only
+    where the closed set is genuinely short: never the practitioner or the treatment, whose
+    lists are already in the static prompt and would be bought again on every turn.
+    """
+
+    datum: str
+    description: str
+    choices: tuple[str, ...] = ()
+    tool: str
+
+
+class Readiness(BaseModel, frozen=True):
+    """The one source for both the step brief and a rejection (OSS §8.2; Parlant).
+
+    A rejection that named different choices from the brief would be a second policy, which
+    is the thing the runtime exists not to have.
+    """
+
+    step: Step
+    known: tuple[str, ...]
+    missing: Missing | None
+    tools: tuple[str, ...]
+
+
+class Rejection(BaseModel, frozen=True):
+    """Why a tool call was refused, in closed values the model can act on.
+
+    Parlant's `ToolInsights` / `MissingToolData` shape: the reason, the tool, what the record
+    is waiting on, and what may be called instead. It never holds a caller's or a model's
+    words, it is never rendered to a channel, and it is never written to an item or the
+    record — `rejection_text` turns it into the function response and nothing else reads it.
+    """
+
+    reason: Literal["not_offered", "premature", "bad_value", "already_yours"]
+    tool: str
+    offered: tuple[str, ...]
+    missing: Missing | None = None
+    detail: Literal[
+        "question_shaped", "unknown_kind", "empty_slot", "not_a_choice",
+        "needs_yes_or_no", "name_it_instead",
+    ] | None = None
+
+
 class Applied(BaseModel, frozen=True):
     """What one tool call did: the new record, the fixed lines to say, and the acts the
     driver must perform (file, send the link, end). `ignored` means the model called a tool
@@ -257,8 +309,10 @@ class Applied(BaseModel, frozen=True):
     ignored: bool = False
     # Why a refused call was refused, in words the model can act on. It goes back as the
     # function response and nowhere else: never rendered, never spoken to the caller, never
-    # written to an item or the record (2026-09-11 memo, decision 6).
-    rejection: str | None = None
+    # written to an item or the record (2026-09-11 memo, decision 6). Structured since the
+    # model-words memo — a reason code, what the record is waiting on, and the legal calls —
+    # and rendered by `rejection_text` on the way out.
+    rejection: Rejection | None = None
     # True when the model's own words are the content of the turn (the offers, two or three
     # options from the facts) rather than a one-line acknowledgement.
     model_speaks: bool = False
@@ -266,33 +320,53 @@ class Applied(BaseModel, frozen=True):
 
 # What the model is told when a call is refused. Never caller-facing, so not tenant config:
 # these sentences are read by a model, not spoken by the assistant (non-negotiable 3 covers
-# the wording the caller hears, which is still scripts.yaml and only scripts.yaml).
-ANSWER_THE_QUESTION = {
-    "service": (
-        "The caller asked a question rather than choosing a treatment, so nothing was "
-        "recorded. Answer it from the conversation and the facts, then come back to which "
-        "treatment they would like."
-    ),
-    "practitioner": (
-        "The caller asked a question rather than naming someone, so nothing was recorded. "
-        "Answer it from the conversation and the facts, then come back to who they would "
-        "like to see."
-    ),
-    "answer": (
-        "That is not the caller's yes or no, so nothing was recorded. If they asked a "
-        "question, answer it from the conversation and the facts; the system asks its own "
-        "question again once they have answered it."
-    ),
-    "not_offered": (
-        "That tool is not available at this point in the conversation, so nothing was "
-        "recorded. Answer the caller from the conversation and the facts; the system asks "
-        "the next question itself."
-    ),
-    "nothing_to_change": (
-        "Nothing is stored in that slot yet, so there is nothing to change. Answer the "
-        "caller from the conversation and the facts instead."
-    ),
+# the wording the caller hears, which is still scripts.yaml and only scripts.yaml). They are
+# the narrow fix's five `ANSWER_THE_QUESTION` sentences, split into the reason and the way
+# the value was wrong, so `rejection_text` can add what the record is waiting on underneath.
+_DETAIL_TEXT = {
+    "question_shaped": "what you passed was a question, not an answer",
+    "unknown_kind": "that is not one of the kinds of request the system handles",
+    "empty_slot": "there is nothing recorded in that slot to change",
+    "not_a_choice": "that is not one of the values the system accepts",
+    "needs_yes_or_no": "that question takes a yes or a no",
+    "name_it_instead": "that question is answered by naming one of the two, not by yes or no",
 }
+
+
+def rejection_text(r: Rejection) -> str:
+    """What the model is told, as the tool's result. Never spoken, never sent, never stored."""
+    lines = []
+    if r.reason == "premature":
+        lines.append(f"{r.tool} is not available yet. Nothing was filed and nothing was recorded.")
+    elif r.reason == "already_yours":
+        lines.append(f"{r.tool} is already open: you have the turn. Answer them in your own words now.")
+    elif r.reason == "bad_value":
+        lines.append(f"{r.tool} did not take that: {_DETAIL_TEXT[r.detail]}. Nothing was recorded.")
+    else:
+        lines.append(f"{r.tool} is not available at this point. Nothing was recorded.")
+    if r.missing is not None:
+        want = f"The system is waiting on {r.missing.description}"
+        if r.missing.choices:
+            want += " — one of: " + ", ".join(r.missing.choices)
+        lines.append(want + f". Put their answer in {r.missing.tool}.")
+    lines.append("You may call: " + ", ".join(r.offered) + ".")
+    return " ".join(lines)
+
+
+def _reject(
+    reason: str, tool: str, slots: Slots, cfg: TenantConfig, channel: str, detail: str | None = None
+) -> Applied:
+    """Every refused path goes through here, so the brief and the rejection agree by
+    construction. `ignored` keeps its meaning and its truth value, so `tool_ignored`,
+    `tool_refusal`, `run_tool` and `_finalize` are untouched."""
+    report = readiness(slots, cfg, channel)
+    return Applied(
+        slots=slots,
+        ignored=True,
+        rejection=Rejection(
+            reason=reason, tool=tool, offered=report.tools, missing=report.missing, detail=detail,
+        ),
+    )
 
 
 def _tool_allowed(name: str, step: Step, slots: Slots, cfg: TenantConfig, channel: str) -> bool:
@@ -349,7 +423,14 @@ def tool_refusal(
     """Would this call change nothing and say nothing, and why? `apply` is pure, so this just
     asks it. The reason is for the model to read as the tool result; it is never spoken."""
     a = apply(slots, name, args, cfg, channel, caller_phone)
-    return a.ignored, a.rejection
+    return a.ignored, (rejection_text(a.rejection) if a.rejection is not None else None)
+
+
+def tool_rejection(
+    slots: Slots, name: str, args: dict, cfg: TenantConfig, channel: str, caller_phone: str | None
+) -> Rejection | None:
+    """The structured sibling of `tool_refusal`: why this call would be refused, or None."""
+    return apply(slots, name, args or {}, cfg, channel, caller_phone).rejection
 
 
 def tool_ignored(
@@ -357,6 +438,14 @@ def tool_ignored(
 ) -> bool:
     """Would this call change nothing and say nothing? The boolean half of `tool_refusal`."""
     return tool_refusal(slots, name, args, cfg, channel, caller_phone)[0]
+
+
+def pop_digression(slots: Slots, cfg: TenantConfig, channel: str) -> Slots:
+    """Close the side question. The frame is dropped whether or not the open step is still
+    the one it interrupted: a caller who answered the question inside their own aside has
+    already moved the record, and `next_step` skips a filled slot, so there is nothing to
+    resume (RavenClaw's completion criterion rather than Rasa's re-ask)."""
+    return slots if slots.digression is None else slots.with_(digression=None)
 
 
 def _apply(
@@ -371,13 +460,24 @@ def _apply(
         return Applied(slots=slots, end=True)
     if name in ("escalate", "transfer_to_human"):
         return Applied(slots=slots)
+    if name == "answer_question":
+        # The 01:40 call's missing path (memo §2). Writes nothing, says nothing: it records
+        # the step it interrupted and hands the turn to the model, which answers from the
+        # facts and then asks the open question again in its own words.
+        if slots.digression is not None:
+            return _reject("already_yours", name, slots, cfg, channel)
+        return Applied(slots=slots.with_(digression=step), model_speaks=True)
     if not _tool_allowed(name, step, slots, cfg, channel):
-        return Applied(slots=slots, ignored=True, rejection=ANSWER_THE_QUESTION["not_offered"])
+        # `file_request` and `send_link` are absent only because the record is not ready, and
+        # the model needs that difference: "not available" says try something else, "not yet,
+        # the record still needs X" says what to do.
+        reason = "premature" if name in ("file_request", "send_link") else "not_offered"
+        return _reject(reason, name, slots, cfg, channel)
     args = args or {}
     if name == "start_request":
         kind = args.get("kind")
         if kind not in REQUEST_KINDS:
-            return Applied(slots=slots, ignored=True)
+            return _reject("bad_value", name, slots, cfg, channel, detail="unknown_kind")
         return Applied(slots=_open(kind, slots, channel, caller_phone))
     if name == "change_answer":
         slot = args.get("slot", "")
@@ -386,30 +486,26 @@ def _apply(
             # was the $50 one you said?" reads as a correction to the model (founder call
             # 2026-09-10 20:54:29), and the step question came back for the second time in a
             # row with no answer in front of it. An ignored call hands the turn to the model.
-            return Applied(
-                slots=slots, ignored=True, rejection=ANSWER_THE_QUESTION["nothing_to_change"]
-            )
+            return _reject("bad_value", name, slots, cfg, channel, detail="empty_slot")
         return Applied(slots=_reopen(slots, slot))
     if name == "answer":
         # The schema's enum is the whole vocabulary of this tool. Anything else is the
         # caller's question wearing an answer's clothes, and "no" is not a safe reading of it.
         value = args.get("value", "unsure")
         if value not in ("yes", "no", "unsure"):
-            return Applied(slots=slots, ignored=True, rejection=ANSWER_THE_QUESTION["answer"])
+            return _reject("bad_value", name, slots, cfg, channel, detail="not_a_choice")
         return _answer(slots, step, value, cfg, channel, caller_phone)
     if name == "choose_practitioner":
         said = args.get("said", "")
         if is_question(said):
-            return Applied(
-                slots=slots, ignored=True, rejection=ANSWER_THE_QUESTION["practitioner"]
-            )
+            return _reject("bad_value", name, slots, cfg, channel, detail="question_shaped")
         return _practitioner(slots, said, cfg)
     if name == "choose_service":
         # A question is not an answer (founder call 2026-09-11 01:41:26, where "Sorry, what
         # was the- what was the facial one again?" filled the slot and moved the step on).
         said = args.get("said", "")
         if is_question(said):
-            return Applied(slots=slots, ignored=True, rejection=ANSWER_THE_QUESTION["service"])
+            return _reject("bad_value", name, slots, cfg, channel, detail="question_shaped")
         return _service(slots, said, cfg)
     if name == "give_name":
         return _name(slots, args.get("first_name", ""), cfg)
@@ -424,7 +520,9 @@ def _apply(
         return Applied(slots=slots.with_(ended_flow=True), file=True)
     if name == "send_link":
         return Applied(slots=slots.with_(ended_flow=True), send_link=True)
-    return Applied(slots=slots, ignored=True)
+    # A name that passed `_tool_allowed` and is handled nowhere above: not reachable from
+    # the tool list the model is given, and refused in words rather than in silence anyway.
+    return _reject("not_offered", name, slots, cfg, channel)
 
 
 _SLOT_FIELDS = {
@@ -465,7 +563,7 @@ def _answer(
     if p is not None:
         if p.kind == "which":
             # Answered by naming one of the two, through the slot tool, not yes/no.
-            return Applied(slots=slots, ignored=True)
+            return _reject("bad_value", "answer", slots, cfg, channel, detail="name_it_instead")
         if p.kind == "match":
             if yes:
                 field = "practitioner" if p.slot == "practitioner" else "service_id"
@@ -687,17 +785,40 @@ def draft_from(slots: Slots, cfg: TenantConfig, health_context: bool = False) ->
     )
 
 
-def step_message(step: Step, slots: Slots, cfg: TenantConfig, channel: str) -> str:
-    """One short brief for the model: what is known, what is open, which tool takes the
-    answer. It replaces the booking bullets that used to sit in the middle of the prompt."""
-    if step == Step.QA:
-        return (
-            f"{STEP_MARKER} No request is open. Answer questions from the facts. The moment the "
-            "caller wants to book, be called back, reschedule, cancel, ask about a course, or "
-            "asks something the facts do not answer, call start_request with no words of your "
-            "own: never say that you will start, file or pass on a request, and never ask for "
-            "their name or number; the system asks the questions from there."
-        )
+# What the record is waiting on at each step, and the closed values it will take. These are
+# instructions to a model, never sentences the caller hears, which is why they are code and
+# not `scripts.yaml` (non-negotiable 3 is about what is spoken). `choices` is given only
+# where the closed set is genuinely short — never for the practitioner or the treatment,
+# whose lists are already in the static prompt and would be bought again on every turn.
+_MISSING: dict[Step, tuple[str, str, tuple[str, ...]]] = {
+    Step.RETURNING: ("returning_client", "whether they have been in to the clinic before", ("yes", "no")),
+    Step.OFFERS: ("offers", "whether they would like to hear the new-client offers", ("yes", "no")),
+    Step.PRACTITIONER: ("practitioner", "who they would like to see: a name from the team in the facts, or anyone", ()),
+    Step.SERVICE: ("service", "which treatment they want, from the SERVICES list above", ()),
+    Step.NAME: ("name", "their first name", ()),
+    Step.PHONE: ("phone", "the best number to reach them on", ()),
+    Step.WINDOW: ("window", "which day or part of the day suits them", ("morning", "afternoon", "evening", "any")),
+    Step.TEAM_NOTE: ("team_note", "whether there is anything the team should know before they call", ("yes", "no")),
+    Step.ROUTE: ("route", "whether to text them the booking link or have the team call them", ("the link", "a call")),
+}
+
+
+# The order the tool that takes the answer is looked for in. The step's own slot tool is
+# always in there; `answer` wins wherever a yes or no is what the record wants.
+_ANSWER_TOOL_ORDER = (
+    "answer", "choose_practitioner", "choose_service", "give_name", "give_phone",
+    "choose_window", "file_request",
+)
+
+
+def _answer_tool(step: Step, slots: Slots, cfg: TenantConfig, channel: str) -> str:
+    """The tool the caller's answer to the open question goes in."""
+    offered = {t.name for t in step_tools(step, slots, cfg, channel)}
+    return next((n for n in _ANSWER_TOOL_ORDER if n in offered), "answer")
+
+
+def _known(slots: Slots, cfg: TenantConfig) -> list[str]:
+    """What the record already holds, in the model's reading order."""
     known = []
     if slots.returning_client is not None:
         known.append("returning client" if slots.returning_client else "new client")
@@ -708,46 +829,198 @@ def step_message(step: Step, slots: Slots, cfg: TenantConfig, channel: str) -> s
         known.append("treatment " + _service_name(cfg, slots.service_id))
     if slots.first_name:
         known.append("first name " + slots.first_name)
-    known_text = ("Known: " + ", ".join(known) + ". ") if known else ""
+    return known
+
+
+def _missing(step: Step, slots: Slots, cfg: TenantConfig, channel: str) -> Missing | None:
+    """What the record is waiting on at this step, or None when it is waiting on nothing.
+
+    Four of these `_MISSING` cannot express, and they are exactly the four the model got
+    wrong on the founder's calls: an open confirmation, a choice between two candidates, the
+    "is the number you're calling from the best one" question, and the clinical offer that
+    comes before the name.
+    """
+    p = slots.pending
+    if p is not None:
+        if p.kind == "which":
+            # A choice between two is answered by naming one, through the slot tool.
+            tool = "choose_practitioner" if p.slot == "practitioner" else "choose_service"
+            return Missing(
+                datum=p.slot,
+                description="which of the two the system has just read back they meant",
+                tool=tool,
+            )
+        return Missing(
+            datum="confirmation",
+            description="a yes or no to the confirmation the system has just read back",
+            choices=("yes", "no"),
+            tool="answer",
+        )
+    if step not in _MISSING:
+        return None
+    if step == Step.PHONE and slots.phone and not slots.misses.get("phone"):
+        return Missing(
+            datum="phone",
+            description="whether the number they are calling from is the best one to reach them on",
+            choices=("yes", "no"),
+            tool="answer",
+        )
+    if step == Step.NAME and slots.flow == "clinical" and not slots.offer_accepted:
+        return Missing(
+            datum="clinical_offer",
+            description="whether they would like the clinical team to reach out to them",
+            choices=("yes", "no"),
+            tool="answer",
+        )
+    datum, description, choices = _MISSING[step]
+    return Missing(
+        datum=datum,
+        description=description,
+        choices=choices,
+        tool=_answer_tool(step, slots, cfg, channel),
+    )
+
+
+class OpenQuestion(BaseModel, frozen=True):
+    """The question the record is waiting on, and who owns its wording.
+
+    `fixed` is True exactly when a `Pending` is open: a value the resolver could not settle
+    is read back in the tenant's own words, because a wrong read-back is a wrong record
+    (candidates-not-verdicts is phase B). Everything else is a plain step question, and the
+    model words it from the readiness report (memo §7 decision 1).
+    """
+
+    key: str
+    fills: dict
+    fixed: bool
+
+
+def open_question(slots: Slots, cfg: TenantConfig, channel: str) -> OpenQuestion | None:
+    """The open step's question as a script key, or None when no flow is open."""
+    if slots.flow is None or slots.ended_flow:
+        return None
+    q = step_question(next_step(slots, cfg, channel), slots, cfg, channel)
+    if q is None:
+        return None
+    return OpenQuestion(key=q[0], fills=q[1], fixed=slots.pending is not None)
+
+
+def readiness(slots: Slots, cfg: TenantConfig, channel: str) -> Readiness:
+    """What is known, what is missing with its legal choices, and what may be called.
+
+    `tools` is built with the transfer off, because this function cannot know whether the
+    clinic is staffed right now: under-naming a tool the model already has in its own list
+    is safe, and naming one that would ring an empty room is not.
+    """
+    step = next_step(slots, cfg, channel)
+    return Readiness(
+        step=step,
+        known=tuple(_known(slots, cfg)),
+        missing=_missing(step, slots, cfg, channel),
+        tools=tuple(t.name for t in step_tools(step, slots, cfg, channel)),
+    )
+
+
+# What every mid-request brief ends with. The side-question path and the honesty rule are
+# the same at every step, and a brief that left either out would be the one place the model
+# could believe it may claim an outcome (memo §7 decision 1).
+_BRIEF_TAIL = (
+    " If they ask you something else, call answer_question and answer them. The system "
+    "decides what is stored and what is asked next, and the system speaks every outcome "
+    "itself: never say a request has been sent, filed, passed on or booked."
+)
+
+# Vapi's anti-autocorrect rule, in effect: a recogniser's "payment" for Peyman is a
+# transcription problem, and a model that tidies it up hides it (voice-regression-V1, open
+# item 2). The steps whose value is a person's own words get it said out loud.
+_STEP_EXTRA = {
+    Step.NAME: (
+        " Take the name exactly as they say it: never modify it, never autocorrect it, "
+        "never guess a spelling."
+    ),
+    Step.PHONE: (
+        " Pass the digits exactly as they say them: never modify, autocorrect or guess."
+    ),
+}
+
+
+def step_message(step: Step, slots: Slots, cfg: TenantConfig, channel: str) -> str:
+    """The readiness report as one paragraph: what is known, what is still needed with its
+    legal choices, and which tool takes the answer.
+
+    It used to end "Do not ask a question yourself; one short acknowledgement at most",
+    which was the prompt half of the answering machine the founder heard. It now *invites*
+    the question: the runtime keeps which slot is open and what may be stored, and gives up
+    choosing the words (memo §7 decision 1; OSS §8.2).
+    """
+    if step == Step.QA:
+        return (
+            f"{STEP_MARKER} No request is open. Answer questions from the facts. The moment the "
+            "caller wants to book, be called back, reschedule, cancel, ask about a course, or "
+            "asks something the facts do not answer, call start_request with no words of your "
+            "own: never say that you will start, file or pass on a request, and never ask for "
+            "their name or number; the system asks the questions from there."
+        )
+    known_text = ("Known: " + ", ".join(_known(slots, cfg)) + ". ") if _known(slots, cfg) else ""
     if step == Step.COMPLETE:
         return (
             f"{STEP_MARKER} {known_text}Everything is collected. Call file_request now. "
             "Say nothing about the result."
         )
+    m = _missing(step, slots, cfg, channel)
+    tool = m.tool if m else _answer_tool(step, slots, cfg, channel)
+    wanted = m.description if m else "nothing: everything the request needs is on the record"
+    if slots.digression is not None:
+        # The caller asked something else, and `answer_question` recorded the step it
+        # interrupted. It comes ahead of the step's own briefs because answering the caller
+        # is the turn's job; the open question follows it, in the model's words.
+        return (
+            f"{STEP_MARKER} {known_text}They asked something else. Answer it from the facts "
+            "in one or two sentences, then ask again, in your own words, for "
+            f"{wanted}, and put their answer in {tool}. Do not call answer_question again."
+            + _BRIEF_TAIL
+        )
+    if slots.pending is not None and slots.pending.kind not in ("offers", "which"):
+        # A value the resolver could not settle is read back in the tenant's own words, so
+        # the runtime has this question and the model must not guess at it.
+        return (
+            f"{STEP_MARKER} {known_text}The system has just read something back to the caller "
+            "in its own words and is waiting for a yes or a no. Call answer with yes or no and "
+            "say nothing else." + _BRIEF_TAIL
+        )
     if step == Step.OFFERS and slots.pending is None:
         return (
             f"{STEP_MARKER} {known_text}The system has just asked whether they would like to hear "
             "the new-client offers. Call answer with yes or no and say nothing else: the system "
-            "reads the offers itself."
+            "reads the offers itself." + _BRIEF_TAIL
         )
     if step == Step.PHONE and slots.phone and not slots.misses.get("phone") and slots.pending is None:
         return (
             f"{STEP_MARKER} {known_text}The system has just asked whether the number they are calling "
             "from is the best one. 'Yes' or 'that's fine' is answer with yes; 'no', 'use a different "
             "one' or a new number is answer with no (the system asks for the digits next). Do not "
-            "call change_answer for this."
+            "call change_answer for this." + _BRIEF_TAIL
         )
     if step == Step.TEAM_NOTE:
         return (
             f"{STEP_MARKER} {known_text}The system has just asked whether there is anything for the "
             "team to know. 'No', 'nothing' or 'that's all' is the answer to that question: call "
             "answer with no. Do not end the conversation; the system files the request next."
+            + _BRIEF_TAIL
         )
     if slots.pending is not None and slots.pending.kind == "offers":
         return (
             f"{STEP_MARKER} {known_text}The caller named a kind of treatment. The system just "
             "offered two or three options or a consultation. If they want options, name two or "
             "three from the facts with prices in one breath and then wait; when they choose one, "
-            "call choose_service."
+            "call choose_service." + _BRIEF_TAIL
         )
-    offered = {t.name for t in step_tools(step, slots, cfg, channel)}
-    order = (
-        "answer", "choose_practitioner", "choose_service", "give_name", "give_phone",
-        "choose_window", "file_request",
-    )
-    tool = next((n for n in order if n in offered), "answer")
+    choices = (" — one of: " + ", ".join(m.choices)) if (m and m.choices) else ""
     return (
-        f"{STEP_MARKER} {known_text}The system has just asked the caller a question. Put their "
-        f"answer in {tool}. If instead they change an earlier answer, call change_answer with "
-        "that slot. Do not ask a question yourself; one short acknowledgement at most."
+        f"{STEP_MARKER} {known_text}Still needed: {wanted}{choices}. Ask for it in one short "
+        f"question, in your own words, and put their answer in {tool}; when you record an "
+        "answer with a tool, ask the next question in the same reply. If instead they change "
+        "an earlier answer, call change_answer with that slot."
+        + _BRIEF_TAIL
+        + _STEP_EXTRA.get(step, "")
     )

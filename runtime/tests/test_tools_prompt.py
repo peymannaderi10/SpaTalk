@@ -12,7 +12,12 @@ def _cfg():
 def test_the_qa_tool_set_is_start_request_and_the_always_tools():
     from spatalk.brain.tools import build_tools
     tools = build_tools(_cfg())
-    assert [t.name for t in tools] == ["start_request", "escalate", "end_conversation"]
+    # `answer_question` joined the always-tools (model-words memo, §2): a side question at
+    # any step is a turn of its own, and it carries no argument, so the free-text check
+    # below covers it for nothing.
+    assert [t.name for t in tools] == [
+        "start_request", "escalate", "end_conversation", "answer_question"
+    ]
     for t in tools:
         for pname, spec in t.properties.items():
             if spec.get("type") == "string":
@@ -100,6 +105,11 @@ def test_a_greeting_is_not_a_question_and_tools_wait_to_be_asked():
 def test_prompt_hands_a_request_to_the_system():
     from spatalk.brain.prompt import build_system_prompt
     p = build_system_prompt(_cfg(), "voice", NOW).lower()
-    assert "call start_request and the system asks the questions" in p
+    # The two sentences that forbade the model a question are gone (model-words memo, §7
+    # decision 1): the system still decides what is asked, and the model finds the words.
+    assert "the system tells you what it still needs" in p
+    assert "you ask for it in your own words" in p
+    assert "never ask for a name or a number yourself" not in p
+    assert "do not simulate tool usage" in p
     assert "never say when the team will call, text or reach out" in p
     assert "when they want to book" not in p and "first name" not in p

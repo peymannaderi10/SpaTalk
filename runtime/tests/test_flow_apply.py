@@ -293,6 +293,8 @@ def test_change_answer_for_a_slot_that_holds_nothing_is_ignored():
     s = Slots(flow="new_booking", returning_client=False, offers_done=True)
     a = _apply(s, "change_answer", {"slot": "service"})
     assert a.ignored and a.slots == s
+    # And the model is told which way it was wrong, so it stops guessing (2026-09-11 memo).
+    assert a.rejection.reason == "bad_value" and a.rejection.detail == "empty_slot"
     # A slot that does hold something is still reopened.
     b = _apply(s.with_(service_id="mesojet_facial"), "change_answer", {"slot": "service"})
     assert not b.ignored and b.slots.service_id is None
@@ -315,8 +317,12 @@ def test_a_question_shaped_answer_is_refused_with_a_reason():
     moved on to the practitioner with the caller's question unanswered. A question is not an
     answer: nothing is resolved, nothing is written, and the tool result tells the model to
     answer it. The rejection is a function response to the model, never spoken and never
-    stored."""
-    from spatalk.brain.flow import Slots
+    stored.
+
+    `Applied.rejection` carries the Parlant shape from 2026-09-11 rather than a flat
+    sentence, so each assertion below reads it through `rejection_text` and now also pins
+    the reason code and the detail. Nothing that was asserted before has been removed."""
+    from spatalk.brain.flow import Slots, rejection_text
 
     s = Slots(flow="new_booking", returning_client=False, offers_done=True)   # open: SERVICE
     for said in (
@@ -325,7 +331,8 @@ def test_a_question_shaped_answer_is_refused_with_a_reason():
     ):
         a = _apply(s, "choose_service", {"said": said})
         assert a.ignored and a.slots == s, said
-        assert a.rejection and "question" in a.rejection.lower(), said
+        assert a.rejection and "question" in rejection_text(a.rejection).lower(), said
+        assert a.rejection.reason == "bad_value" and a.rejection.detail == "question_shaped", said
     # The control still resolves: the same words without the question.
     c = _apply(s, "choose_service", {"said": "the facial one"})
     assert not c.ignored and c.rejection is None
@@ -333,12 +340,14 @@ def test_a_question_shaped_answer_is_refused_with_a_reason():
     p = Slots(flow="new_booking", returning_client=True)                      # open: PRACTITIONER
     d = _apply(p, "choose_practitioner", {"said": "what was the name again?"})
     assert d.ignored and d.slots == p and d.rejection
+    assert d.rejection.detail == "question_shaped"
     e = _apply(p, "choose_practitioner", {"said": "Helen"})
     assert not e.ignored and e.slots.practitioner == "Helen Courbetis"
     # `answer` carries a closed enum, so anything else in it is the same failure.
     r = Slots(flow="new_booking")                                             # open: RETURNING
     g = _apply(r, "answer", {"value": "what do you mean?"})
     assert g.ignored and g.rejection and g.slots.returning_client is None
+    assert g.rejection.reason == "bad_value" and g.rejection.detail == "not_a_choice"
     assert _apply(r, "answer", {"value": "unsure"}).slots.returning_client is False
 
 
@@ -354,3 +363,50 @@ def test_a_generic_category_entry_does_not_fill_the_treatment_slot():
     assert a.slots.pending is not None and a.slots.pending.kind == "offers"
     key, _fills = step_question(next_step(a.slots, cfg, "voice"), a.slots, cfg, "voice")
     assert key == "ask_service_kind"
+
+
+# --- the side question gets a turn of its own (memo §2) -----------------------------------
+
+
+def test_answer_question_writes_nothing_and_pushes_one_frame():
+    """Founder call 2026-09-11 01:40. "Uh, what was the facial one again?" had nowhere to go
+    but `choose_service`, and the resolver matched the generic `facial` entry as exact. The
+    tool that fixes it takes no arguments and writes nothing: its only effect is to record
+    what the runtime was about to ask and hand the turn to the model."""
+    from spatalk.brain.flow import Slots, Step, apply, next_step
+
+    cfg = _cfg()
+    before = Slots(flow="new_booking", returning_client=False, offers_done=True)
+    assert next_step(before, cfg, "voice") == Step.SERVICE
+    a = apply(before, "answer_question", {}, cfg, "voice", "+19055550101")
+    assert a.ignored is False and a.say == () and a.file is False and a.send_link is False
+    assert a.model_speaks is True
+    assert a.slots.digression == Step.SERVICE
+    # Not one slot moved, and the open step is where it was.
+    assert a.slots.with_(digression=None) == before
+    assert next_step(a.slots, cfg, "voice") == Step.SERVICE
+
+
+def test_the_frame_pops_when_the_record_is_still_at_the_same_step_and_is_dropped_when_it_moved():
+    """Resume by completion criterion, not by re-asking (RavenClaw, not Rasa): a caller who
+    answered the open question *inside* the side question does not get asked it again."""
+    from spatalk.brain.flow import Slots, Step, pop_digression
+
+    cfg = _cfg()
+    opened = Slots(flow="new_booking", returning_client=False, offers_done=True, digression=Step.SERVICE)
+    assert pop_digression(opened, cfg, "voice").digression is None
+    moved = opened.with_(service_id="classic_facial")
+    assert pop_digression(moved, cfg, "voice").digression is None
+    assert pop_digression(moved, cfg, "voice").service_id == "classic_facial"
+
+
+def test_the_tool_is_offered_at_every_step_and_carries_no_argument():
+    from spatalk.brain.flow import Slots, Step, step_tools
+
+    cfg = _cfg()
+    for step in Step:
+        tool = next(
+            t for t in step_tools(step, Slots(flow="new_booking"), cfg, "voice", transfer_enabled=True)
+            if t.name == "answer_question"
+        )
+        assert tool.properties == {} and tool.required == []

@@ -74,7 +74,17 @@ async def test_sync_context_puts_the_step_brief_on_the_system_message_and_the_st
     assert "choose_practitioner" in names and "file_request" not in names
 
 
-async def test_a_slot_tool_speaks_the_next_question_and_never_reruns_the_llm(fixed_clock):
+async def test_a_slot_tool_says_nothing_and_never_reruns_the_llm(fixed_clock):
+    """Was `…_speaks_the_next_question_and_never_reruns_the_llm`, which was the slot engine's
+    invariant 4 in code: the runtime spoke the question and the model never got the turn. The
+    memo's decision 1 replaces that invariant — the outcome sentence is still the tenant's,
+    the question is the model's — so the handler speaks nothing here.
+
+    The orchestrator's amendment of 2026-09-11 keeps `run_llm` False: one model call per
+    caller turn is an invariant, so the question comes from the same reply that called the
+    tool, and `OutputGuardProcessor` speaks the fixed question only if that reply carried
+    none. The tool result still hands the model the fresh readiness report for the next turn.
+    """
     from spatalk.brain.flow import Slots
     from spatalk.voice.handlers import _make_handler
 
@@ -83,11 +93,97 @@ async def test_a_slot_tool_speaks_the_next_question_and_never_reruns_the_llm(fix
     llm = _LLM()
     params = _Params("answer", {"value": "yes"}, llm)
     await _make_handler(s)(params)
-    assert _spoken(llm) == [s.cfg.scripts.ask_practitioner]
+    assert _spoken(llm) == [], "no script; the model words the practitioner question"
     assert s.slots.returning_client is True and s.tool_called_this_turn
     assert params.results[0][1].run_llm is False
+    assert s.runtime_asked_this_turn is False
     names = [t.name for t in s.context.tools.standard_tools]
     assert "choose_practitioner" in names
+    brief = s.context.messages[0]["content"]
+    assert "who they would like to see" in brief
+
+
+async def test_a_confirmation_is_still_the_runtimes_own_words(fixed_clock):
+    """The other half of the split, and the reason phase A is safe: a value the resolver is
+    unsure of is read back in the tenant's wording, with no second model call."""
+    from spatalk.brain.flow import Slots
+    from spatalk.voice.handlers import _make_handler
+
+    s, _ = _session(fixed_clock)
+    s.slots = Slots(flow="new_booking", returning_client=True)
+    llm = _LLM()
+    params = _Params("choose_practitioner", {"said": "Ellen"}, llm)
+    await _make_handler(s)(params)
+    assert _spoken(llm) == [s.cfg.scripts.confirm_match.format(value="Helen")]
+    assert params.results[0][1].run_llm is False
+    assert s.runtime_asked_this_turn is True
+    assert s.signals.counts()["repair"] == 1
+
+
+async def test_a_slot_tool_never_triggers_a_second_model_run(fixed_clock):
+    """The amendment's invariant, on every branch a slot tool can take: one model call per
+    caller turn. A second round trip for wording that is read aloud is 0.8 to 1.0 s of
+    silence the caller hears, which LIT R4 says is the thing to shorten first."""
+    from spatalk.brain.flow import Slots
+    from spatalk.voice.handlers import _make_handler
+
+    for name, args, slots in (
+        ("answer", {"value": "no"}, Slots(flow="new_booking")),
+        ("choose_service", {"said": "mesojet facial"},
+         Slots(flow="new_booking", returning_client=False, offers_done=True)),
+        ("give_name", {"first_name": "Dana"},
+         Slots(flow="callback", returning_client=True, practitioner="any",
+               service_id="classic_facial")),
+        ("choose_practitioner", {"said": "Ellen"}, Slots(flow="new_booking", returning_client=True)),
+    ):
+        s, _ = _session(fixed_clock)
+        s.slots = slots
+        llm = _LLM()
+        params = _Params(name, args, llm)
+        await _make_handler(s)(params)
+        assert params.results[0][1].run_llm is False, name
+
+
+async def test_the_tool_handler_tells_the_guard_when_its_half_of_the_turn_is_done(fixed_clock):
+    """Pipecat queues the function calls and pushes `LLMFullResponseEndFrame` without waiting
+    for them, so the guard cannot know the runtime's fixed lines are still coming. The
+    handler says so itself, last, and says whether the turn went back to the model."""
+    from spatalk.brain.flow import Slots
+    from spatalk.voice.frames import ToolTurnDoneFrame
+    from spatalk.voice.handlers import _make_handler
+
+    s, _ = _session(fixed_clock)
+    s.slots = Slots(flow="new_booking")
+    llm = _LLM()
+    await _make_handler(s)(_Params("answer", {"value": "no"}, llm))
+    done = [f for f in llm.frames if isinstance(f, ToolTurnDoneFrame)]
+    assert len(done) == 1 and done[0].handed_back is False
+    assert llm.frames[-1] is done[0], "the done frame comes after the runtime's own lines"
+    # A refused call hands the turn back, and says so.
+    s2, _ = _session(fixed_clock)
+    s2.slots = Slots(flow="new_booking")
+    llm2 = _LLM()
+    await _make_handler(s2)(_Params("give_name", {"first_name": "Ellen"}, llm2))
+    back = [f for f in llm2.frames if isinstance(f, ToolTurnDoneFrame)]
+    assert len(back) == 1 and back[0].handed_back is True
+
+
+async def test_the_outcome_line_is_still_spoken_and_buys_no_second_model_call(fixed_clock):
+    from spatalk.brain.flow import Slots
+    from spatalk.brain.requests import PreferredWindow
+    from spatalk.voice.handlers import _make_handler
+
+    s, ledger = _session(fixed_clock)
+    s.slots = Slots(
+        flow="callback", returning_client=True, practitioner="any", service_id="hydrabrasion_facial",
+        first_name="Dana", phone="+19055550101", phone_confirmed=True,
+        preferred_window=PreferredWindow(), team_note_asked=True,
+    )
+    llm = _LLM()
+    params = _Params("file_request", {}, llm)
+    await _make_handler(s)(params)
+    assert _spoken(llm)[0].startswith("I've sent that to the team as a request")
+    assert params.results[0][1].run_llm is False
 
 
 async def test_file_request_speaks_the_outcome_and_the_item_has_the_records_contact(fixed_clock):
@@ -107,32 +203,55 @@ async def test_file_request_speaks_the_outcome_and_the_item_has_the_records_cont
     assert ledger.items[0].contact.name == "Dana" and s.band == 2 and s.slots.flow is None
 
 
-async def test_a_tool_the_step_did_not_offer_is_ignored_and_the_model_answers(fixed_clock):
-    """Nothing is written and nothing is said, whatever happens next.
+async def test_a_tool_the_step_did_not_offer_is_refused_in_words_the_model_can_read(fixed_clock):
+    """Was `…_is_ignored_and_the_model_answers`. The V1 behaviour — first call silent with
+    the turn handed back, second call falls back to the fixed question — was the best a
+    *silent* refusal could do. The model is now told why, every time, so the retry counter
+    stops being the strategy and becomes only a ceiling (OSS §8.1(e)); the fourth rejection
+    in one caller turn speaks the fixed question rather than buying a fourth model call.
 
-    The spec's answer was to re-ask the open question (slot engine design, §7), which is what
-    the second call below still does. But on the founder's call 2026-09-10 20:55:35 the first
-    one turned "can you book me that facial?" into a bare "What did you have in mind?" with
-    no answer in front of it, so the caller repeated himself. The first ignored call in a
-    caller's turn now hands the turn back to the model, which has the step's tools and the
-    whole conversation; the second falls back to the script so nothing can loop.
-    """
+    Everything the old case pinned still holds: nothing written, nothing filed, nothing
+    spoken, the turn handed back."""
     from spatalk.brain.flow import Slots
-    from spatalk.voice.handlers import _make_handler
+    from spatalk.voice.handlers import MAX_REJECTIONS_PER_TURN, _make_handler
 
     s, ledger = _session(fixed_clock)
     s.slots = Slots(flow="new_booking")
     llm = _LLM()
     handler = _make_handler(s)
-    first = _Params("give_name", {"first_name": "Ellen"}, llm)
-    await handler(first)
-    assert s.slots.first_name is None and ledger.items == []
-    assert _spoken(llm) == [] and first.results[0][1].run_llm is True
-    second = _Params("give_name", {"first_name": "Ellen"}, llm)
-    await handler(second)
-    assert s.slots.first_name is None and ledger.items == []
+    for _ in range(MAX_REJECTIONS_PER_TURN):
+        p = _Params("give_name", {"first_name": "Ellen"}, llm)
+        await handler(p)
+        assert s.slots.first_name is None and ledger.items == []
+        assert _spoken(llm) == [] and p.results[0][1].run_llm is True
+        reason = p.results[0][0]["rejection"]
+        assert "give_name" in reason and "answer" in reason and "yes" in reason
+    last = _Params("give_name", {"first_name": "Ellen"}, llm)
+    await handler(last)
     assert _spoken(llm) == [s.cfg.scripts.ask_returning]
-    assert second.results[0][1].run_llm is False
+    assert last.results[0][1].run_llm is False
+    assert s.signals.counts()["tool_rejected"] == MAX_REJECTIONS_PER_TURN + 1
+
+
+async def test_a_side_question_hands_the_turn_over_and_says_nothing(fixed_clock):
+    """The 01:40 call, fixed. The caller's question is no longer an answer to the open slot:
+    it opens a digression frame, writes nothing, speaks nothing, and the model gets the turn
+    with a brief that names what the runtime was about to ask."""
+    from spatalk.brain.flow import Slots, Step
+    from spatalk.voice.handlers import _make_handler
+
+    s, ledger = _session(fixed_clock)
+    s.slots = Slots(flow="new_booking", returning_client=False, offers_done=True)
+    llm = _LLM()
+    params = _Params("answer_question", {}, llm)
+    await _make_handler(s)(params)
+    assert _spoken(llm) == [] and ledger.items == []
+    assert s.slots.digression == Step.SERVICE and s.slots.service_id is None
+    assert params.results[0][1].run_llm is True
+    assert s.signals.counts()["digression"] == 1
+    # The brief the model is about to read names what the runtime was about to ask.
+    brief = s.context.messages[0]["content"]
+    assert "asked something else" in brief and "which treatment" in brief
 
 
 async def test_the_last_answer_files_the_request_without_a_second_model_turn(fixed_clock):

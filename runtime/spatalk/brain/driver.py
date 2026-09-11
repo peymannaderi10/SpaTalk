@@ -35,6 +35,8 @@ from spatalk.brain.flow import (
     draft_from,
     next_step,
     open_flow,
+    pop_digression,
+    rejection_text,
     step_message,
     step_question,
     step_tools,
@@ -462,7 +464,15 @@ async def run_tool(
     cfg = ref.tenant
     applied = apply(slots, name, args or {}, cfg, ref.channel, ref.caller_phone)
     if applied.ignored:
-        logger.warning("tool {} ignored at this step with args {}", name, args)
+        # The refusal's own words, so the log says what the model would have been told. On a
+        # text channel it is not handed back: a turn there is one completion with no
+        # tool-result round trip (model-words memo; phase B's driver change carries it).
+        logger.info(
+            "tool {} refused ({}): {}",
+            name,
+            applied.rejection.reason if applied.rejection else "unknown",
+            rejection_text(applied.rejection) if applied.rejection else "no reason recorded",
+        )
         return slots, [], None, False, False
     spoken = [render_script(key, cfg, now, urgent=False, **fills) for key, fills in applied.say]
     outcome: Outcome | None = None
@@ -581,7 +591,18 @@ class Brain:
         ack, blocked = "", False
         if resp.text:
             has_completed = any(isinstance(o, Completed) for o in outcomes)
-            g = guard(resp.text, has_completed, cfg, replacement="")
+            # What this turn can show for itself (model-words memo, §3.3). This turn's, not
+            # the conversation's: a reply that restates a filing made on an earlier turn is
+            # retracted, which is stricter than it needs to be and has not been seen — the
+            # model is told "say nothing about the result" — and threading a conversation-wide
+            # count from `text/service.py` is a change to a second driver for a hazard nobody
+            # has hit. Phase B changes both drivers together.
+            receipts = sum(
+                1
+                for o in outcomes
+                if o.kind in ("captured", "link_sent", "transferred", "completed")
+            )
+            g = guard(resp.text, has_completed, cfg, replacement="", receipts=receipts)
             if g.blocked:
                 blocked = True
                 try:
@@ -603,6 +624,10 @@ class Brain:
                 question = render_script(q[0], cfg, now, urgent=False, **q[1])
         if question and ack:
             ack = drop_trailing_question(ack)
+        # On a text channel the model answers the side question and calls the tool in one
+        # completion, so the frame lives for exactly one turn — which is also the honest
+        # reason the A4 hand-back is voice-only.
+        slots = pop_digression(slots, cfg, ref.channel)
         if slots.ended_flow:
             slots = slots.with_(flow=None, ended_flow=False)
         reply = " ".join(p for p in [ack, *said, question] if p).strip()
