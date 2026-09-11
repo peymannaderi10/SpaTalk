@@ -393,3 +393,28 @@ def says_99(output, context):
     """The express price, as digits or as the voice prompt asks for it: in words."""
     text = output["text"].lower()
     return "99" in text or "ninety-nine" in text or "ninety nine" in text
+
+
+# --- defect 8, founder call 14ea2579, 2026-09-11 15:53:14 --------------------
+
+_PRICE = re.compile(
+    r"\$\s?\d|\b\d{2,4}\s?dollars\b|\b(?:one|two|three|four|five|six|seven|eight|nine|ten)"
+    r"[ -](?:hundred|fifty|ninety|twenty)\b", re.I)
+
+
+def consults_before_it_recites(output, context):
+    """Asked what is on offer, the assistant asks the caller's goal instead of reading the
+    catalogue out: at most three treatment names, no price, and a question at the end
+    (defect 8, founder call 14ea2579, 2026-09-11 15:53:14)."""
+    text = output["text"]
+    named = sum(1 for s in _tenant().services if s.name.lower() in text.lower())
+    ok = (
+        "answer_question" in output["tool_calls"]
+        and named <= 3
+        and not _PRICE.search(text)
+        and text.strip().endswith("?")
+        and output["items"] == []
+        and _no_claims(text)
+    )
+    return ok or {"pass": False, "score": 0,
+                  "reason": f"named={named} tools={output['tool_calls']} text={text!r}"}
