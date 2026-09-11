@@ -268,7 +268,6 @@ class OutputGuardProcessor(FrameProcessor):
         # A sentence ending in "?" that arrived while a request was open, kept back until the
         # turn ends: see `_emit`.
         self._held: str | None = None
-        self._spoke_this_turn = False
 
     def _flow_open(self) -> bool:
         return bool(self._s.slots.flow) and not self._s.slots.ended_flow
@@ -279,7 +278,6 @@ class OutputGuardProcessor(FrameProcessor):
             await self._speak(held)
 
     async def _speak(self, sentence: str):
-        self._spoke_this_turn = True
         self._s.remember_spoken(sentence)
         # The trailing space is for the TTS text aggregator, which otherwise sees
         # "Welcome!We have" and speaks it as one run-on sentence.
@@ -328,7 +326,6 @@ class OutputGuardProcessor(FrameProcessor):
         await super().process_frame(frame, direction)
         if isinstance(frame, LLMFullResponseStartFrame):
             self._buffer, self._dropping, self._held = "", False, None
-            self._spoke_this_turn = False
             self._s.tool_called_this_turn = False
             # A fresh completion began, so an error after this one is a new failed *turn*
             # and not another error from the turn that already apologised (llm failover
