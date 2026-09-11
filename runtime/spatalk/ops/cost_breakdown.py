@@ -74,11 +74,16 @@ class CallCost:
         return self.units.get("llm_cached_tokens", 0.0) / total
 
 
-def _window(tz: str, since: date, until: date | None) -> tuple[datetime, datetime]:
-    """Tenant-local days, half open, in UTC (CLAUDE.md non-negotiable 8)."""
+def _window(tz: str, since: date, until: date | None, now: datetime) -> tuple[datetime, datetime]:
+    """Tenant-local days, half open, in UTC (CLAUDE.md non-negotiable 8).
+
+    "Today" is the tenant's today, taken from the injected clock and not from the machine
+    the report runs on: a founder in Toronto reading a clinic in Vancouver would otherwise
+    lose the evening, and a test on a fixed clock would follow the wall.
+    """
     zone = ZoneInfo(tz)
     start = datetime.combine(since, time.min, tzinfo=zone)
-    last = until or date.today()
+    last = until or now.astimezone(zone).date()
     end = datetime.combine(last + timedelta(days=1), time.min, tzinfo=zone)
     return start.astimezone(timezone.utc), end.astimezone(timezone.utc)
 
@@ -110,7 +115,7 @@ async def call_costs(
     was billed for.
     """
     cfg = await ctx.registry.get(tenant_id)
-    start, end = _window(cfg.timezone, since, until)
+    start, end = _window(cfg.timezone, since, until, ctx.clock.now())
     async with ctx.sf() as s:
         convs = (
             await s.execute(

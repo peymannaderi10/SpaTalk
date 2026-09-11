@@ -22,7 +22,7 @@ report is written from.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
@@ -410,6 +410,22 @@ async def test_usage_that_belongs_to_no_conversation_still_reaches_the_total(sf,
     assert calls[0].units.get("sms_out", 0) == 0
     assert total.units["sms_out"] == 4
     assert total.components["sms"] > 0
+
+
+async def test_today_is_the_tenants_today_and_not_the_machines(sf, registry):
+    """The window's open end comes from the injected clock: a founder reading a clinic in
+    another zone would otherwise lose its evening, and this suite would follow the wall."""
+    from spatalk.ops.cost_breakdown import call_costs
+
+    # 2026-09-11 00:53 UTC is still 2026-09-10 in Toronto, which is the founder's own call.
+    late = datetime(2026, 9, 11, 4, 53, tzinfo=timezone.utc)
+    ctx = _ctx(sf, registry, _clock(late))
+    cid = await _call(sf, started_at=late, turns=13, seconds=184.8)
+    await _usage(sf, "skincentrix", cid, "telephony_seconds", 184.8, at=late)
+
+    calls, total = await call_costs(ctx, "skincentrix", date(2026, 9, 1))
+    assert [c.conversation_id for c in calls] == [cid]
+    assert total.minutes == pytest.approx(3.08, abs=0.01)
 
 
 async def test_a_call_with_no_minutes_reports_no_cost_per_minute_rather_than_dividing(
