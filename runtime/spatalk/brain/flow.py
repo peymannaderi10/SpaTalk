@@ -76,6 +76,11 @@ class Slots(BaseModel, frozen=True):
     pending: Pending | None = None
     misses: dict[str, int] = Field(default_factory=dict)
     ended_flow: bool = False
+    # A side question the caller asked mid-step, and the step it interrupted. One frame, not
+    # a stack: the stack is phase B, and one frame is all `answer_question` needs (memo §2,
+    # LIT R6). It is a closed value — a `Step` — and it never reaches an item: `draft_from`
+    # reads named slots and this is not one of them.
+    digression: Step | None = None
 
     def with_(self, **changes) -> Slots:
         return self.model_copy(update=changes)
@@ -359,6 +364,14 @@ def tool_ignored(
     return tool_refusal(slots, name, args, cfg, channel, caller_phone)[0]
 
 
+def pop_digression(slots: Slots, cfg: TenantConfig, channel: str) -> Slots:
+    """Close the side question. The frame is dropped whether or not the open step is still
+    the one it interrupted: a caller who answered the question inside their own aside has
+    already moved the record, and `next_step` skips a filled slot, so there is nothing to
+    resume (RavenClaw's completion criterion rather than Rasa's re-ask)."""
+    return slots if slots.digression is None else slots.with_(digression=None)
+
+
 def _apply(
     slots: Slots, name: str, args: dict, cfg: TenantConfig, channel: str, caller_phone: str | None
 ) -> Applied:
@@ -371,6 +384,13 @@ def _apply(
         return Applied(slots=slots, end=True)
     if name in ("escalate", "transfer_to_human"):
         return Applied(slots=slots)
+    if name == "answer_question":
+        # The 01:40 call's missing path (memo §2). Writes nothing, says nothing: it records
+        # the step it interrupted and hands the turn to the model, which answers from the
+        # facts and then asks the open question again in its own words.
+        if slots.digression is not None:
+            return Applied(slots=slots, ignored=True)
+        return Applied(slots=slots.with_(digression=step), model_speaks=True)
     if not _tool_allowed(name, step, slots, cfg, channel):
         return Applied(slots=slots, ignored=True, rejection=ANSWER_THE_QUESTION["not_offered"])
     args = args or {}
@@ -687,6 +707,30 @@ def draft_from(slots: Slots, cfg: TenantConfig, health_context: bool = False) ->
     )
 
 
+# What the record is waiting on at each step, and the closed values it will take. These are
+# instructions to a model, never sentences the caller hears, which is why they are code and
+# not `scripts.yaml` (non-negotiable 3 is about what is spoken). `choices` is given only
+# where the closed set is genuinely short — never for the practitioner or the treatment,
+# whose lists are already in the static prompt and would be bought again on every turn.
+_MISSING: dict[Step, tuple[str, str, tuple[str, ...]]] = {
+    Step.RETURNING: ("returning_client", "whether they have been in to the clinic before", ("yes", "no")),
+    Step.OFFERS: ("offers", "whether they would like to hear the new-client offers", ("yes", "no")),
+    Step.PRACTITIONER: ("practitioner", "who they would like to see: a name from the team in the facts, or anyone", ()),
+    Step.SERVICE: ("service", "which treatment they want, from the SERVICES list above", ()),
+    Step.NAME: ("name", "their first name", ()),
+    Step.PHONE: ("phone", "the best number to reach them on", ()),
+    Step.WINDOW: ("window", "which day or part of the day suits them", ("morning", "afternoon", "evening", "any")),
+    Step.TEAM_NOTE: ("team_note", "whether there is anything the team should know before they call", ("yes", "no")),
+    Step.ROUTE: ("route", "whether to text them the booking link or have the team call them", ("the link", "a call")),
+}
+
+
+def _missing_description(step: Step, slots: Slots, cfg: TenantConfig, channel: str) -> str:
+    """What the record is waiting on, in words the model can put a question around."""
+    entry = _MISSING.get(step)
+    return entry[1] if entry else "nothing: everything the request needs is on the record"
+
+
 def step_message(step: Step, slots: Slots, cfg: TenantConfig, channel: str) -> str:
     """One short brief for the model: what is known, what is open, which tool takes the
     answer. It replaces the booking bullets that used to sit in the middle of the prompt."""
@@ -714,6 +758,22 @@ def step_message(step: Step, slots: Slots, cfg: TenantConfig, channel: str) -> s
             f"{STEP_MARKER} {known_text}Everything is collected. Call file_request now. "
             "Say nothing about the result."
         )
+    offered = {t.name for t in step_tools(step, slots, cfg, channel)}
+    order = (
+        "answer", "choose_practitioner", "choose_service", "give_name", "give_phone",
+        "choose_window", "file_request",
+    )
+    tool = next((n for n in order if n in offered), "answer")
+    if slots.digression is not None:
+        # The caller asked something else, and `answer_question` recorded the step it
+        # interrupted. It comes ahead of the step's own briefs because answering the caller
+        # is the turn's job; the open question follows it, in the model's words.
+        return (
+            f"{STEP_MARKER} {known_text}They asked something else. Answer it from the facts "
+            "in one or two sentences, then ask again, in your own words, for "
+            f"{_missing_description(step, slots, cfg, channel)}, and put their answer in "
+            f"{tool}. Do not call answer_question again."
+        )
     if step == Step.OFFERS and slots.pending is None:
         return (
             f"{STEP_MARKER} {known_text}The system has just asked whether they would like to hear "
@@ -740,12 +800,6 @@ def step_message(step: Step, slots: Slots, cfg: TenantConfig, channel: str) -> s
             "three from the facts with prices in one breath and then wait; when they choose one, "
             "call choose_service."
         )
-    offered = {t.name for t in step_tools(step, slots, cfg, channel)}
-    order = (
-        "answer", "choose_practitioner", "choose_service", "give_name", "give_phone",
-        "choose_window", "file_request",
-    )
-    tool = next((n for n in order if n in offered), "answer")
     return (
         f"{STEP_MARKER} {known_text}The system has just asked the caller a question. Put their "
         f"answer in {tool}. If instead they change an earlier answer, call change_answer with "

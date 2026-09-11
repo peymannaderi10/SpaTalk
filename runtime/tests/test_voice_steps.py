@@ -135,6 +135,27 @@ async def test_a_tool_the_step_did_not_offer_is_ignored_and_the_model_answers(fi
     assert second.results[0][1].run_llm is False
 
 
+async def test_a_side_question_hands_the_turn_over_and_says_nothing(fixed_clock):
+    """The 01:40 call, fixed. The caller's question is no longer an answer to the open slot:
+    it opens a digression frame, writes nothing, speaks nothing, and the model gets the turn
+    with a brief that names what the runtime was about to ask."""
+    from spatalk.brain.flow import Slots, Step
+    from spatalk.voice.handlers import _make_handler
+
+    s, ledger = _session(fixed_clock)
+    s.slots = Slots(flow="new_booking", returning_client=False, offers_done=True)
+    llm = _LLM()
+    params = _Params("answer_question", {}, llm)
+    await _make_handler(s)(params)
+    assert _spoken(llm) == [] and ledger.items == []
+    assert s.slots.digression == Step.SERVICE and s.slots.service_id is None
+    assert params.results[0][1].run_llm is True
+    assert s.signals.counts()["digression"] == 1
+    # The brief the model is about to read names what the runtime was about to ask.
+    brief = s.context.messages[0]["content"]
+    assert "asked something else" in brief and "which treatment" in brief
+
+
 async def test_the_last_answer_files_the_request_without_a_second_model_turn(fixed_clock):
     from spatalk.brain.flow import Slots
     from spatalk.brain.requests import PreferredWindow

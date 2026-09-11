@@ -35,6 +35,7 @@ from spatalk.brain.flow import (
     draft_from,
     next_step,
     open_flow,
+    pop_digression,
     step_message,
     step_question,
     step_tools,
@@ -614,6 +615,10 @@ class Brain:
                 question = render_script(q[0], cfg, now, urgent=False, **q[1])
         if question and ack:
             ack = drop_trailing_question(ack)
+        # On a text channel the model answers the side question and calls the tool in one
+        # completion, so the frame lives for exactly one turn — which is also the honest
+        # reason the A4 hand-back is voice-only.
+        slots = pop_digression(slots, cfg, ref.channel)
         if slots.ended_flow:
             slots = slots.with_(flow=None, ended_flow=False)
         reply = " ".join(p for p in [ack, *said, question] if p).strip()

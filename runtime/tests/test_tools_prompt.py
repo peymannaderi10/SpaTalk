@@ -12,7 +12,12 @@ def _cfg():
 def test_the_qa_tool_set_is_start_request_and_the_always_tools():
     from spatalk.brain.tools import build_tools
     tools = build_tools(_cfg())
-    assert [t.name for t in tools] == ["start_request", "escalate", "end_conversation"]
+    # `answer_question` joined the always-tools (model-words memo, §2): a side question at
+    # any step is a turn of its own, and it carries no argument, so the free-text check
+    # below covers it for nothing.
+    assert [t.name for t in tools] == [
+        "start_request", "escalate", "end_conversation", "answer_question"
+    ]
     for t in tools:
         for pname, spec in t.properties.items():
             if spec.get("type") == "string":

@@ -13,7 +13,7 @@ from pipecat.frames.frames import EndFrame, FunctionCallResultProperties, TTSSpe
 from pipecat.services.llm_service import FunctionCallParams
 
 from spatalk.brain.driver import run_tool
-from spatalk.brain.flow import tool_refusal
+from spatalk.brain.flow import next_step, tool_refusal
 from spatalk.voice.steps import next_question, sync_context
 from spatalk.brain.outcomes import Captured, Completed, LinkSent, Refused, Transferred
 from spatalk.brain.renderer import render, render_script
@@ -42,6 +42,21 @@ def _make_handler(session: VoiceSession):
         now = session.clock.now()
         session.tool_called_this_turn = True
         args = dict(params.arguments or {})
+        if params.function_name == "answer_question" and session.slots.digression is None:
+            # No `run_tool`: it writes nothing and speaks nothing. The frame records what the
+            # runtime was about to ask, the brief tells the model to answer and come back to
+            # it, and the turn is handed over (memo §2). The `run_llm=True` here replaces the
+            # one the first refused tool of a turn would have spent, so it buys no new call.
+            session.slots = session.slots.with_(
+                digression=next_step(session.slots, session.cfg, "voice")
+            )
+            session.record_signal("digression", step=session.slots.digression.value)
+            sync_context(session, now)
+            await params.result_callback(
+                {"spoken": False, "outcome": "none", "ignored": False},
+                properties=FunctionCallResultProperties(run_llm=True),
+            )
+            return
         ignored, rejection = tool_refusal(
             session.slots,
             params.function_name,

@@ -36,7 +36,15 @@ from spatalk.brain.audio_tags import drop_unknown_tags
 from spatalk.brain.guard import guard
 from spatalk.brain.outcomes import Refused
 from spatalk.brain.renderer import render, render_script
-from spatalk.brain.flow import Slots, Step, draft_from, next_step, open_flow, step_question
+from spatalk.brain.flow import (
+    Slots,
+    Step,
+    draft_from,
+    next_step,
+    open_flow,
+    pop_digression,
+    step_question,
+)
 from spatalk.brain.requests import EscalateRequest
 from spatalk.brain.rules import health_context_mentioned, is_fragment, rules_gate
 from spatalk.voice.echo import scrub_echo
@@ -457,6 +465,12 @@ class OutputGuardProcessor(FrameProcessor):
                 if key:
                     self._s.record_signal("repeat", script=key)
                 question = None
+            if self._s.slots.digression is not None and self._spoke_this_turn:
+                # The model answered the side question, so the frame has done its job. The
+                # narrow fix took `_spoke_this_turn` out of the *repeat suppression*
+                # deliberately; it is still the right test for "did the model actually
+                # answer". A turn that said nothing leaves the frame open for the next one.
+                self._s.slots = pop_digression(self._s.slots, self._s.cfg, "voice")
             if question is None and not self._s.tool_called_this_turn:
                 # The runtime has no question for this step, so the model's is all the caller
                 # would get: better its wording than a silent turn.

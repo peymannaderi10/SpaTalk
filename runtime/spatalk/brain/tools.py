@@ -21,6 +21,7 @@ TOOL_NAMES = (
     "send_link",
     "escalate",
     "end_conversation",
+    "answer_question",
 )
 
 # --- live transfer (operations plan, Task E10) -------------------------------------------
@@ -144,11 +145,28 @@ def slot_tool(name: str, cfg: TenantConfig) -> FunctionSchema:
             properties={},
             required=[],
         )
+    if name == "answer_question":
+        # Live at every step (model-words memo, §2; Flows' `global_functions`, Bolna's
+        # ToolScope.GLOBAL, Rasa's KnowledgeAnswerCommand). No argument, so nothing the
+        # caller said can be stored through it and non-negotiable 2 is untouched.
+        return FunctionSchema(
+            name="answer_question",
+            description=(
+                "The caller asked you something else — a price, what a treatment is, hours, "
+                "or a repeat of something you said. Call this and then answer them in your "
+                "own words from the facts. It records nothing and changes nothing about "
+                "their request; it only gives you the turn. Do not call it twice in a row, "
+                "and never use it to record an answer to the question the system just asked."
+            ),
+            properties={},
+            required=[],
+        )
     raise ValueError(name)
 
 
 def always_tools(cfg: TenantConfig, transfer_enabled: bool = False) -> list[FunctionSchema]:
-    """The tools offered at every step: escalate, end, and the transfer when it is staffed."""
+    """The tools offered at every step: escalate, end, the side question, and the transfer
+    when it is staffed."""
     tools = [
         FunctionSchema(
             name="escalate",
@@ -180,6 +198,7 @@ def always_tools(cfg: TenantConfig, transfer_enabled: bool = False) -> list[Func
             properties={},
             required=[],
         ),
+        slot_tool("answer_question", cfg),
     ]
     if transfer_enabled:
         tools.append(
