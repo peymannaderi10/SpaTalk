@@ -32,6 +32,17 @@ class VoiceSession:
     # turn (a turn with none gets the open question re-asked after the model's words).
     slots: Slots = field(default_factory=Slots)
     tool_called_this_turn: bool = False
+    # Tools the step did not offer, called since the caller last spoke. The first one hands
+    # the turn back to the model so the caller's sentence gets answered from the whole
+    # conversation (founder call 2026-09-10 20:55:35, where "can you book me that facial?"
+    # became a bare "What did you have in mind?"); the next one falls back to the fixed
+    # question, so a model that keeps calling the same tool cannot loop.
+    ignored_tools: int = 0
+    # The last step question the runtime spoke and the record it was asked on. Asked again
+    # word for word with nothing moved, it reads as an assistant that has forgotten the call
+    # ("What did you have in mind?" four times, founder call 2026-09-10).
+    last_question: str = ""
+    last_question_slots: Slots | None = None
     ended: bool = False
     guard_blocks: int = 0
     latencies_ms: list[int] = field(default_factory=list)
@@ -84,3 +95,13 @@ class VoiceSession:
         from spatalk.voice.echo import remember
 
         self.recent_bot_text = remember(self.recent_bot_text, strip_audio_tags(text))
+
+    def remember_question(self, text: str) -> None:
+        """Record the step question the runtime just asked, with the record it was asked on."""
+        self.last_question = text
+        self.last_question_slots = self.slots
+
+    def asked_already(self, text: str) -> bool:
+        """True when those exact words are the last thing the runtime asked and nothing in the
+        record has moved since, so asking them again would say nothing new."""
+        return bool(text) and text == self.last_question and self.slots == self.last_question_slots

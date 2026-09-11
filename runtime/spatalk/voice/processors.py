@@ -112,8 +112,10 @@ class RulesGateProcessor(FrameProcessor):
         if isinstance(frame, TranscriptionFrame) and direction == FrameDirection.DOWNSTREAM:
             self._last_interim = None
             await self._cancel_promotion()
-            # The caller spoke: any \"still there?\" count starts over.
+            # The caller spoke: any \"still there?\" count starts over, and so does the
+            # allowance for a tool the step did not offer.
             self._s.idle_nudges = 0
+            self._s.ignored_tools = 0
         if (
             isinstance(frame, (TranscriptionFrame, InterimTranscriptionFrame))
             and direction == FrameDirection.DOWNSTREAM

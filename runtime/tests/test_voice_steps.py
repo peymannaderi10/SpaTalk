@@ -107,16 +107,32 @@ async def test_file_request_speaks_the_outcome_and_the_item_has_the_records_cont
     assert ledger.items[0].contact.name == "Dana" and s.band == 2 and s.slots.flow is None
 
 
-async def test_a_tool_the_step_did_not_offer_is_ignored_and_the_question_repeated(fixed_clock):
+async def test_a_tool_the_step_did_not_offer_is_ignored_and_the_model_answers(fixed_clock):
+    """Nothing is written and nothing is said, whatever happens next.
+
+    The spec's answer was to re-ask the open question (slot engine design, §7), which is what
+    the second call below still does. But on the founder's call 2026-09-10 20:55:35 the first
+    one turned "can you book me that facial?" into a bare "What did you have in mind?" with
+    no answer in front of it, so the caller repeated himself. The first ignored call in a
+    caller's turn now hands the turn back to the model, which has the step's tools and the
+    whole conversation; the second falls back to the script so nothing can loop.
+    """
     from spatalk.brain.flow import Slots
     from spatalk.voice.handlers import _make_handler
 
     s, ledger = _session(fixed_clock)
     s.slots = Slots(flow="new_booking")
     llm = _LLM()
-    await _make_handler(s)(_Params("give_name", {"first_name": "Ellen"}, llm))
+    handler = _make_handler(s)
+    first = _Params("give_name", {"first_name": "Ellen"}, llm)
+    await handler(first)
+    assert s.slots.first_name is None and ledger.items == []
+    assert _spoken(llm) == [] and first.results[0][1].run_llm is True
+    second = _Params("give_name", {"first_name": "Ellen"}, llm)
+    await handler(second)
     assert s.slots.first_name is None and ledger.items == []
     assert _spoken(llm) == [s.cfg.scripts.ask_returning]
+    assert second.results[0][1].run_llm is False
 
 
 async def test_the_last_answer_files_the_request_without_a_second_model_turn(fixed_clock):

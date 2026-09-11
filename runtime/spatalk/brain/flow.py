@@ -307,6 +307,13 @@ def apply(
     return _finalize(_apply(slots, name, args, cfg, channel, caller_phone), cfg, channel)
 
 
+def tool_ignored(
+    slots: Slots, name: str, args: dict, cfg: TenantConfig, channel: str, caller_phone: str | None
+) -> bool:
+    """Would this call change nothing and say nothing? `apply` is pure, so this just asks it."""
+    return apply(slots, name, args, cfg, channel, caller_phone).ignored
+
+
 def _apply(
     slots: Slots, name: str, args: dict, cfg: TenantConfig, channel: str, caller_phone: str | None
 ) -> Applied:
@@ -328,7 +335,14 @@ def _apply(
             return Applied(slots=slots, ignored=True)
         return Applied(slots=_open(kind, slots, channel, caller_phone))
     if name == "change_answer":
-        return Applied(slots=_reopen(slots, args.get("slot", "")))
+        slot = args.get("slot", "")
+        if not _slot_filled(slots, slot):
+            # Nothing is stored there, so there is nothing to change. The caller asking "what
+            # was the $50 one you said?" reads as a correction to the model (founder call
+            # 2026-09-10 20:54:29), and the step question came back for the second time in a
+            # row with no answer in front of it. An ignored call hands the turn to the model.
+            return Applied(slots=slots, ignored=True)
+        return Applied(slots=_reopen(slots, slot))
     if name == "answer":
         return _answer(slots, step, args.get("value", "unsure"), cfg, channel, caller_phone)
     if name == "choose_practitioner":
@@ -349,6 +363,21 @@ def _apply(
     if name == "send_link":
         return Applied(slots=slots.with_(ended_flow=True), send_link=True)
     return Applied(slots=slots, ignored=True)
+
+
+_SLOT_FIELDS = {
+    "returning_client": ("returning_client",),
+    "practitioner": ("practitioner",),
+    "service": ("service_id",),
+    "name": ("first_name",),
+    "phone": ("phone",),
+    "window": ("preferred_window",),
+}
+
+
+def _slot_filled(slots: Slots, slot: str) -> bool:
+    """Does that slot hold an answer? An unknown slot name holds nothing."""
+    return any(getattr(slots, f) is not None for f in _SLOT_FIELDS.get(slot, ()))
 
 
 def _reopen(slots: Slots, slot: str) -> Slots:

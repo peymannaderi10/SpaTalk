@@ -279,3 +279,31 @@ def test_the_runtime_recites_the_offers_from_the_knowledge_file():
     assert a.say == (("offers_intro", {"offers": text}),) and a.slots.offers_done
     no = _apply(Slots(flow="new_booking", returning_client=False), "answer", {"value": "no"})
     assert no.say == () and no.slots.offers_done
+
+
+def test_change_answer_for_a_slot_that_holds_nothing_is_ignored():
+    """Founder call 2026-09-10 20:54:29. The caller asked "what was the $50 one you said?";
+    the model read that as a correction and called change_answer(service) at a step where no
+    treatment was stored yet. Nothing was reopened, nothing was said, and the runtime asked
+    "What did you have in mind?" for the second time in a row, which is what read as the
+    assistant having forgotten the conversation. A change to a slot that holds nothing is not
+    a change: it is an ignored call, and an ignored call hands the turn back to the model."""
+    from spatalk.brain.flow import Slots
+
+    s = Slots(flow="new_booking", returning_client=False, offers_done=True)
+    a = _apply(s, "change_answer", {"slot": "service"})
+    assert a.ignored and a.slots == s
+    # A slot that does hold something is still reopened.
+    b = _apply(s.with_(service_id="mesojet_facial"), "change_answer", {"slot": "service"})
+    assert not b.ignored and b.slots.service_id is None
+    # A slot name the engine does not know was already ignored; it stays that way.
+    assert _apply(s, "change_answer", {"slot": "mood"}).ignored
+
+
+def test_change_answer_looks_at_the_slot_not_the_miss_counter():
+    """A miss the resolver recorded is not something the caller asked to change: with no
+    treatment stored, change_answer(service) is still an ignored call even after a miss."""
+    from spatalk.brain.flow import Slots
+
+    s = Slots(flow="new_booking", returning_client=False, offers_done=True, misses={"service": 1})
+    assert _apply(s, "change_answer", {"slot": "service"}).ignored

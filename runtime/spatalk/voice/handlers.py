@@ -13,6 +13,7 @@ from pipecat.frames.frames import EndFrame, FunctionCallResultProperties, TTSSpe
 from pipecat.services.llm_service import FunctionCallParams
 
 from spatalk.brain.driver import run_tool
+from spatalk.brain.flow import tool_ignored
 from spatalk.voice.steps import next_question, sync_context
 from spatalk.brain.outcomes import Captured, Completed, Refused, Transferred
 from spatalk.brain.renderer import render, render_script
@@ -33,16 +34,42 @@ def register_tool_handlers(llm, session: VoiceSession) -> None:
         llm.register_function(TRANSFER_TOOL, _make_transfer_handler(session))
 
 
+IGNORED_TOOL_RETRIES = 1
+
+
 def _make_handler(session: VoiceSession):
     async def handler(params: FunctionCallParams):
         now = session.clock.now()
         session.tool_called_this_turn = True
+        args = dict(params.arguments or {})
+        ignored = tool_ignored(
+            session.slots,
+            params.function_name,
+            args,
+            session.cfg,
+            session.ref.channel,
+            session.ref.caller_phone,
+        )
+        if ignored and session.ignored_tools < IGNORED_TOOL_RETRIES:
+            # The step did not offer this tool, so nothing was written and nothing is said.
+            # The spec's answer was to re-ask the open question (slot engine design, §7), but
+            # on the founder's call that turned "can you book me that facial?" into a bare
+            # "What did you have in mind?" with no answer in front of it, twice. The model
+            # gets the turn back instead, with the step's own tools and the whole
+            # conversation in its context; the budget above stops it looping.
+            session.ignored_tools += 1
+            logger.info("tool {} ignored at this step; the model answers instead", params.function_name)
+            await params.result_callback(
+                {"spoken": False, "outcome": "none", "ignored": True},
+                properties=FunctionCallResultProperties(run_llm=True),
+            )
+            return
         slots, spoken, outcome, ended, _speaks = await run_tool(
             session.caps,
             session.ref,
             session.slots,
             params.function_name,
-            dict(params.arguments or {}),
+            args,
             now,
         )
         session.slots = slots
@@ -59,11 +86,18 @@ def _make_handler(session: VoiceSession):
             question = next_question(session, now)
             if question:
                 lines.append(question)
+                # Recorded against the record the tool just moved, so the same question is
+                # not repeated word for word on a later side answer at the same step.
+                session.remember_question(question)
         sync_context(session, now)
         for text in lines:
             await params.llm.push_frame(TTSSpeakFrame(text=text, append_to_context=True))
         await params.result_callback(
-            {"spoken": bool(lines), "outcome": outcome.kind if outcome else "none"},
+            {
+                "spoken": bool(lines),
+                "outcome": outcome.kind if outcome else "none",
+                "ignored": ignored,
+            },
             properties=FunctionCallResultProperties(run_llm=False),
         )
         if ended:
