@@ -32,6 +32,7 @@ from spatalk.brain.flow import (
     Slots,
     Step,
     apply,
+    close_flow,
     draft_from,
     next_step,
     open_flow,
@@ -478,10 +479,9 @@ async def run_tool(
     outcome: Outcome | None = None
     ended = applied.end
     try:
-        if name == "escalate":
+        if applied.escalate:
             outcome = await caps.escalate(ref, EscalateRequest(reason=args.get("reason", "unsure")))
             spoken.append(render(outcome, cfg, now, channel=ref.channel))
-            ended = True
         elif applied.file:
             draft = draft_from(applied.slots, cfg, health_context=ref.health_context)
             outcome = await caps.capture(ref, draft)
@@ -604,6 +604,10 @@ class Brain:
                 if isinstance(out, Captured):
                     band = 3 if out.item_type.startswith("escalation_") else max(band, 2)
             ended = ended or did_end
+        if slots.flow == "clinical" and not slots.offer_accepted:
+            # The clinical offer is open: nothing is filed yet, and the nightly audit still
+            # has to see the turn that raised a clinical matter.
+            band = 3
         ack, blocked = "", False
         if resp.text:
             has_completed = any(isinstance(o, Completed) for o in outcomes)
@@ -645,7 +649,7 @@ class Brain:
         # reason the A4 hand-back is voice-only.
         slots = pop_digression(slots, cfg, ref.channel)
         if slots.ended_flow:
-            slots = slots.with_(flow=None, ended_flow=False)
+            slots = close_flow(slots)
         reply = " ".join(p for p in [ack, *said, question] if p).strip()
         return TurnResult(
             reply=reply,

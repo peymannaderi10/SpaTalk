@@ -229,6 +229,55 @@ async def test_the_booking_is_filed_before_the_link_is_offered(fixed_clock):
     assert r.reply.count("?") == 1
 
 
+async def test_a_model_called_clinical_escalation_does_not_end_the_turn(fixed_clock):
+    """Founder call 14ea2579, 2026-09-11 15:56:30.765. `escalate {'reason':'clinical'}` for
+    "does it hurt? like, that facial?" ended the call 38 ms later, mid-goodbye. The gate's own
+    rule — only an emergency ends anything — now covers the model-called tool too, and the
+    booking in progress is parked rather than thrown away."""
+    from spatalk.brain.driver import LLMResponse, ToolCall
+
+    brain, ref, ledger, _sms, llm = _world(
+        fixed_clock, [LLMResponse(text=None, tool_calls=[ToolCall("escalate", {"reason": "clinical"})])]
+    )
+    cfg = ref.tenant
+    r = await brain.turn(ref, [], "does it hurt? like, that facial?", _one_slot_short_booking())
+    assert llm.calls, "the rules gate answered instead of the model"
+    assert r.ended is False
+    assert ledger.items == []
+    assert r.reply == cfg.scripts.clinical_offer
+    assert r.band == 3
+    assert r.slots.flow == "clinical"
+    assert r.slots.parked.flow == "new_booking"
+
+
+async def test_a_model_called_complaint_escalation_files_and_leaves_the_conversation_open(fixed_clock):
+    from spatalk.brain.driver import LLMResponse, ToolCall
+    from spatalk.brain.flow import Slots
+
+    brain, ref, ledger, _sms, llm = _world(
+        fixed_clock, [LLMResponse(text=None, tool_calls=[ToolCall("escalate", {"reason": "complaint"})])]
+    )
+    r = await brain.turn(ref, [], "I would like to raise something", Slots())
+    assert llm.calls, "the rules gate answered instead of the model"
+    assert ledger.items[0].type == "escalation_complaint"
+    assert r.ended is False
+    assert r.reply.startswith(ref.tenant.scripts.complaint[:20])
+
+
+async def test_a_model_called_emergency_escalation_is_the_one_that_ends(fixed_clock):
+    from spatalk.brain.driver import LLMResponse, ToolCall
+    from spatalk.brain.flow import Slots
+
+    brain, ref, ledger, _sms, llm = _world(
+        fixed_clock, [LLMResponse(text=None, tool_calls=[ToolCall("escalate", {"reason": "emergency"})])]
+    )
+    r = await brain.turn(ref, [], "something is very wrong here", Slots())
+    assert llm.calls, "the rules gate answered instead of the model"
+    assert r.ended is True
+    assert "911" in r.reply
+    assert ledger.items[0].type == "escalation_emergency"
+
+
 async def test_a_capture_that_failed_leaves_the_record_unfiled(fixed_clock):
     """If the ledger is down at the moment the last slot lands, nothing is on it. The caller
     hears refuse_unavailable, which promises nothing, so the record must not be marked filed

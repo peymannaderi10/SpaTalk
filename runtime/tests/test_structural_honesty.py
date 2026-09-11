@@ -147,6 +147,40 @@ def test_no_step_holds_a_complete_record_out_of_the_ledger():
                 assert step_question(after, s, cfg, channel) == ("link_offer", {})
 
 
+async def test_the_clinical_script_is_never_spoken_without_an_item(fixed_clock):
+    """`scripts.clinical` asserts an urgent filing. The offer that precedes it promises
+    nothing, and with the ledger down the accepted path speaks the refusal, never the claim."""
+    from pathlib import Path as _Path
+
+    from spatalk.brain.driver import run_tool
+    from spatalk.brain.flow import Slots, apply
+    from spatalk.brain.ports import MemoryLedger, MemorySms
+    from spatalk.brain.requests import ConversationRef
+    from spatalk.brain.tier_c import TierCCapabilities
+    from spatalk.tenants.bundle import load_bundle
+
+    class DeadLedger(MemoryLedger):
+        async def create_item(self, ref, draft):
+            raise RuntimeError("database is down")
+
+    import uuid as _uuid
+
+    cfg = load_bundle(_Path(RUNTIME) / "tenants" / "skincentrix")
+    caps = TierCCapabilities(ledger=DeadLedger(fixed_clock), sms=MemorySms(), clock=fixed_clock)
+    ref = ConversationRef(
+        conversation_id=_uuid.uuid4(), tenant=cfg, channel="voice", caller_phone="+19055550101"
+    )
+    opened = apply(Slots(), "escalate", {"reason": "clinical"}, cfg, "voice", "+19055550101")
+    assert opened.say == () and opened.file is False
+    named = opened.slots.with_(first_name="Dana", phone="+19055550101", phone_confirmed=True)
+    _slots, spoken, outcome, _ended, _speaks = await run_tool(
+        caps, ref, named, "answer", {"value": "yes"}, fixed_clock.now()
+    )
+    assert outcome.kind == "refused"
+    assert spoken == [cfg.scripts.refuse_unavailable.format(phone=cfg.public_phone)]
+    assert cfg.scripts.clinical not in spoken
+
+
 def test_the_notes_live_on_the_conversation_and_nowhere_else():
     from spatalk.brain.ports import ItemDraft
     from spatalk.models import Conversation, Item

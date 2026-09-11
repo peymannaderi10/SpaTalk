@@ -417,7 +417,7 @@ async def file_complete_record(session: VoiceSession) -> None:
     A successful live transfer still files, because a spurious item is a click to close where
     a missing one is a lost booking.
     """
-    records = [session.slots, getattr(session.slots, "parked", None)]
+    records = [session.slots, session.slots.parked]
     for record in records:
         if record is None or not unfiled_record(record, session.cfg, "voice"):
             continue

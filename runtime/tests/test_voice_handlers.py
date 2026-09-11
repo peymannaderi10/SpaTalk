@@ -268,6 +268,74 @@ async def test_the_link_offer_answer_sends_the_link_and_files_nothing_more(fixed
     assert session.slots.flow is None
 
 
+def _the_1556_booking():
+    """The founder's record at 15:56:17, one answer short of complete (14ea2579)."""
+    from spatalk.brain.flow import Slots
+    from spatalk.brain.requests import PreferredWindow
+
+    return Slots(
+        flow="new_booking", returning_client=False, offers_done=True, service_id="mesojet_facial",
+        practitioner="any", first_name="Payman", phone="+19055550101", phone_confirmed=True,
+        preferred_window=PreferredWindow(part_of_day="afternoon"),
+    )
+
+
+async def test_a_clinical_escalation_keeps_the_call_open_and_parks_the_booking(fixed_clock):
+    """Founder call 14ea2579, 2026-09-11 15:56:30.765. `escalate {'reason':'clinical'}` for a
+    pre-treatment question queued an EndFrame 38 ms later and the carrier cut the leg at
+    15:56:39.742, mid-"is there anything else I can help with?"."""
+    session, llm, Params, pushed, queued, _results, ledger = _world(
+        fixed_clock, _the_1556_booking()
+    )
+    await llm.registered["escalate"](Params("escalate", {"reason": "clinical"}))
+    assert queued == [], "a clinical escalation queued an EndFrame"
+    assert session.ended is False
+    assert ledger.items == []
+    assert _said(pushed) == [session.cfg.scripts.clinical_offer]
+    assert session.slots.flow == "clinical"
+    assert session.slots.parked.service_id == "mesojet_facial"
+    assert session.runtime_asked_this_turn is True
+    assert session.band == 3
+
+
+async def test_saying_yes_to_the_clinical_offer_files_the_item_and_gives_the_booking_back(fixed_clock):
+    session, llm, Params, pushed, queued, _results, ledger = _world(
+        fixed_clock, _the_1556_booking()
+    )
+    await llm.registered["escalate"](Params("escalate", {"reason": "clinical"}))
+    await llm.registered["answer"](Params("answer", {"value": "yes"}))
+    assert ledger.items[0].type == "escalation_clinical"
+    assert ledger.items[0].urgency == "urgent"
+    assert ledger.items[0].contact.name == "Payman"
+    assert _said(pushed)[-1] == session.cfg.scripts.clinical
+    assert queued == []
+    assert session.ended is False
+    assert session.slots.flow == "new_booking"
+    assert session.slots.service_id == "mesojet_facial"
+    assert session.slots.parked is None
+    assert session.runtime_asked_this_turn is True
+
+
+async def test_a_model_called_emergency_escalation_still_ends_the_call(fixed_clock):
+    from pipecat.frames.frames import EndFrame
+
+    session, llm, Params, pushed, queued, _results, ledger = _world(fixed_clock)
+    await llm.registered["escalate"](Params("escalate", {"reason": "emergency"}))
+    assert isinstance(queued[-1], EndFrame)
+    assert session.ended is True
+    assert ledger.items[0].type == "escalation_emergency"
+    assert "911" in _said(pushed)[0]
+
+
+async def test_a_model_called_complaint_escalation_leaves_the_line_open(fixed_clock):
+    session, llm, Params, pushed, queued, _results, ledger = _world(fixed_clock)
+    await llm.registered["escalate"](Params("escalate", {"reason": "complaint"}))
+    assert queued == []
+    assert session.ended is False
+    assert ledger.items[0].type == "escalation_complaint"
+    assert _said(pushed) == [session.cfg.scripts.complaint]
+
+
 async def test_the_receipt_is_recorded_before_the_outcome_is_spoken(fixed_clock):
     """The order is the honest one: the ledger answers, the receipt is written, then the
     sentence that asserts it goes out. A ledger that returns nothing gets no receipt and the

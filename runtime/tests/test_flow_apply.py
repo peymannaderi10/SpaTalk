@@ -239,11 +239,105 @@ def test_a_second_request_keeps_the_name_and_number_but_not_the_treatment():
     assert a.slots.service_id is None and a.slots.practitioner is None
 
 
+def test_only_an_emergency_escalation_ends_anything():
+    """Founder call 14ea2579, 2026-09-11 15:56:30.765. The model called escalate(clinical)
+    for "does it hurt? like, that facial?" — a pre-treatment question the rules lexicon
+    deliberately excludes — and driver.py ended the call 38 ms later, mid-sentence. Only the
+    emergency script tells the caller to hang up and dial 911, so it is the only reason that
+    ends anything (flows.md §1.8; voice-regression-V1 fixed this for the gate path only)."""
+    from spatalk.brain.flow import Slots
+
+    for reason in ("human_request", "complaint", "payment", "legal", "unsure"):
+        a = _apply(Slots(), "escalate", {"reason": reason})
+        assert a.end is False, reason
+        assert a.escalate is True, reason
+    emergency = _apply(Slots(), "escalate", {"reason": "emergency"})
+    assert emergency.end is True and emergency.escalate is True
+
+
+def test_a_clinical_escalation_opens_the_offer_and_files_nothing():
+    from spatalk.brain.flow import Slots
+
+    a = _apply(Slots(), "escalate", {"reason": "clinical"})
+    assert a.slots.flow == "clinical" and a.slots.offer_accepted is False
+    assert a.escalate is False and a.file is False and a.end is False and a.say == ()
+
+
+def test_a_clinical_escalation_mid_booking_parks_the_booking():
+    """Slot-engine spec line 65: a request in progress is kept, not thrown away. On the
+    founder's call the booking was one answer from done when the clinical question came."""
+    a = _apply(_filled_booking(), "escalate", {"reason": "clinical"})
+    assert a.slots.flow == "clinical"
+    assert a.slots.service_id is None
+    assert a.slots.first_name == "Payman" and a.slots.phone_confirmed is True
+    assert a.slots.parked.flow == "new_booking"
+    assert a.slots.parked.service_id == "mesojet_facial"
+    assert a.slots.parked.preferred_window.part_of_day == "afternoon"
+    assert a.slots.parked.parked is None
+
+
+def test_the_clinical_offer_is_its_own_step_even_when_the_name_is_known():
+    """The offer used to be a special case of Step.NAME, so mid-booking — where the name and
+    the number are already on the record — the clinical flow opened at COMPLETE and filed an
+    urgent item with no offer at all."""
+    from spatalk.brain.flow import Slots, Step, next_step, step_tools
+
+    cfg = _cfg()
+    s = Slots(flow="clinical", first_name="Dana", phone="+19055550101", phone_confirmed=True)
+    assert next_step(s, cfg, "voice") == Step.CLINICAL_OFFER
+    names = [t.name for t in step_tools(Step.CLINICAL_OFFER, s, cfg, "voice")]
+    assert names[:1] == ["answer"] and "file_request" not in names
+
+
+def test_saying_yes_to_the_offer_files_the_clinical_item_and_gives_the_booking_back():
+    from spatalk.brain.flow import close_flow, draft_from
+
+    parked = _apply(_filled_booking(), "escalate", {"reason": "clinical"}).slots
+    yes = _apply(parked, "answer", {"value": "yes"})
+    assert yes.file is True and yes.slots.ended_flow is True
+    draft = draft_from(yes.slots, _cfg())
+    assert draft.type == "escalation_clinical" and draft.contact.name == "Payman"
+    back = close_flow(yes.slots)
+    assert back.flow == "new_booking" and back.service_id == "mesojet_facial"
+    assert back.preferred_window.part_of_day == "afternoon" and back.parked is None
+
+
+def test_declining_the_offer_files_nothing_and_gives_the_booking_back():
+    from spatalk.brain.flow import close_flow
+
+    parked = _apply(_filled_booking(), "escalate", {"reason": "clinical"}).slots
+    no = _apply(parked, "answer", {"value": "no"})
+    assert no.file is False and no.say == (("clinical_declined", {}),)
+    assert no.slots.ended_flow is True
+    back = close_flow(no.slots)
+    assert back.flow == "new_booking" and back.service_id == "mesojet_facial"
+
+
+def test_closing_a_flow_with_nothing_parked_drops_to_qa():
+    from spatalk.brain.flow import Slots, close_flow
+
+    back = close_flow(Slots(flow="cancel", ended_flow=True, first_name="Dana"))
+    assert back.flow is None and back.ended_flow is False
+    assert back.first_name == "Dana" and back.parked is None
+
+
+def test_a_second_request_at_qa_parks_nothing():
+    """The guard on making parking automatic: `start_request` is only offered at Q&A, where
+    the previous flow is None or ended, so nothing it opens can park anything."""
+    from spatalk.brain.flow import Slots
+
+    a = _apply(Slots(flow="cancel", ended_flow=True), "start_request", {"kind": "new_booking"})
+    assert a.slots.parked is None
+
+
 def test_the_clinical_offer_is_answered_yes_or_no_before_the_name():
+    """MOVED 2026-09-11: the open step is now `Step.CLINICAL_OFFER` rather than `Step.NAME`,
+    because a known name must not be able to skip the offer. The yes/no behaviour is
+    unchanged."""
     from spatalk.brain.flow import Slots, Step, next_step
 
     s = Slots(flow="clinical")
-    assert next_step(s, _cfg(), "voice") == Step.NAME
+    assert next_step(s, _cfg(), "voice") == Step.CLINICAL_OFFER
     yes = _apply(s, "answer", {"value": "yes"})
     assert yes.slots.offer_accepted and yes.say == ()
     no = _apply(s, "answer", {"value": "no"})
@@ -303,11 +397,14 @@ def test_a_training_enquiry_is_a_request_too():
 
 
 def test_the_clinical_offer_takes_only_yes_or_no_until_it_is_accepted():
+    """MOVED 2026-09-11: the un-accepted offer is asked at `Step.CLINICAL_OFFER`, not at
+    `Step.NAME`. The post-acceptance half still passes `Step.NAME` and still expects
+    `give_name`."""
     from spatalk.brain.flow import Slots, Step, step_tools
 
     s = Slots(flow="clinical", phone="+19055550101")
-    assert [t.name for t in step_tools(Step.NAME, s, _cfg(), "voice")][:1] == ["answer"]
-    assert "give_name" not in [t.name for t in step_tools(Step.NAME, s, _cfg(), "voice")]
+    assert [t.name for t in step_tools(Step.CLINICAL_OFFER, s, _cfg(), "voice")][:1] == ["answer"]
+    assert "give_name" not in [t.name for t in step_tools(Step.CLINICAL_OFFER, s, _cfg(), "voice")]
     ignored = _apply(s, "give_name", {"first_name": "yes please, that would be great"})
     assert ignored.ignored and ignored.slots.first_name is None
     yes = _apply(s, "answer", {"value": "yes"})

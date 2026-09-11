@@ -25,7 +25,7 @@ from pipecat.frames.frames import EndFrame, FunctionCallResultProperties, TTSSpe
 from pipecat.services.llm_service import FunctionCallParams
 
 from spatalk.brain.driver import run_tool
-from spatalk.brain.flow import next_step, rejection_text, tool_rejection
+from spatalk.brain.flow import close_flow, next_step, rejection_text, tool_rejection
 from spatalk.ops.signals import signals_for
 from spatalk.voice.frames import ToolTurnDoneFrame
 from spatalk.voice.steps import next_question, open_question_text, sync_context
@@ -168,15 +168,26 @@ async def _run_one_tool(session: VoiceSession, params: FunctionCallParams) -> bo
     elif isinstance(outcome, Completed):
         session.has_completed = True
         session.remember_receipt("platform", outcome.platform_ref)
+    restored = False
     if session.slots.ended_flow:
-        session.slots = session.slots.with_(flow=None, ended_flow=False)
+        parked = session.slots.parked
+        session.slots = close_flow(session.slots)
+        restored = parked is not None
+    if session.slots.flow == "clinical" and not session.slots.offer_accepted:
+        # The clinical offer is open and nothing is filed yet; the audit still has to see it.
+        session.band = 3
     lines = list(spoken)
-    pair = None if ended else open_question_text(session, now)
+    pair = None if (ended or restored) else open_question_text(session, now)
     if pair is not None and pair[0].fixed:
         # A confirmation of a value the resolver could not settle: the wording is law, so
         # the runtime says it and does not pay for a model turn to rephrase it.
         lines.append(pair[1])
         session.remember_question(pair[1])
+        session.runtime_asked_this_turn = True
+    if restored:
+        # The outcome script the engine just spoke ends by asking "anything else?", and the
+        # caller's answer lands on the restored request's open step next turn. The runtime
+        # does not also speak that step's question: one question per turn (flows.md §10.8).
         session.runtime_asked_this_turn = True
     for kind, detail in signals_for(before, session.slots):
         session.record_signal(kind, **detail)

@@ -184,18 +184,24 @@ async def test_the_1551_call_files_the_booking_alongside_the_clinical_escalation
     """The whole defect in one case. Conversation 14ea2579-a14e-4be5-9786-8b5354499931:
     every slot of the booking was on the record, the model called escalate(clinical) at
     15:56:30.765 for a pre-treatment question, and the call ended 9 s later with one item.
-    Both requests are real, so both reach the ledger.
-
-    The escalation is filed through the capability directly here, because at this task the
-    model's own `escalate` still ends the turn and still collides with the filing in
-    `run_tool`'s if/elif chain. The next task takes that apart and this case is tightened to
-    drive the whole sequence through `run_tool`."""
-    from spatalk.brain.requests import EscalateRequest
+    Both requests are real, so both reach the ledger. The whole sequence goes through
+    `run_tool`: the clinical escalate no longer ends the call, the booking is parked, and the
+    parked record is what the end of the call finds."""
+    from spatalk.brain.driver import run_tool
     from spatalk.voice.pipeline import _finalize
 
     session = await _session(ctx, sf)
-    session.slots = _the_1556_record()
-    await session.caps.escalate(session.ref, EscalateRequest(reason="clinical"))
+    slots, _spoken, _out, ended, _speaks = await run_tool(
+        session.caps, session.ref, _the_1556_record(), "escalate", {"reason": "clinical"},
+        ctx.clock.now(),
+    )
+    assert ended is False
+    assert slots.flow == "clinical" and slots.parked.service_id == "mesojet_facial"
+    slots, _spoken, _out, ended, _speaks = await run_tool(
+        session.caps, session.ref, slots, "answer", {"value": "yes"}, ctx.clock.now()
+    )
+    assert ended is False
+    session.slots = slots
     await _finalize(ctx, session, _StubContext([{"role": "user", "content": "does it hurt?"}]))
     types = sorted(i.type for i in session.caps._ledger.items)
     assert types == ["escalation_clinical", "new_booking"]

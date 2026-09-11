@@ -39,6 +39,7 @@ class Step(str, Enum):
     QA = "qa"
     RETURNING = "returning"
     OFFERS = "offers"
+    CLINICAL_OFFER = "clinical_offer"
     PRACTITIONER = "practitioner"
     SERVICE = "service"
     NAME = "name"
@@ -87,6 +88,12 @@ class Slots(BaseModel, frozen=True):
     filed: bool = False
     # The post-filing link offer has been put and answered.
     link_offered: bool = False
+    # The request that was in progress when this one interrupted it (slot engine spec line
+    # 65: the record in progress is kept, not thrown away). One frame, not a stack: `_open`
+    # parks only when the previous flow is open and of a different kind, so nesting is bounded
+    # at depth 1 and a persisted record cannot grow without limit. `close_flow` hands it back.
+    # It is behind the same fence as `digression`: `draft_from` never reads it.
+    parked: "Slots | None" = None
 
     def with_(self, **changes) -> Slots:
         return self.model_copy(update=changes)
@@ -95,6 +102,11 @@ class Slots(BaseModel, frozen=True):
         misses = dict(self.misses)
         misses[slot] = misses.get(slot, 0) + 1
         return self.with_(misses=misses)
+
+
+# The self-reference resolves here rather than at first validation, because the module is
+# under `from __future__ import annotations` and `text/service.py` validates a stored row.
+Slots.model_rebuild()
 
 
 def _phone_needed(slots: Slots, channel: str) -> bool:
@@ -123,6 +135,11 @@ def next_step(slots: Slots, cfg: TenantConfig, channel: str) -> Step:
     """The fixed order (slot engine design, §4). A step already answered is skipped."""
     if slots.flow is None or slots.ended_flow:
         return Step.QA
+    # A step of its own, not a special case of NAME: mid-booking the name and the number are
+    # already on the record, and the offer used to be skipped entirely (founder call
+    # 14ea2579, 2026-09-11 15:56:30), filing an urgent item nobody had agreed to.
+    if slots.flow == "clinical" and not slots.offer_accepted:
+        return Step.CLINICAL_OFFER
     if slots.flow in BOOKING_LIKE:
         if slots.returning_client is None:
             return Step.RETURNING
@@ -199,6 +216,8 @@ def step_question(
             }
         if p.kind == "offers":
             return "ask_service_kind", {"consultation": _consultation_name(cfg)}
+    if step == Step.CLINICAL_OFFER:
+        return "clinical_offer", {}
     if step == Step.RETURNING:
         return "ask_returning", {}
     if step == Step.OFFERS:
@@ -229,6 +248,7 @@ def step_question(
 STEP_TOOL = {
     Step.RETURNING: "answer",
     Step.OFFERS: "answer",
+    Step.CLINICAL_OFFER: "answer",
     Step.PRACTITIONER: "choose_practitioner",
     Step.SERVICE: "choose_service",
     Step.NAME: "give_name",
@@ -256,8 +276,6 @@ def step_tools(
             tools.append(slot_tool("give_phone", cfg))
     elif step == Step.COMPLETE:
         tools.append(slot_tool("file_request", cfg))
-    elif step == Step.NAME and slots.flow == "clinical" and not slots.offer_accepted:
-        tools.append(slot_tool("answer", cfg))  # the clinical offer is answered yes/no first
     elif step == Step.LINK_OFFER:
         # No `file_request` and no `change_answer`: the item is already on the ledger, a
         # second filing is a second job for the team, and the ledger has no amend path, so a
@@ -324,11 +342,14 @@ class Rejection(BaseModel, frozen=True):
 
 class Applied(BaseModel, frozen=True):
     """What one tool call did: the new record, the fixed lines to say, and the acts the
-    driver must perform (file, send the link, end). `ignored` means the model called a tool
-    the step did not offer: nothing is said and nothing is written."""
+    driver must perform (escalate, file, send the link, end). `ignored` means the model called
+    a tool the step did not offer: nothing is said and nothing is written."""
 
     slots: Slots
     say: tuple[tuple[str, dict], ...] = ()
+    # Hand the conversation to a person now, through the escalate capability. Only the
+    # emergency reason also sets `end`: it is the only script that tells the caller to hang up.
+    escalate: bool = False
     file: bool = False
     send_link: bool = False
     end: bool = False
@@ -402,8 +423,18 @@ def _tool_allowed(name: str, step: Step, slots: Slots, cfg: TenantConfig, channe
 def _open(kind: str, previous: Slots, channel: str, caller_phone: str | None) -> Slots:
     """A new flow keeps what the conversation already knows about the person, never about
     the request: the name and number asked once are not asked twice; a second request
-    still gets its own treatment and practitioner."""
+    still gets its own treatment and practitioner.
+
+    A request that was still open is parked rather than thrown away (slot engine spec line
+    65): on the founder's call of 2026-09-11 a clinical question one answer from the end of a
+    booking lost the booking. Parking is automatic because `start_request` — the only other
+    caller — is offered at `Step.QA` alone, where the previous flow is None or ended and the
+    guard below is False; so nothing it opens can park anything.
+    """
     on_sms = channel == "sms" and bool(caller_phone)
+    parked = None
+    if previous.flow is not None and not previous.ended_flow and previous.flow != kind:
+        parked = previous.with_(parked=None, digression=None)
     return Slots(
         flow=kind,
         returning_client=previous.returning_client,
@@ -412,10 +443,24 @@ def _open(kind: str, previous: Slots, channel: str, caller_phone: str | None) ->
         # sender's number needs no confirming.
         phone=previous.phone or caller_phone,
         phone_confirmed=previous.phone_confirmed or on_sms,
+        parked=parked,
     )
 
 
 open_flow = _open
+
+
+def close_flow(slots: Slots) -> Slots:
+    """The flow is done. A parked request comes back; otherwise the record drops to Q&A."""
+    if slots.parked is None:
+        return slots.with_(flow=None, ended_flow=False, offer_accepted=False, parked=None)
+    p = slots.parked
+    return p.with_(
+        parked=None,
+        first_name=slots.first_name or p.first_name,
+        phone=slots.phone or p.phone,
+        phone_confirmed=slots.phone_confirmed or p.phone_confirmed,
+    )
 
 
 def _finalize(applied: Applied, cfg: TenantConfig, channel: str, name: str = "") -> Applied:
@@ -423,9 +468,14 @@ def _finalize(applied: Applied, cfg: TenantConfig, channel: str, name: str = "")
     in front of it (founder call 14ea2579, 2026-09-11 15:56). The link question comes after,
     as an extra, and the flow stays open across it."""
     s = applied.slots
-    if applied.ignored or applied.file or applied.send_link:
+    if applied.ignored or applied.escalate or applied.file or applied.send_link:
         return applied
     if s.flow is None or s.ended_flow or s.pending is not None or s.filed:
+        return applied
+    if name in ("escalate", "transfer_to_human"):
+        # `transfer_to_human` files its own callback from `_transfer`, and an escalate that
+        # opened the clinical flow has an offer to put first. Neither may quietly file the
+        # booking the caller was in the middle of.
         return applied
     if next_step(s, cfg, channel) != Step.COMPLETE:
         return applied
@@ -494,7 +544,16 @@ def _apply(
         if slots.flow and not slots.ended_flow and slots.pending is None and step == Step.TEAM_NOTE:
             return Applied(slots=slots.with_(team_note_asked=True), end=True)
         return Applied(slots=slots, end=True)
-    if name in ("escalate", "transfer_to_human"):
+    if name == "escalate":
+        reason = (args or {}).get("reason", "unsure")
+        if reason == "clinical":
+            # The offer first, filed only on yes (slot engine design §4.2, flows.md §1.8).
+            # The request in progress is parked, not thrown away (slot engine spec line 65).
+            return Applied(slots=_open("clinical", slots, channel, caller_phone))
+        # Only the emergency script tells the caller to hang up and dial 911, so it is the
+        # only reason that ends anything (flows.md §1.8; voice-regression-V1).
+        return Applied(slots=slots, escalate=True, end=reason == "emergency")
+    if name == "transfer_to_human":
         return Applied(slots=slots)
     if name == "answer_question":
         # The 01:40 call's missing path (memo §2). Writes nothing, says nothing: it records
@@ -627,7 +686,7 @@ def _answer(
             if consult is None:
                 return Applied(slots=slots.with_(pending=None))
             return _after_slot(slots.with_(pending=None, service_id=consult.id), cfg)
-    if slots.flow == "clinical" and not slots.offer_accepted and step == Step.NAME:
+    if step == Step.CLINICAL_OFFER:
         # The clinical offer: yes goes on to the name, no closes with nothing filed.
         if yes:
             return Applied(slots=slots.with_(offer_accepted=True))
@@ -829,6 +888,11 @@ def draft_from(slots: Slots, cfg: TenantConfig, health_context: bool = False) ->
 _MISSING: dict[Step, tuple[str, str, tuple[str, ...]]] = {
     Step.RETURNING: ("returning_client", "whether they have been in to the clinic before", ("yes", "no")),
     Step.OFFERS: ("offers", "whether they would like to hear the new-client offers", ("yes", "no")),
+    Step.CLINICAL_OFFER: (
+        "clinical_offer",
+        "whether they would like the clinical team to reach out to them",
+        ("yes", "no"),
+    ),
     Step.PRACTITIONER: ("practitioner", "who they would like to see: a name from the team in the facts, or anyone", ()),
     Step.SERVICE: ("service", "which treatment they want, from the SERVICES list above", ()),
     Step.NAME: ("name", "their first name", ()),
@@ -877,10 +941,10 @@ def _known(slots: Slots, cfg: TenantConfig) -> list[str]:
 def _missing(step: Step, slots: Slots, cfg: TenantConfig, channel: str) -> Missing | None:
     """What the record is waiting on at this step, or None when it is waiting on nothing.
 
-    Four of these `_MISSING` cannot express, and they are exactly the four the model got
-    wrong on the founder's calls: an open confirmation, a choice between two candidates, the
-    "is the number you're calling from the best one" question, and the clinical offer that
-    comes before the name.
+    Three of these `_MISSING` cannot express, and they are three the model got wrong on the
+    founder's calls: an open confirmation, a choice between two candidates, and the "is the
+    number you're calling from the best one" question. The fourth, the clinical offer, is a
+    step of its own since 2026-09-11 and so has a `_MISSING` row like any other.
     """
     p = slots.pending
     if p is not None:
@@ -904,13 +968,6 @@ def _missing(step: Step, slots: Slots, cfg: TenantConfig, channel: str) -> Missi
         return Missing(
             datum="phone",
             description="whether the number they are calling from is the best one to reach them on",
-            choices=("yes", "no"),
-            tool="answer",
-        )
-    if step == Step.NAME and slots.flow == "clinical" and not slots.offer_accepted:
-        return Missing(
-            datum="clinical_offer",
-            description="whether they would like the clinical team to reach out to them",
             choices=("yes", "no"),
             tool="answer",
         )
@@ -950,7 +1007,9 @@ def open_question(slots: Slots, cfg: TenantConfig, channel: str) -> OpenQuestion
     if q is None:
         return None
     return OpenQuestion(
-        key=q[0], fills=q[1], fixed=slots.pending is not None or step == Step.LINK_OFFER
+        key=q[0],
+        fills=q[1],
+        fixed=slots.pending is not None or step in (Step.CLINICAL_OFFER, Step.LINK_OFFER),
     )
 
 
@@ -1028,6 +1087,14 @@ def step_message(step: Step, slots: Slots, cfg: TenantConfig, channel: str) -> s
             "in one or two sentences, then ask again, in your own words, for "
             f"{wanted}, and put their answer in {tool}. Do not call answer_question again."
             + _BRIEF_TAIL
+        )
+    if step == Step.CLINICAL_OFFER:
+        # The wording is the tenant's law (non-negotiable 3), so the model must not paraphrase
+        # it: the system has already asked, in `scripts.clinical_offer`.
+        return (
+            f"{STEP_MARKER} {known_text}The caller asked something clinical. The system has "
+            "just asked, in its own words, whether they would like the clinical team to reach "
+            "out to them. Call answer with yes or no and say nothing else." + _BRIEF_TAIL
         )
     if step == Step.LINK_OFFER:
         return (
