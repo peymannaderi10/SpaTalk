@@ -71,7 +71,7 @@ from spatalk.voice.handlers import register_tool_handlers
 # Llm failover plan, Task F2: two vendors behind one place in the pipeline.
 from spatalk.voice.llm_router import LLMRouter
 from spatalk.voice.steps import sync_context
-from spatalk.voice.observers import TurnLatencyObserver, UsageObserver
+from spatalk.voice.observers import TurnLatencyObserver, TurnSignalObserver, UsageObserver
 from spatalk.voice.processors import FillerProcessor, OutputGuardProcessor, RulesGateProcessor
 from spatalk.voice.resilience import idle_frames, error_frames
 from spatalk.voice.session import VoiceSession
@@ -350,7 +350,9 @@ async def run_call(websocket: WebSocket, token: str, ctx) -> None:
             enable_metrics=True,
             enable_usage_metrics=True,
         ),
-        observers=[UsageObserver(session), TurnLatencyObserver(session)],
+        observers=[
+            UsageObserver(session), TurnLatencyObserver(session), TurnSignalObserver(session)
+        ],
         idle_timeout_secs=45,
         cancel_on_idle_timeout=False,
     )

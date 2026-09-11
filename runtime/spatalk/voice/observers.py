@@ -11,7 +11,12 @@ from pipecat.frames.frames import (
     MetricsFrame,
     UserStoppedSpeakingFrame,
 )
-from pipecat.metrics.metrics import LLMUsageMetricsData, TTFBMetricsData, TTSUsageMetricsData
+from pipecat.metrics.metrics import (
+    LLMUsageMetricsData,
+    TTFBMetricsData,
+    TTSUsageMetricsData,
+    TurnMetricsData,
+)
 from pipecat.observers.base_observer import BaseObserver, FramePushed
 
 from spatalk.voice.session import VoiceSession
@@ -123,6 +128,50 @@ class UsageObserver(BaseObserver):
                     self._s.stage_ttfb_ms.setdefault(stage, []).append(
                         int(round(float(d.value or 0) * 1000))
                     )
+
+
+class TurnSignalObserver(BaseObserver):
+    """What the turn analyser thought, and when it never got to think.
+
+    `TurnMetricsData` carries `is_complete`, `probability` and `e2e_processing_time_ms`; the
+    silence fallback carries nothing at all, because on a timeout the analyser returns no
+    metrics and the turn strategy pushes no `MetricsFrame`. So a `UserStoppedSpeakingFrame`
+    with no verdict since the last one *is* the fallback firing, and that is the reading
+    `TURN_END_FALLBACK_SECS` needs before anyone touches it (voice-regression-V1 refused to
+    tune it from a desk; this is the instrument that ends the argument).
+
+    Its own `_seen` set, for the same reason `UsageObserver` has one: a `MetricsFrame` is
+    pushed once per processor hop, which is what mis-metered the founder's call by 8x.
+    """
+
+    def __init__(self, session: VoiceSession):
+        super().__init__()
+        self._s = session
+        self._seen: set[int] = set()
+        # A verdict has arrived and the turn it belongs to has not closed yet.
+        self._verdict = False
+
+    async def on_push_frame(self, data: FramePushed):
+        f = data.frame
+        if not isinstance(f, (MetricsFrame, UserStoppedSpeakingFrame)):
+            return
+        if f.id in self._seen:
+            return
+        self._seen.add(f.id)
+        if isinstance(f, UserStoppedSpeakingFrame):
+            if not self._verdict:
+                self._s.record_signal("turn_no_prediction")
+            self._verdict = False
+            return
+        for d in f.data:
+            if isinstance(d, TurnMetricsData):
+                self._verdict = True
+                self._s.record_signal(
+                    "turn_prediction",
+                    is_complete=d.is_complete,
+                    probability=d.probability,
+                    ms=d.e2e_processing_time_ms,
+                )
 
 
 class TurnLatencyObserver(BaseObserver):

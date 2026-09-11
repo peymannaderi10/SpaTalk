@@ -10,6 +10,7 @@ from spatalk.brain.capabilities import Capabilities
 from spatalk.brain.flow import Slots
 from spatalk.brain.requests import ConversationRef
 from spatalk.clock import Clock
+from spatalk.ops.signals import SignalLog
 from spatalk.tenants.schema import TenantConfig
 
 
@@ -52,6 +53,11 @@ class VoiceSession:
     # refs are here so a log line can name one, never so a sentence can. Per call, never
     # persisted.
     receipts: list[str] = field(default_factory=list)
+    # --- rung 0 (model-words memo, §6) ---
+    # Every repeat, re-prompt, repair, refused tool, barge-in and turn verdict of this call,
+    # as counts and closed labels. `spatalk.ops.signals` refuses anything that could hold a
+    # word somebody said, and Task 7 writes it to the conversation record at the end.
+    signals: SignalLog = field(default_factory=SignalLog)
     latencies_ms: list[int] = field(default_factory=list)
     usage: dict[str, float] = field(
         default_factory=lambda: {
@@ -105,6 +111,10 @@ class VoiceSession:
         from spatalk.voice.echo import remember
 
         self.recent_bot_text = remember(self.recent_bot_text, strip_audio_tags(text))
+
+    def record_signal(self, kind: str, **detail) -> None:
+        """Record a rung-0 signal, so a processor does not have to reach two levels deep."""
+        self.signals.record(kind, **detail)
 
     def remember_receipt(self, kind: str, ref: str) -> None:
         """Record proof of an action, before the sentence that asserts it is spoken."""

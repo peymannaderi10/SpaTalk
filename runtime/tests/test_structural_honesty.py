@@ -162,3 +162,17 @@ def test_no_model_utterance_reaches_a_channel_without_the_guard():
             continue
         assert path.name == "processors.py", f"{path} calls guard() outside the egress"
         assert src.count("guard(self") + src.count("= guard(") == 1, "more than one guard call"
+
+
+def test_the_signal_log_is_a_second_place_free_text_cannot_reach():
+    """The log is a new per-call record, so it gets the same fence the notes got."""
+    from pathlib import Path as _Path
+
+    from spatalk.ops.signals import CLOSED_VALUE, DETAIL_KEYS, SIGNAL_KINDS
+
+    assert "text" not in DETAIL_KEYS and "said" not in DETAIL_KEYS and "notes" not in DETAIL_KEYS
+    assert CLOSED_VALUE.pattern == r"^[a-z_]{1,40}$"
+    src = (_Path(RUNTIME) / "spatalk" / "ops" / "signals.py").read_text(encoding="utf-8")
+    for forbidden in ("TTSSpeakFrame", "render_script", "SmsPort", "send_text", "ItemDraft("):
+        assert forbidden not in src, forbidden
+    assert all(k == k.lower() and " " not in k for k in SIGNAL_KINDS)

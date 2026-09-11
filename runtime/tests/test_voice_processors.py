@@ -670,3 +670,58 @@ async def test_a_fixed_script_from_upstream_goes_out_with_its_receipt_and_is_hel
         session2.cfg.scripts.cannot_complete
     ]
     assert len(ledger2.items) == 1, "the retraction filed the item its sentence asserts"
+
+
+# --- rung 0: the call reports on itself (memo §6) -----------------------------------------
+
+
+async def test_a_caller_who_repeats_himself_is_recorded(fixed_clock):
+    """Sandbank et al.: repetition and re-prompt counts are the cheapest members of the
+    feature family that added about 20% F1 to failure detection. The comparison happens in
+    memory and only its similarity is kept."""
+    from pipecat.processors.frame_processor import FrameDirection
+
+    from spatalk.voice.processors import RulesGateProcessor
+
+    session, _ = _session(fixed_clock)
+    proc = RulesGateProcessor(session)
+    pushed = []
+
+    async def collect(frame, direction=FrameDirection.DOWNSTREAM):
+        pushed.append(frame)
+
+    proc.push_frame = collect
+    for text in ("can you book me that facial", "can you book me that facial, the mesojet one"):
+        await proc.process_frame(
+            TranscriptionFrame(text=text, user_id="u", timestamp="t"), FrameDirection.DOWNSTREAM
+        )
+    assert session.signals.counts()["caller_repeat"] == 1
+    assert session.signals.turn == 2
+    for s in session.signals.as_json()["signals"]:
+        assert set(s["detail"]) <= {"similarity"}
+
+
+async def test_the_turn_analysers_verdict_is_recorded_and_so_is_its_absence(fixed_clock):
+    """OSS §8.4(a): five fields, free, and the prerequisite for every turn-taking decision.
+    The silence fallback emits no prediction at all — verified in the installed source: on a
+    timeout `_process_speech_segment` returns `result_data = None` and the strategy pushes no
+    `MetricsFrame` — so "the fallback fired" is a turn with no verdict, and that is the shape
+    this records."""
+    from pipecat.frames.frames import MetricsFrame, UserStoppedSpeakingFrame
+    from pipecat.metrics.metrics import TurnMetricsData
+
+    from spatalk.voice.observers import TurnSignalObserver
+    from tests.test_ops_latency import _push
+
+    session, _ = _session(fixed_clock)
+    obs = TurnSignalObserver(session)
+    md = TurnMetricsData(
+        processor="BaseSmartTurn", is_complete=False, probability=0.22, e2e_processing_time_ms=13.4
+    )
+    await _push(obs, MetricsFrame(data=[md]))
+    await _push(obs, UserStoppedSpeakingFrame())
+    await _push(obs, UserStoppedSpeakingFrame())
+    c = session.signals.counts()
+    assert c["turn_prediction"] == 1 and c["turn_no_prediction"] == 1
+    detail = session.signals.as_json()["signals"][0]["detail"]
+    assert detail["is_complete"] is False and detail["probability"] == 0.22 and detail["ms"] == 13

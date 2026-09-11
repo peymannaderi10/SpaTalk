@@ -14,6 +14,7 @@ import time
 from collections.abc import Callable
 
 from loguru import logger
+from rapidfuzz import fuzz
 from pipecat.frames.frames import (
     BotStartedSpeakingFrame,
     BotStoppedSpeakingFrame,
@@ -35,7 +36,7 @@ from spatalk.brain.audio_tags import drop_unknown_tags
 from spatalk.brain.guard import guard
 from spatalk.brain.outcomes import Refused
 from spatalk.brain.renderer import render, render_script
-from spatalk.brain.flow import Slots, Step, draft_from, next_step, open_flow
+from spatalk.brain.flow import Slots, Step, draft_from, next_step, open_flow, step_question
 from spatalk.brain.requests import EscalateRequest
 from spatalk.brain.rules import health_context_mentioned, is_fragment, rules_gate
 from spatalk.voice.echo import scrub_echo
@@ -58,6 +59,16 @@ ECHO_TAIL_SECS = 1.0
 # can close with the caller's words in it.
 STALE_INTERIM_SECS = 1.5
 
+# The caller said it again (rung 0, memo §6). `partial_ratio` rather than the plain ratio,
+# because a caller who repeats himself usually adds to it: on the founder's call "can you
+# book me that facial" came back as "can you book me that facial, the mesojet one", which
+# the plain ratio scores at 0.76 on the length difference alone and the partial at 1.0.
+# Floored at three words — the same floor the barge-in gate uses — so a one-word answer
+# cannot match every longer sentence that follows it. The comparison happens in memory and
+# only the similarity is kept.
+CALLER_REPEAT = 0.80
+CALLER_REPEAT_MIN_WORDS = 3
+
 
 class RulesGateProcessor(FrameProcessor):
     """Sits after STT. Band-3 lexicon hits are answered with the fixed script and the model never runs."""
@@ -75,6 +86,9 @@ class RulesGateProcessor(FrameProcessor):
         # Words from utterances that carried no content, waiting to go in front of the next
         # one that does (see `_turn_text`).
         self._held_fragment = ""
+        # The caller's previous turn, for the repeat signal only. One turn deep, exactly as
+        # `recent_bot_text` is for the assistant's side, and never persisted.
+        self._last_final: str | None = None
 
     async def _promote_stale_interim(self, frame: InterimTranscriptionFrame):
         await asyncio.sleep(STALE_INTERIM_SECS)
@@ -170,6 +184,12 @@ class RulesGateProcessor(FrameProcessor):
             # allowance for a tool the step did not offer.
             self._s.idle_nudges = 0
             self._s.ignored_tools = 0
+            self._s.signals.next_turn()
+            previous, self._last_final = self._last_final, frame.text
+            if previous and len(previous.split()) >= CALLER_REPEAT_MIN_WORDS:
+                similarity = fuzz.partial_ratio(previous.lower(), frame.text.lower()) / 100.0
+                if similarity >= CALLER_REPEAT:
+                    self._s.record_signal("caller_repeat", similarity=similarity)
             if health_context_mentioned(frame.text, self._s.cfg) and not self._s.ref.health_context:
                 self._s.ref = self._s.ref.model_copy(update={"health_context": True})
             # A bare answer to "Could I get your first name?" is a name, whatever word the
@@ -289,6 +309,13 @@ class OutputGuardProcessor(FrameProcessor):
     def _flow_open(self) -> bool:
         return bool(self._s.slots.flow) and not self._s.slots.ended_flow
 
+    def _question_key(self) -> str | None:
+        """The `scripts` key of the open step's question, for the rung-0 signals."""
+        q = step_question(
+            next_step(self._s.slots, self._s.cfg, "voice"), self._s.slots, self._s.cfg, "voice"
+        )
+        return q[0] if q else None
+
     async def _release_held(self):
         held, self._held = self._held, None
         if held is not None:
@@ -355,6 +382,7 @@ class OutputGuardProcessor(FrameProcessor):
             self._s.remember_receipt("item", str(item_id))
             spoken = render_script("cannot_complete", self._s.cfg, now, urgent=False)
         logger.warning("guard blocked {} ({}): {!r}", g.family, g.matched, sentence)
+        self._s.record_signal("guard_block", family=g.family)
         self._retracting = True
         try:
             await self._egress(
@@ -425,6 +453,9 @@ class OutputGuardProcessor(FrameProcessor):
                 # The rule holds whatever the turn contained; a caller who has stopped
                 # talking is picked up by the "still there?" nudge, not by a third repeat.
                 logger.info("step question not repeated: {!r}", question)
+                key = self._question_key()
+                if key:
+                    self._s.record_signal("repeat", script=key)
                 question = None
             if question is None and not self._s.tool_called_this_turn:
                 # The runtime has no question for this step, so the model's is all the caller
@@ -435,10 +466,16 @@ class OutputGuardProcessor(FrameProcessor):
                 self._held = None
             await self.push_frame(frame, direction)
             if question:
+                key = self._question_key()
+                if key and key.endswith("_again"):
+                    # The same step asked a second time after a miss: the re-prompt count is
+                    # half of the repair measurement the phase-B ladder is built from.
+                    self._s.record_signal("reprompt", script=key)
                 self._s.remember_question(question)
                 await self._egress(question, model_words=False)
         elif isinstance(frame, InterruptionFrame):
             self._buffer, self._dropping, self._held = "", False, None
+            self._s.record_signal("bargein")
             await self.push_frame(frame, direction)
         else:
             if isinstance(frame, TTSSpeakFrame) and direction == FrameDirection.DOWNSTREAM:
