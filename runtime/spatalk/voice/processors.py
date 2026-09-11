@@ -48,6 +48,7 @@ from spatalk.brain.flow import (
     step_tools,
 )
 from spatalk.brain.requests import EscalateRequest
+from spatalk.brain.resolve import is_question
 from spatalk.brain.rules import (
     INTERRUPT_MIN_WORDS,
     health_context_mentioned,
@@ -295,6 +296,13 @@ class RulesGateProcessor(FrameProcessor):
             # 2026-09-11 15:53:14 and 15:54:05). A held fragment never gets here, so it
             # cannot buy a fresh breath in the middle of a monologue.
             self._s.reset_speech_budget()
+            # The caller's own words for this turn, and whether they asked something. The
+            # tool handlers read these because their only question detector runs on the
+            # argument the model chose (15:55:00.682: "How much does it cost?" arrived as
+            # `choose_service{'said': 'MesoJet and Sound Therapy facial'}`).
+            self._s.caller_said = frame.text
+            self._s.caller_asked = is_question(frame.text)
+            self._s.answer_owed_spent = False
             self._s.signals.next_turn()
             previous, self._last_final = self._last_final, frame.text
             if previous and len(previous.split()) >= CALLER_REPEAT_MIN_WORDS:

@@ -1315,3 +1315,61 @@ async def test_a_band_three_word_over_the_assistant_stops_the_audio_before_its_s
     assert "911" in spoken[1].text
     assert len(ledger.items) == 1 and ledger.items[0].type == "escalation_emergency"
     assert session.context.messages == [{"role": "user", "content": "Seizure."}]
+
+
+# --- the caller's own turn, for the tool handler to read (founder call 14ea2579) ----------
+#
+# 15:55:00.682: the caller's whole turn was "How much does it cost?" and the model recorded
+# it as `choose_service{'said': 'MesoJet and Sound Therapy facial'}`. The engine's only
+# question detector runs on the ARGUMENT, so it never saw a question. The runtime has had
+# the caller's real words at the gate all along; this is where they get put down.
+
+
+async def test_the_gate_records_whether_the_callers_turn_asked_something(fixed_clock):
+    from spatalk.brain.flow import Slots
+    from spatalk.voice.processors import RulesGateProcessor
+
+    session, _ = _session(fixed_clock)
+    session.slots = Slots(flow="new_booking", returning_client=False, offers_done=True)
+    session.answer_owed_spent = True
+    await run_test(
+        RulesGateProcessor(session),
+        frames_to_send=[
+            TranscriptionFrame(text="How much does it cost?", user_id="u", timestamp="t")
+        ],
+        expected_down_frames=[TranscriptionFrame], start_timeout=10.0,
+    )
+    assert session.caller_said == "How much does it cost?"
+    assert session.caller_asked is True
+    assert session.answer_owed_spent is False
+    # The next turn answers rather than asks, and the flag goes with it.
+    await run_test(
+        RulesGateProcessor(session),
+        frames_to_send=[TranscriptionFrame(text="The mesojet one.", user_id="u", timestamp="t")],
+        expected_down_frames=[TranscriptionFrame], start_timeout=10.0,
+    )
+    assert session.caller_said == "The mesojet one."
+    assert session.caller_asked is False
+
+
+async def test_a_held_fragment_is_part_of_the_question_the_gate_records(fixed_clock):
+    """The question detector sees the same merged turn the model does."""
+    from pipecat.tests.utils import SleepFrame
+
+    from spatalk.brain.flow import Slots
+    from spatalk.voice.processors import RulesGateProcessor
+
+    session, _ = _session(fixed_clock)
+    session.slots = Slots(flow="new_booking", returning_client=False, offers_done=True)
+    await run_test(
+        RulesGateProcessor(session),
+        frames_to_send=[
+            TranscriptionFrame(text=" Um.", user_id="u", timestamp="t"),
+            SleepFrame(sleep=0.2),
+            TranscriptionFrame(text="What's the price?", user_id="u", timestamp="t"),
+            SleepFrame(sleep=0.2),
+        ],
+        expected_down_frames=[TranscriptionFrame], start_timeout=10.0,
+    )
+    assert "Um." in session.caller_said and "What's the price?" in session.caller_said
+    assert session.caller_asked is True

@@ -95,6 +95,17 @@ class VoiceSession:
     spoken_sentences: int = 0
     spoken_items: int = 0
     turn_capped: bool = False
+    # --- answer first (founder call 14ea2579, 15:55:00.682) ---
+    # The caller's words for the turn in flight and nothing longer: replaced on every final
+    # transcription, and NEVER logged, never put in a signal detail, never written to an item
+    # and never persisted. That is the same fence `RulesGateProcessor._last_final` already
+    # sits behind. `caller_asked` is the question detector's verdict on those same words,
+    # which is what the tool handlers had no way to see: their only detector ran on the
+    # argument the model chose, so "How much does it cost?" arrived as
+    # `choose_service{'said': 'MesoJet and Sound Therapy facial'}` and no question was found.
+    caller_said: str = ""
+    caller_asked: bool = False
+    answer_owed_spent: bool = False
     # --- operations (operations plan, Task E5) ---
     # Every TTFB reading of the call, in ms, filed under the stage that produced it. The
     # turn number in `latencies_ms` says the caller waited; this says which vendor made
