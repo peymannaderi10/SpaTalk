@@ -415,3 +415,96 @@ async def test_a_silent_model_turn_still_gets_the_question(fixed_clock):
     assert [f.text for f in down if isinstance(f, TTSSpeakFrame)] == [
         session.cfg.scripts.ask_after_offers
     ]
+
+
+async def test_a_payment_match_files_the_item_and_leaves_the_line_open(fixed_clock):
+    """Founder call 2026-09-10 20:56:19: "rules gate: payment ('payment') -> item 17" and, in
+    the same millisecond, "PipelineWorker#0: Closing. Waiting for EndFrame#0". The call died
+    mid-booking. docs/reference/flows.md section 1.8 gives that power to the emergency script
+    alone, whose wording tells the caller to hang up and dial 911; every other band-3 script
+    promises a callback and the caller is still on the line when it finishes."""
+    from spatalk.voice.processors import RulesGateProcessor
+
+    session, ledger = _session(fixed_clock)
+    ended = []
+
+    class FakeWorker:
+        async def queue_frames(self, frames): ended.extend(type(f).__name__ for f in frames)
+
+    session.worker = FakeWorker()
+    down, _ = await run_test(
+        RulesGateProcessor(session),
+        frames_to_send=[
+            TranscriptionFrame(
+                text="Can I pay over the phone with my credit card?", user_id="u", timestamp="t"
+            )
+        ],
+        expected_down_frames=[TTSSpeakFrame], start_timeout=10.0,
+    )
+    assert down[0].text == session.cfg.scripts.payment
+    assert ledger.items[0].type == "escalation_payment" and session.band == 3
+    assert ended == [] and session.ended is False
+
+
+async def test_a_complaint_match_leaves_the_line_open_too(fixed_clock):
+    from spatalk.voice.processors import RulesGateProcessor
+
+    session, ledger = _session(fixed_clock)
+    ended = []
+
+    class FakeWorker:
+        async def queue_frames(self, frames): ended.extend(type(f).__name__ for f in frames)
+
+    session.worker = FakeWorker()
+    await run_test(
+        RulesGateProcessor(session),
+        frames_to_send=[
+            TranscriptionFrame(text="I want a refund, this was terrible", user_id="u", timestamp="t")
+        ],
+        expected_down_frames=[TTSSpeakFrame], start_timeout=10.0,
+    )
+    assert ledger.items[0].type == "escalation_complaint"
+    assert ended == [] and session.ended is False
+
+
+async def test_an_emergency_match_is_the_one_that_ends_the_call(fixed_clock):
+    from spatalk.voice.processors import RulesGateProcessor
+
+    session, ledger = _session(fixed_clock)
+    ended = []
+
+    class FakeWorker:
+        async def queue_frames(self, frames): ended.extend(type(f).__name__ for f in frames)
+
+    session.worker = FakeWorker()
+    down, _ = await run_test(
+        RulesGateProcessor(session),
+        frames_to_send=[TranscriptionFrame(text="I can't breathe", user_id="u", timestamp="t")],
+        expected_down_frames=[TTSSpeakFrame], start_timeout=10.0,
+    )
+    assert "911" in down[0].text and ledger.items[0].type == "escalation_emergency"
+    assert ended == ["EndFrame"] and session.ended is True
+
+
+async def test_a_bare_answer_at_the_name_step_is_not_an_escalation(fixed_clock):
+    """The founder's own name, heard as "payment" at "Could I get your first name?". The gate
+    lets it through to the model, which is where an answer to the name question belongs."""
+    from spatalk.brain.flow import Slots
+    from spatalk.voice.processors import RulesGateProcessor
+
+    session, ledger = _session(fixed_clock)
+    ended = []
+
+    class FakeWorker:
+        async def queue_frames(self, frames): ended.extend(type(f).__name__ for f in frames)
+
+    session.worker = FakeWorker()
+    session.slots = Slots(
+        flow="new_booking", returning_client=True, practitioner="any", service_id="mesojet_facial"
+    )
+    await run_test(
+        RulesGateProcessor(session),
+        frames_to_send=[TranscriptionFrame(text=" Yeah, payment.", user_id="u", timestamp="t")],
+        expected_down_frames=[TranscriptionFrame], start_timeout=10.0,
+    )
+    assert ledger.items == [] and ended == [] and session.band == 1

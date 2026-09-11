@@ -35,7 +35,7 @@ from spatalk.brain.audio_tags import drop_unknown_tags
 from spatalk.brain.guard import guard
 from spatalk.brain.outcomes import Refused
 from spatalk.brain.renderer import render, render_script
-from spatalk.brain.flow import Slots, draft_from, open_flow
+from spatalk.brain.flow import Slots, Step, draft_from, next_step, open_flow
 from spatalk.brain.requests import EscalateRequest
 from spatalk.brain.rules import health_context_mentioned, rules_gate
 from spatalk.voice.echo import scrub_echo
@@ -143,7 +143,13 @@ class RulesGateProcessor(FrameProcessor):
         if isinstance(frame, TranscriptionFrame) and direction == FrameDirection.DOWNSTREAM:
             if health_context_mentioned(frame.text, self._s.cfg) and not self._s.ref.health_context:
                 self._s.ref = self._s.ref.model_copy(update={"health_context": True})
-            gate = rules_gate(frame.text, self._s.cfg)
+            # A bare answer to "Could I get your first name?" is a name, whatever word the
+            # recogniser produced for it (founder call 2026-09-10 20:56:19, where the
+            # founder's name Peyman came through as "payment").
+            at_name = (
+                next_step(self._s.slots, self._s.cfg, self._s.ref.channel) == Step.NAME
+            )
+            gate = rules_gate(frame.text, self._s.cfg, name_step=at_name)
             if gate:
                 self._s.band = 3
                 now = self._s.clock.now()
@@ -180,9 +186,16 @@ class RulesGateProcessor(FrameProcessor):
                 await self.push_frame(
                     TTSSpeakFrame(text=render(out, self._s.cfg, now), append_to_context=True)
                 )
-                self._s.ended = True
-                if self._s.worker is not None:
-                    await self._s.worker.queue_frames([EndFrame()])
+                # Only the emergency script ends the call, because it is the only one whose
+                # wording tells the caller to hang up and dial 911 (flows.md §1.8). The
+                # complaint, payment and human-request scripts all promise a callback and the
+                # caller is still on the line when they finish: on the founder's call
+                # 2026-09-10 20:56:19 a mis-transcribed first name matched the payment
+                # lexicon and the EndFrame that followed dropped a live booking.
+                if gate.reason == "emergency":
+                    self._s.ended = True
+                    if self._s.worker is not None:
+                        await self._s.worker.queue_frames([EndFrame()])
                 return
         await self.push_frame(frame, direction)
 

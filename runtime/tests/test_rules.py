@@ -81,3 +81,33 @@ def test_an_emergency_gates_to_its_own_reason_ahead_of_everything():
     assert rules_gate("I can't breathe, get me a real person", cfg).reason == "emergency"
     # A rash is a clinical question, not an emergency.
     assert rules_gate("I have a rash after my peel", cfg).reason == "clinical"
+
+
+def test_a_bare_answer_at_the_name_step_is_not_a_billing_or_complaint_escalation():
+    """Founder call 2026-09-10 20:56:19. The recogniser heard the caller's first name, Peyman,
+    as "payment"; the payment lexicon matched the two-word answer to "Could I get your first
+    name?", an urgent escalation with no name on it was filed and the call ended. A bare
+    answer to the name question is a name, whatever word came back, so the two lexicons whose
+    words collide with first names stand down for it. The three whose scripts cannot wait -
+    an emergency, a request for a person, a clinical concern - do not."""
+    from spatalk.brain.rules import rules_gate
+
+    cfg = _cfg()
+    # Outside the name step the lexicon is unchanged.
+    assert rules_gate("Yeah, payment.", cfg).reason == "payment"
+    assert rules_gate("Yeah, payment.", cfg, name_step=True) is None
+    assert rules_gate("It's Bill.", cfg, name_step=True) is None
+    assert rules_gate("Um, refund", cfg, name_step=True) is None
+    # "Sue" is a first name and a word in the complaint lexicon.
+    assert rules_gate("Sue", cfg).reason == "complaint"
+    assert rules_gate("Sue", cfg, name_step=True) is None
+    # A whole sentence is not a name, so the lexicons still apply at the name step.
+    assert (
+        rules_gate("Actually, can I pay over the phone with my card?", cfg, name_step=True).reason
+        == "payment"
+    )
+    # The three that cannot wait gate however few words the caller uses.
+    assert rules_gate("Seizure.", cfg, name_step=True).reason == "emergency"
+    assert rules_gate("I can't breathe", cfg, name_step=True).reason == "emergency"
+    assert rules_gate("Operator", cfg, name_step=True).reason == "human_request"
+    assert rules_gate("Burning.", cfg, name_step=True).reason == "clinical"

@@ -30,6 +30,7 @@ from spatalk.brain.prompt import build_system_prompt
 from spatalk.brain.renderer import render, render_script
 from spatalk.brain.flow import (
     Slots,
+    Step,
     apply,
     draft_from,
     next_step,
@@ -523,7 +524,13 @@ class Brain:
         slots = slots or Slots()
         if health_context_mentioned(user_text, cfg) and not ref.health_context:
             ref = ref.model_copy(update={"health_context": True})
-        gate = rules_gate(user_text, cfg)
+        # A bare answer to the name question is a name, whatever word the recogniser or the
+        # phone keypad produced for it (founder call 2026-09-10 20:56:19).
+        gate = rules_gate(
+            user_text,
+            cfg,
+            name_step=next_step(slots, cfg, ref.channel) == Step.NAME,
+        )
         if gate and gate.reason != "clinical":
             out = await self._caps.escalate(ref, EscalateRequest(reason=gate.reason))
             return TurnResult(
