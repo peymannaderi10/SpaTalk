@@ -40,11 +40,18 @@ def _hours_text(cfg: TenantConfig) -> str:
 
 
 def _services_text(cfg: TenantConfig) -> str:
+    """The catalogue as the assistant answers from it: name, price, and the one detail.
+
+    No ids. Nothing the model can call takes a service id — `choose_service` takes the
+    caller's own words and `spatalk.brain.resolve` matches them against the catalogue in
+    code — so the ids were 779 characters of the Skincentrix prompt, 210 tokens on every
+    turn of every call, bought for nothing (cost gap C1).
+    """
     lines = []
     for s in cfg.services:
         extra = " (consultation first)" if s.consult_required else ""
         desc = f" {s.description}" if s.description else ""
-        lines.append(f"- {s.name} [{s.id}]: {s.price_text}{extra}.{desc}")
+        lines.append(f"- {s.name}: {s.price_text}{extra}.{desc}")
     return "\n".join(lines)
 
 
@@ -129,7 +136,7 @@ WRAPPING UP
 
 HOURS: {_hours_text(cfg)}
 
-SERVICES (name [id]: price):
+SERVICES (name: price):
 {_services_text(cfg)}
 
 {_faq_text(cfg)}FACTS ABOUT {cfg.name.upper()}
