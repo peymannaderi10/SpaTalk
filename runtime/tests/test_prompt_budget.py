@@ -150,6 +150,28 @@ def test_the_static_half_of_the_request_stays_inside_its_budget():
     assert cad_per_minute(tokens) < 0.010
 
 
+def test_three_in_a_breath_covers_people_as_well_as_treatments():
+    """A list of names is a monologue the caller pays for by the second.
+
+    On the founder's call of 2026-09-10 "who is available?" was answered with nine
+    practitioners in one breath — 248 characters, 13 seconds of speech, the second longest
+    utterance of the call. "Never list more than three options" did not obviously cover
+    people, so the rule now says both. No fact leaves the prompt: the team is still in the
+    knowledge base and `spatalk.brain.resolve.match_practitioner` still matches any of them
+    by name, whether or not the assistant read the list out.
+    """
+    from spatalk.brain.prompt import build_system_prompt
+
+    cfg = _cfg()
+    p = build_system_prompt(cfg, "voice", NOW).lower()
+    assert "more than three" in p
+    assert "treatments or three people" in p
+    assert "offer to go through more if they want" in p
+    # Every practitioner is still a fact the assistant holds.
+    for member in cfg.team:
+        assert member.name in build_system_prompt(cfg, "voice", NOW)
+
+
 def test_a_service_id_is_never_spent_on_the_prompt():
     """No tool takes a service id from the model, so the ids bought nothing but tokens.
 
