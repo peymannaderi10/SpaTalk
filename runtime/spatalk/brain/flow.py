@@ -517,7 +517,11 @@ def unfiled_record(slots: Slots, cfg: TenantConfig, channel: str) -> bool:
     """Every required slot is on the record and no item was ever written for it."""
     if slots.flow is None or slots.filed or slots.pending is not None:
         return False
-    return next_step(slots, cfg, channel) == Step.COMPLETE
+    # The team-note question stores nothing on the item (the answer lives in the transcript),
+    # so a record that is short of only that answer has given the ledger everything it needs:
+    # a caller who hangs up while it is open is still filed (founder call 14ea2579, 15:56).
+    probe = slots if slots.team_note_asked else slots.with_(team_note_asked=True)
+    return next_step(probe, cfg, channel) in (Step.COMPLETE, Step.LINK_OFFER)
 
 
 def apply(

@@ -329,3 +329,18 @@ async def test_no_to_the_offer_sends_nothing_and_claims_nothing(fixed_clock):
     assert r2.reply == ref.tenant.scripts.link_declined
     low = r2.reply.lower()
     assert "text" not in low and "sent" not in low
+
+
+def test_a_record_that_only_lacks_the_team_note_answer_is_still_unfiled_work(fixed_clock):
+    """Founder call 14ea2579 (2026-09-11 15:56) and its verifier: the "anything for the team?"
+    question stores nothing on the item, so a caller who hangs up while it is open has given
+    the ledger everything it needs. The end of the call must file that record; one that is
+    genuinely short of a required slot must not be filed."""
+    from spatalk.brain.flow import unfiled_record
+
+    _brain, ref, _ledger, _sms, _llm = _world(fixed_clock, [])
+    short = _one_slot_short_booking()
+    assert short.team_note_asked is False
+    assert unfiled_record(short, ref.tenant, "voice") is True
+    assert unfiled_record(short.with_(preferred_window=None), ref.tenant, "voice") is False
+
