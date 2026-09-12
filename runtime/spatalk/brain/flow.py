@@ -17,6 +17,7 @@ from spatalk.brain.breath import item_lexicon
 from spatalk.brain.ports import ItemDraft
 from spatalk.brain.requests import ContactInfo, PreferredWindow
 from spatalk.brain.resolve import (
+    Match,
     first_name_of,
     is_question,
     match_practitioner,
@@ -715,14 +716,20 @@ def _apply(
         said = args.get("said", "")
         if is_question(said):
             return _reject("bad_value", name, slots, cfg, channel, detail="question_shaped")
-        return _practitioner(slots, said, cfg)
+        heard = _heard(said, caller_said, lambda t: match_practitioner(t, cfg))
+        if heard is None:
+            return _reject("bad_value", name, slots, cfg, channel, detail="question_shaped")
+        return _practitioner(slots, heard, cfg, caller_said=caller_said)
     if name == "choose_service":
         # A question is not an answer (founder call 2026-09-11 01:41:26, where "Sorry, what
         # was the- what was the facial one again?" filled the slot and moved the step on).
         said = args.get("said", "")
         if is_question(said):
             return _reject("bad_value", name, slots, cfg, channel, detail="question_shaped")
-        return _service(slots, said, cfg)
+        heard = _heard(said, caller_said, lambda t: match_service(t, cfg))
+        if heard is None:
+            return _reject("bad_value", name, slots, cfg, channel, detail="question_shaped")
+        return _service(slots, heard, cfg, caller_said=caller_said)
     if name == "give_name":
         return _name(slots, args.get("first_name", ""), cfg)
     if name == "give_phone":
@@ -739,6 +746,39 @@ def _apply(
     # A name that passed `_tool_allowed` and is handled nowhere above: not reachable from
     # the tool list the model is given, and refused in words rather than in silence anyway.
     return _reject("not_offered", name, slots, cfg, channel)
+
+
+def _heard(said: str, caller_said: str, match) -> str | None:
+    """What the resolver should read: the model's argument, which strips "uh, sure, the ...
+    one" so the resolver sees a clean name — or None when the caller asked a question that
+    nothing resolves (founder call dc229ede, 2026-09-11 22:49: "I have pigmentation on my
+    arms, do you have anything for that?" became `choose_service('pigmentation on my arms')`
+    and the runtime re-asked "which treatment" instead of answering). A miss on a question
+    is the question, and the turn goes back to the model.
+    """
+    if caller_said and match(said).kind == "none" and is_question(caller_said):
+        return None
+    return said
+
+
+def _caller_near_miss(caller_said: str, value: str, match) -> bool:
+    """Did the caller say something that *almost* names the value the model recorded, without
+    ever naming it? "Ellen" for Helen, "MiroJet" for MesoJet. Read word by word, because the
+    whole sentence resolves to nothing under its own noise. A caller who named it ("the
+    MesoJet one") or who said nothing like it at all ("how much does it cost?" while the
+    model carried the treatment over from earlier) is not a near miss.
+    """
+    named = False
+    near = False
+    for word in re.findall(r"[a-z]{4,}", caller_said.lower()):
+        m = match(word)
+        if m.value != value:
+            continue
+        if m.kind == "exact":
+            named = True
+        elif m.kind == "confirm":
+            near = True
+    return near and not named
 
 
 _SLOT_FIELDS = {
@@ -944,8 +984,14 @@ def _after_slot(slots: Slots, cfg: TenantConfig) -> Applied:
     return Applied(slots=slots)
 
 
-def _practitioner(slots: Slots, said: str, cfg: TenantConfig) -> Applied:
+def _practitioner(slots: Slots, said: str, cfg: TenantConfig, *, caller_said: str = "") -> Applied:
     m = match_practitioner(said, cfg)
+    if m.kind == "exact" and _caller_near_miss(caller_said, m.value or "", lambda t: match_practitioner(t, cfg)):
+        # Founder call dc229ede (2026-09-11 22:51): "is there an Ellen?" reached the tool as
+        # `said='Helen Courbetis'`, exact, and the spec's "Did you mean Helen?" never
+        # happened because the model had corrected the name first. A name the caller almost
+        # said is a slip until they say yes to it.
+        m = Match(kind="confirm", value=m.value, candidates=(m.value,))
     if m.kind == "exact":
         return _after_slot(slots.with_(pending=None, practitioner=m.value), cfg)
     if m.kind == "confirm":
@@ -960,8 +1006,11 @@ def _practitioner(slots: Slots, said: str, cfg: TenantConfig) -> Applied:
     return Applied(slots=missed)
 
 
-def _service(slots: Slots, said: str, cfg: TenantConfig) -> Applied:
+def _service(slots: Slots, said: str, cfg: TenantConfig, *, caller_said: str = "") -> Applied:
     m = match_service(said, cfg)
+    if m.kind == "exact" and _caller_near_miss(caller_said, m.value or "", lambda t: match_service(t, cfg)):
+        # The same rule as a name: "the MiroJet one" almost said MesoJet, so it is read back.
+        m = Match(kind="confirm", value=m.value, candidates=(m.value,))
     if m.kind == "exact":
         return _after_slot(slots.with_(pending=None, service_id=m.value), cfg)
     if m.kind == "confirm":
@@ -1256,6 +1305,13 @@ _BRIEF_TAIL = (
 # transcription problem, and a model that tidies it up hides it (voice-regression-V1, open
 # item 2). The steps whose value is a person's own words get it said out loud.
 _STEP_EXTRA = {
+    # Founder call dc229ede (2026-09-11 22:50): "would you like to hear more about any of
+    # those?" — "sure, the MesoJet one" — and the runtime moved straight to the practitioner.
+    Step.SERVICE: (
+        " If your last question offered to say more about a treatment and they name one, "
+        "describe it in two sentences first and ask whether they would like it set up; call "
+        "choose_service only once they say they want it."
+    ),
     Step.NAME: (
         " Take the name exactly as they say it: never modify it, never autocorrect it, "
         "never guess a spelling."

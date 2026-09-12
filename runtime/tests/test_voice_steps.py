@@ -182,7 +182,7 @@ async def test_the_outcome_line_is_still_spoken_and_buys_no_second_model_call(fi
     llm = _LLM()
     params = _Params("file_request", {}, llm)
     await _make_handler(s)(params)
-    assert _spoken(llm)[0].startswith("[reassuringly] I've sent that to the team as a request")
+    assert _spoken(llm)[0].startswith("I've sent that to the team as a request")
     assert params.results[0][1].run_llm is False
 
 
@@ -199,7 +199,7 @@ async def test_file_request_speaks_the_outcome_and_the_item_has_the_records_cont
     )
     llm = _LLM()
     await _make_handler(s)(_Params("file_request", {}, llm))
-    assert _spoken(llm)[0].startswith("[reassuringly] I've sent that to the team as a request")
+    assert _spoken(llm)[0].startswith("I've sent that to the team as a request")
     assert ledger.items[0].contact.name == "Dana" and s.band == 2 and s.slots.flow is None
 
 
@@ -267,4 +267,4 @@ async def test_the_last_answer_files_the_request_without_a_second_model_turn(fix
     llm = _LLM()
     await _make_handler(s)(_Params("answer", {"value": "no"}, llm))   # the team-note question
     assert ledger.items[0].type == "callback"
-    assert _spoken(llm)[0].startswith("[reassuringly] I've sent that to the team as a request")
+    assert _spoken(llm)[0].startswith("I've sent that to the team as a request")

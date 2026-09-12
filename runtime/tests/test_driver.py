@@ -164,7 +164,7 @@ async def test_tool_call_reply_is_rendered_not_generated(fixed_clock):
     slots = Slots(flow="cancel", first_name="Dana", phone="+19055550101", phone_confirmed=True)
     r = await brain.turn(ref, [], "Yes, cancel it", slots)
     assert r.band == 2 and r.tool_calls == ["file_request"]
-    assert r.reply.startswith("[reassuringly] I've sent that to the team as a request")
+    assert r.reply.startswith("I've sent that to the team as a request")
     assert "cancel" not in r.reply.lower() and ledger.items[0].type == "cancel"
 
 
@@ -195,7 +195,7 @@ async def test_booking_link_and_end(fixed_clock):
     r = await brain.turn(ref, [], "Text me the link", slots)
     assert r.outcomes[0].kind == "link_sent" and sms.sent[0][1] == "+19055550101"
     r2 = await brain.turn(ref, [], "That's all, thanks", r.slots)
-    assert r2.ended and r2.reply.startswith("[warm] Thanks for calling")  # the voice hears the tag
+    assert r2.ended and r2.reply.startswith("Thanks for calling")
 
 
 def _one_slot_short_booking():

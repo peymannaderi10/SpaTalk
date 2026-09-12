@@ -36,7 +36,7 @@ def test_every_slot_script_has_a_default_and_the_bundle_supplies_it():
         assert key in raw, f"the skincentrix bundle does not supply {key}"
     assert "ask_route" not in raw and "ask_route" not in fields
     cfg = _cfg()
-    assert cfg.scripts.ask_name == "[calm] Could I get your first name?"
+    assert cfg.scripts.ask_name == "Could I get your first name?"
     assert cfg.scripts.confirm_match == "Did you mean {value}?"
     assert "911" not in cfg.scripts.clinical and "911" not in cfg.scripts.clinical_text
 

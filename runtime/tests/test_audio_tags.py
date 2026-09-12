@@ -99,30 +99,25 @@ async def test_the_guard_never_speaks_a_bracketed_tool_name(fixed_clock):
     assert spoken == ["[warm] Thanks! "]
 
 
-def test_the_fixed_lines_carry_at_most_one_known_tag_and_never_on_safety_wording():
-    """Founder, 2026-09-11: the fixed lines sounded flat next to the model's tagged speech, so the
-    questions and outcomes the runtime speaks carry one Soniox tag each. Only tags the voice
-    performs, one at a time, and never on the clinical, emergency, complaint, payment or
-    refusal wording (the prompt forbids the model the same)."""
+def test_the_fixed_lines_leave_the_colour_to_the_model():
+    """Founder, 2026-09-11 (two calls apart): the fixed lines were tagged for one call and it
+    sounded worse, so the tags came off again. The model keeps the full list and the rules;
+    the scripts stay plain, except the disclosure's own [warm], and any tag that does appear
+    in a script is one the voice performs."""
     import re
 
     import yaml
 
     from spatalk.brain.audio_tags import AUDIO_TAGS
 
-    never = ("clinical", "emergency", "complaint", "payment", "refuse_", "no_name", "loop_guard", "failover")
     scripts = yaml.safe_load(BUNDLE.joinpath("scripts.yaml").read_text(encoding="utf-8"))
-    tagged = 0
     for key, text in scripts.items():
         if not isinstance(text, str):
             continue
         tags = re.findall(r"\[([a-z]+(?: [a-z]+)?)\]", text)
-        assert len(tags) <= 1, (key, tags)
-        assert all(t in AUDIO_TAGS for t in tags), (key, tags)
-        if any(key.startswith(n) for n in never):
+        assert len(tags) <= 1 and all(t in AUDIO_TAGS for t in tags), (key, tags)
+        if key != "disclosure":
             assert tags == [], (key, text)
-        tagged += bool(tags)
-    assert tagged >= 15, "the fixed lines the caller hears most carry a tag"
 
 
 def test_a_tagged_fixed_line_reaches_text_channels_without_the_tag():
@@ -135,9 +130,9 @@ def test_a_tagged_fixed_line_reaches_text_channels_without_the_tag():
 
     cfg = load_bundle(BUNDLE)
     now = datetime(2026, 9, 11, 18, 0, tzinfo=timezone.utc)
-    voice = render_script("ask_name", cfg, now, urgent=False)
-    assert voice.startswith("[calm] ")
-    # The text service strips every reply before it is segmented (text/service.py), and the
-    # voice transcript strips assistant text before it is stored (voice/pipeline.py); this is
-    # the function both call.
-    assert strip_audio_tags(voice) == "Could I get your first name?"
+    voice = render_script("disclosure", cfg, now, urgent=False)
+    assert voice.startswith("[warm] ")
+    # A text channel never sees the bracket: `render_script` strips it for any channel but
+    # the voice, and the text service strips every reply again before it is segmented.
+    assert render_script("disclosure", cfg, now, urgent=False, channel="sms") == voice[len("[warm] "):]
+    assert strip_audio_tags(voice) == voice[len("[warm] "):]

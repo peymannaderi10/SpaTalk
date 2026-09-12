@@ -196,5 +196,5 @@ async def test_a_goodbye_at_the_last_question_speaks_the_outcome_then_the_goodby
               first_name="Dana", phone="+19055550101", phone_confirmed=True, preferred_window=PreferredWindow())
     r = await brain.turn(ref, [], "no, that's everything, thanks", s)
     assert ledger.items[0].type == "callback" and r.ended
-    assert r.reply.startswith("[reassuringly] I've sent that to the team as a request")
+    assert r.reply.startswith("I've sent that to the team as a request")
     assert r.reply.endswith(cfg.scripts.goodbye.format(name=cfg.name))

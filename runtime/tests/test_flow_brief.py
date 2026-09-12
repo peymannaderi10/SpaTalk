@@ -152,3 +152,14 @@ def test_the_offers_brief_does_not_order_a_price_recital():
     assert "with prices" not in brief and "prices in one breath" not in brief
     assert "what it does" in brief
     assert "choose_service" in brief
+
+
+def test_the_service_brief_honours_an_offer_to_say_more_before_a_choice():
+    """Founder call dc229ede (2026-09-11 22:50): "hear more about any of those?" — "the MesoJet
+    one" — and the practitioner question came straight back."""
+    from spatalk.brain.flow import Slots, Step, step_message
+
+    cfg = _cfg()
+    brief = step_message(Step.SERVICE, Slots(flow="new_booking", returning_client=False, offers_done=True), cfg, "voice")
+    assert "offered to say more" in brief and "describe it" in brief
+    assert "call choose_service only once they say they want it" in brief

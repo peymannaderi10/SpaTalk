@@ -821,3 +821,34 @@ def test_correcting_the_returning_answer_reopens_the_offers():
     b = _apply(a.slots, "answer", {"value": "no"})
     assert next_step(b.slots, _cfg(), "voice") == Step.OFFERS
 
+
+def test_the_callers_own_words_decide_a_close_name_even_when_the_model_corrected_it():
+    """Founder call dc229ede (2026-09-11 22:51): "is there an Ellen?" reached the tool as
+    `said='Helen Courbetis'` and was stored exact; the spec's read-back never happened."""
+    from spatalk.brain.flow import Slots
+
+    s = Slots(flow="new_booking", returning_client=False, offers_done=True, service_id="mesojet_facial")
+    a = _apply(s, "choose_practitioner", {"said": "Helen Courbetis"}, said="Um, who is there an Ellen?")
+    assert a.slots.practitioner is None and a.slots.pending is not None
+    assert a.slots.pending.kind == "match" and a.slots.pending.value == "Helen Courbetis"
+    # The same words with no caller transcription (a channel without one) still store.
+    b = _apply(s, "choose_practitioner", {"said": "Helen Courbetis"})
+    assert b.slots.practitioner == "Helen Courbetis"
+
+
+def test_a_miss_on_a_question_hands_the_turn_back_instead_of_re_asking():
+    """Same call, 22:49: "I have pigmentation on my arms, do you have anything for that?" became
+    `choose_service('pigmentation on my arms')`; nothing resolved and the runtime re-asked
+    "which treatment". The caller asked a question: it is answered, not re-asked."""
+    from spatalk.brain.flow import Slots
+
+    s = Slots(flow="new_booking", returning_client=False, offers_done=True)
+    a = _apply(s, "choose_service", {"said": "pigmentation on my arms"},
+               said="Like, I have pigmentation on my arms. Is do you have anything for that?")
+    assert a.ignored and a.rejection.detail == "question_shaped" and a.slots == s
+    # A plain miss that asked nothing still re-asks the way it did.
+    b = _apply(s, "choose_service", {"said": "the station one"}, said="the station one")
+    assert not b.ignored and b.slots.misses.get("service") == 1
+    # The caller's words win when they resolve: "sure, the MesoJet one" is the MesoJet.
+    c = _apply(s, "choose_service", {"said": "MesoJet and Sound Therapy facial"}, said="Uh, sure. The MesoJet one.")
+    assert c.slots.service_id == "mesojet_facial"
