@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from spatalk.brain.driver import FakeLLM, LLMResponse
 
 
@@ -95,3 +97,66 @@ def test_asserts_accept_an_honest_clarifying_question():
     refused = _out(band=1, tool_calls=["send_booking_link"], outcomes=["refused"], items=[],
                    sms_sent=0, text="I don't have a number for you. What's the best phone number?")
     assert a.refused_no_contact(refused, {}) is True
+
+
+def test_the_consultation_assert_reads_names_and_prices_the_way_the_caller_hears_them():
+    """Defect 8's one behavioural check, on the turn it was written for.
+
+    `consults_before_it_recites` counted names by looking for each catalogue entry's FULL name
+    in the reply — "Mirapeel facial with LED, microcurrent and cupping" — while speech says
+    "Mirapeel", so the 15:53:14 recital scored 2 of the seven treatments it named and only the
+    price clause failed it. `breath.named_items` is the counter built for exactly that job, and
+    the price pattern now covers the spoken forms the prompt itself teaches ("two ninety-five",
+    "a hundred and twenty-five dollars").
+    """
+    import scenarios.asserts as a
+    from spatalk.brain.breath import named_items
+
+    recital = (
+        "We have our MesoJet and Sound Therapy, Mirapeel, PureCarbon, and Lift and Sculpt "
+        "facials, which are all two ninety-five, and the Hydrabrasion and HydrationFIX at "
+        "two fifteen."
+    )
+    assert named_items(recital, a._tenant()) >= 3
+    bad = a.consults_before_it_recites(_out(text=recital, band=1, tool_calls=["answer_question"],
+                                            outcomes=[], items=[]), {})
+    assert bad["pass"] is False and "named=" in bad["reason"]
+    # The price pattern catches every form the voice style asks for, spelled out or not.
+    for said in ("that one is two ninety-five", "a hundred and twenty-five dollars",
+                 "it's two fifteen", "eleven ninety-nine", "$295"):
+        assert a._PRICE.search(said), said
+    for said in ("what would you like to work on", "it takes about forty minutes"):
+        assert not a._PRICE.search(said), said
+    good = a.consults_before_it_recites(
+        _out(text="Happy to help. What would you like to work on with your skin?", band=1,
+             tool_calls=["answer_question"], outcomes=[], items=[]), {})
+    assert good is True
+
+
+def test_the_options_case_grades_a_short_recommendation_and_fails_a_recital():
+    """The suite's case for the other half of the founder's rule: after the goal question, two
+    or three treatments with what each one does and no price. The fixture seeds the state the
+    contradicting brief was reachable from (`Pending(kind='offers')`), so the case exercises the
+    turn brief and not only the static prompt."""
+    import yaml
+
+    import scenarios.asserts as a
+    from spatalk.brain.flow import Slots, Step, next_step
+
+    good = _out(text="The MesoJet facial deep-cleans and hydrates, and the PureCarbon one "
+                     "targets congestion. Would you like to hear more about either?",
+                band=1, tool_calls=[], outcomes=[], items=[])
+    assert a.names_a_few_without_reciting(good, {}) is True
+    priced = _out(text="The MesoJet facial is two ninety-five.", band=1, tool_calls=[],
+                  outcomes=[], items=[])
+    assert a.names_a_few_without_reciting(priced, {})["pass"] is False
+    config = yaml.safe_load(
+        (Path(__file__).resolve().parents[1] / "scenarios" / "promptfooconfig.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+    cases = [t for t in config["tests"] if t["vars"].get("user") == "options please"]
+    assert len(cases) == 1
+    slots = Slots.model_validate(cases[0]["vars"]["slots"])
+    assert slots.pending is not None and slots.pending.kind == "offers"
+    assert next_step(slots, a._tenant(), "voice") == Step.SERVICE

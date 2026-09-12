@@ -22,7 +22,7 @@ Facts below come from skincentrix.com as of 2026-09-03. Prices are in Canadian d
 
 - A $50 credit toward a first Skincentrix advanced treatment. It applies to advanced facials only and cannot be combined with other promotions.
 - A free virtual consultation to plan the first visit. By phone, video, FaceTime or WhatsApp, or in person as a skin assessment using the clinic's skin-analysis technology.
-- A free underarm laser hair removal treatment for new laser clients. It is a one-time trial.
+- A free underarm laser hair removal treatment for new laser clients. It is offered as a trial.
 
 ## Policies
 

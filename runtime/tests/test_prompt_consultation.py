@@ -122,3 +122,24 @@ def test_the_question_is_answered_before_the_answer_is_recorded():
     assert "ask the next question in the same reply" in p
     assert "If the same words also asked you something, answer that first" in p
     assert "a question the caller has to repeat is one you did not answer" in p
+
+
+def test_no_step_brief_contradicts_the_consultative_rule():
+    """The whole system message, not half of it. `voice/steps.py` and `driver.py` both build
+    the request as `build_system_prompt(...) + "\n\n" + step_message(...)`, so a turn brief is
+    the LAST thing the model reads and outranks the static section by position. Every step and
+    every pending kind is checked, because the one that broke this was reachable from the word
+    "facial" (defect 8, founder call 14ea2579, 15:53:14)."""
+    from spatalk.brain.flow import Pending, Slots, Step, step_message
+    from spatalk.brain.prompt import build_system_prompt
+
+    cfg = _cfg()
+    head = build_system_prompt(cfg, "voice", NOW)
+    records = [Slots(flow="new_booking", returning_client=False, offers_done=True)]
+    for kind in ("match", "which", "name_staff", "phone", "not_service", "offers"):
+        records.append(records[0].with_(pending=Pending(kind=kind, slot="service", value="x")))
+    for slots in records:
+        for step in Step:
+            whole = head + "\n\n" + step_message(step, slots, cfg, "voice")
+            for banned in ("with prices", "prices in one breath", "with their prices"):
+                assert banned not in whole, (step, slots.pending, banned)

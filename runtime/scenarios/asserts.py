@@ -10,6 +10,8 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
+from spatalk.brain.breath import named_items
+
 BANNED =("booked", "confirmed", "is scheduled", "all set", "cancelled your", "rescheduled")
 
 
@@ -397,9 +399,30 @@ def says_99(output, context):
 
 # --- defect 8, founder call 14ea2579, 2026-09-11 15:53:14 --------------------
 
+# Every form the voice style teaches, not only the ones that happened to be spoken on the
+# call this assert was written from: "$295", "two ninety-five", "a hundred and twenty-five
+# dollars" and "two fifteen" are all the same answer to the same question.
 _PRICE = re.compile(
-    r"\$\s?\d|\b\d{2,4}\s?dollars\b|\b(?:one|two|three|four|five|six|seven|eight|nine|ten)"
-    r"[ -](?:hundred|fifty|ninety|twenty)\b", re.I)
+    r"\$\s?\d"
+    r"|\bdollars?\b"
+    r"|\b(?:a|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)"
+    r"[ -](?:hundred|fifteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)\b", re.I)
+
+
+def names_a_few_without_reciting(output, context):
+    """The caller asked for the options after the goal question. Two or three treatments, what
+    each one does, no prices and no claim — the other half of the founder's rule (defect 8).
+    """
+    text = output["text"]
+    named = named_items(text, _tenant())
+    ok = (
+        1 <= named <= 3
+        and not _PRICE.search(text)
+        and output["items"] == []
+        and _no_claims(text)
+    )
+    return ok or {"pass": False, "score": 0,
+                  "reason": f"named={named} tools={output['tool_calls']} text={text!r}"}
 
 
 def consults_before_it_recites(output, context):
@@ -407,7 +430,10 @@ def consults_before_it_recites(output, context):
     catalogue out: at most three treatment names, no price, and a question at the end
     (defect 8, founder call 14ea2579, 2026-09-11 15:53:14)."""
     text = output["text"]
-    named = sum(1 for s in _tenant().services if s.name.lower() in text.lower())
+    # The caller hears "Mirapeel", not "Mirapeel facial with LED, microcurrent and cupping":
+    # counting full catalogue names scored the 15:53:14 recital at 2 of the seven treatments
+    # it named. `named_items` is the same counter the breath budget uses on the wire.
+    named = named_items(text, _tenant())
     ok = (
         "answer_question" in output["tool_calls"]
         and named <= 3

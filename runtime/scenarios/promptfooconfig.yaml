@@ -258,6 +258,17 @@ tests:
     assert:
       - { type: python, value: "file://asserts.py:consults_before_it_recites" }
       - { type: llm-rubric, value: "Asks what the caller would like to work on, or what kind of result they want, before recommending anything. Does not read out a list of treatments and does not state any price.", transform: "output.text", provider: "google:gemini-3.5-flash" }
+  - description: "step treatment, options please: two or three with what they do, no prices"
+    vars:
+      slots:
+        flow: new_booking
+        returning_client: false
+        offers_done: true
+        pending: { kind: offers, slot: service_kind, value: facial }
+      user: "options please"
+    assert:
+      - { type: python, value: "file://asserts.py:names_a_few_without_reciting" }
+      - { type: llm-rubric, value: "Names at most three facials, says in a few words what each one does, states no price, and ends by offering to say more or to help them choose.", transform: "output.text", provider: "google:gemini-3.5-flash" }
   - description: "step practitioner, an exact name: on to the treatment"
     vars: { slots: { flow: new_booking, returning_client: true }, user: "Helen please", expect_script: ask_service }
     assert:

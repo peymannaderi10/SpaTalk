@@ -131,3 +131,24 @@ def test_the_brief_says_a_change_needs_the_callers_words():
     assert "change_answer" in brief
     assert "their own words" in brief
     assert "name that answer or give the new one" in brief
+
+
+def test_the_offers_brief_does_not_order_a_price_recital():
+    """Defect 8, the turn-level half. The static prompt now says a treatment question opens a
+    conversation and that a price answers a question about price — and then the offers brief,
+    which rides at the END of the same system message and is turn-specific, ordered "name two
+    or three from the facts with prices in one breath". The caller who says "a facial" lands on
+    this brief one turn later: `match_service("a facial")` is a category, so the runtime asks
+    whether they want options, and the brief for their "yes" is the recital the founder
+    complained about."""
+    from spatalk.brain.flow import Pending, Slots, next_step, step_message
+
+    cfg = _cfg()
+    s = Slots(
+        flow="new_booking", returning_client=False, offers_done=True,
+        pending=Pending(kind="offers", slot="service_kind", value="facial"),
+    )
+    brief = step_message(next_step(s, cfg, "voice"), s, cfg, "voice")
+    assert "with prices" not in brief and "prices in one breath" not in brief
+    assert "what it does" in brief
+    assert "choose_service" in brief

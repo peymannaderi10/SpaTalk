@@ -132,3 +132,17 @@ def test_the_faq_is_rendered_ahead_of_the_facts_and_only_when_there_is_one():
     assert "in your own words, and add nothing the clinic did not say" in p
     bare = build_system_prompt(cfg.model_copy(update={"faq": []}), "voice", NOW)
     assert "FREQUENTLY ASKED" not in bare
+
+
+def test_the_offer_bullets_say_only_what_the_website_said():
+    """knowledge.md declares its facts imported from skincentrix.com, and `build_system_prompt`
+    embeds the file whole, so a word added here is a clinic policy spoken to a caller as fact.
+    Shortening the offers for the ear (defect 8) turned "as a trial" into "It is a one-time
+    trial": the website's bullet, imported at 6429db7, carries no such restriction."""
+    from spatalk.brain.flow import offers_text
+
+    cfg = _cfg()
+    for text in (cfg.knowledge or "", offers_text(cfg)):
+        lowered = text.lower()
+        for invented in ("one-time", "one time only", "once only"):
+            assert invented not in lowered, invented

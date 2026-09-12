@@ -1328,11 +1328,15 @@ def step_message(step: Step, slots: Slots, cfg: TenantConfig, channel: str) -> s
             + _BRIEF_TAIL
         )
     if slots.pending is not None and slots.pending.kind == "offers":
+        # The turn brief is the last thing the model reads, so it must say what the
+        # consultative section says rather than the opposite: this one used to order the
+        # recital that section exists to stop (founder call 14ea2579, 2026-09-11 15:53:14).
         return (
             f"{STEP_MARKER} {known_text}The caller named a kind of treatment. The system just "
             "offered two or three options or a consultation. If they want options, name two or "
-            "three from the facts with prices in one breath and then wait; when they choose one, "
-            "call choose_service." + _BRIEF_TAIL
+            "three that suit what they have said, each with the few words from the services "
+            "list that say what it does and no price, then ask whether they would like to hear "
+            "more; when they choose one, call choose_service." + _BRIEF_TAIL
         )
     choices = (" — one of: " + ", ".join(m.choices)) if (m and m.choices) else ""
     return (
