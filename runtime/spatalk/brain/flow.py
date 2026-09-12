@@ -16,8 +16,10 @@ from pydantic import BaseModel, Field
 from spatalk.brain.breath import item_lexicon
 from spatalk.brain.ports import ItemDraft
 from spatalk.brain.requests import ContactInfo, PreferredWindow
+from spatalk.brain.rules import GateDecision, is_cosmetic_concern, rules_gate
 from spatalk.brain.resolve import (
     Match,
+    spelled_name,
     first_name_of,
     is_question,
     match_practitioner,
@@ -79,6 +81,7 @@ class Slots(BaseModel, frozen=True):
     practitioner: str | None = None
     service_id: str | None = None
     first_name: str | None = None
+    name_spelled: bool = False
     phone: str | None = None
     phone_confirmed: bool = False
     preferred_window: PreferredWindow | None = None
@@ -348,6 +351,7 @@ class Rejection(BaseModel, frozen=True):
     detail: Literal[
         "question_shaped", "unknown_kind", "empty_slot", "not_a_choice",
         "needs_yes_or_no", "name_it_instead", "no_change_named",
+        "no_match", "cosmetic_not_clinical", "spelled_name_stands",
     ] | None = None
 
 
@@ -391,6 +395,19 @@ _DETAIL_TEXT = {
     "empty_slot": "there is nothing recorded in that slot to change",
     "not_a_choice": "that is not one of the values the system accepts",
     "needs_yes_or_no": "that question takes a yes or a no",
+    "no_match": (
+        "nothing on the list matches what they said; ask them, in your own words, what they "
+        "are after, or answer what they asked"
+    ),
+    "cosmetic_not_clinical": (
+        "that is a cosmetic concern the clinic treats, not a clinical question: answer it from "
+        "the services list, say what is offered and what is not, and suggest the offer that "
+        "plans a first visit"
+    ),
+    "spelled_name_stands": (
+        "the caller spelled their name letter by letter and that spelling is on the record; "
+        "it changes only if they spell it again"
+    ),
     "name_it_instead": "that question is answered by naming one of the two, not by yes or no",
     "no_change_named": (
         "nothing in what they said names that answer or gives a new one, so it stands as it "
@@ -653,6 +670,16 @@ def _apply(
     *,
     caller_said: str = "",
 ) -> Applied:
+    if (
+        slots.flow == "clinical"
+        and not slots.offer_accepted
+        and name not in ("answer", "end_conversation", "transfer_to_human", "escalate")
+    ):
+        # The caller did not take the clinical offer and moved on (founder call 23aad062,
+        # 2026-09-11 23:50-23:51: every later turn was refused or dropped for a yes/no the
+        # caller never gave, until the line went silent). Moving on is a no: the offer closes
+        # without a word, the parked request comes back, and this tool runs against it.
+        slots = close_flow(slots)
     step = next_step(slots, cfg, channel)
     if name == "end_conversation":
         # A caller who says "no, that's all" at the last optional question is done with the
@@ -663,6 +690,15 @@ def _apply(
     if name == "escalate":
         reason = (args or {}).get("reason", "unsure")
         if reason == "clinical":
+            if (
+                caller_said
+                and is_cosmetic_concern(caller_said)
+                and (rules_gate(caller_said, cfg) or GateDecision(reason="none", matched="")).reason
+                not in ("clinical", "emergency")
+            ):
+                # "Do you have anything for pigmentation on my arms?" is what the clinic
+                # sells, not a clinical question (founder call 23aad062, 23:50:39).
+                return _reject("bad_value", name, slots, cfg, channel, detail="cosmetic_not_clinical")
             # The offer first, filed only on yes (slot engine design §4.2, flows.md §1.8).
             # The request in progress is parked, not thrown away (slot engine spec line 65).
             return Applied(slots=_open("clinical", slots, channel, caller_phone))
@@ -702,7 +738,12 @@ def _apply(
         # channel that has none: on the founder's call the model rewrote the caller's words
         # once already (15:55:02), so an argument cannot be the evidence for destroying an
         # answer the caller gave.
-        if not _change_evidence(slot, caller_said or args.get("said", ""), cfg):
+        if slot == "name" and slots.name_spelled and not spelled_name(caller_said):
+            # The recogniser's "Payman" after the caller spelled P-E-Y-M-A-N (call 23aad062,
+            # 23:52:09): a spelled name changes only when it is spelled again.
+            return _reject("bad_value", name, slots, cfg, channel, detail="spelled_name_stands")
+        respelled = slot == "name" and spelled_name(caller_said) is not None
+        if not respelled and not _change_evidence(slot, caller_said or args.get("said", ""), cfg):
             return _reject("bad_value", name, slots, cfg, channel, detail="no_change_named")
         return Applied(slots=_reopen(slots, slot))
     if name == "answer":
@@ -719,7 +760,7 @@ def _apply(
         heard = _heard(said, caller_said, lambda t: match_practitioner(t, cfg))
         if heard is None:
             return _reject("bad_value", name, slots, cfg, channel, detail="question_shaped")
-        return _practitioner(slots, heard, cfg, caller_said=caller_said)
+        return _practitioner(slots, heard, cfg, caller_said=caller_said, channel=channel)
     if name == "choose_service":
         # A question is not an answer (founder call 2026-09-11 01:41:26, where "Sorry, what
         # was the- what was the facial one again?" filled the slot and moved the step on).
@@ -729,9 +770,9 @@ def _apply(
         heard = _heard(said, caller_said, lambda t: match_service(t, cfg))
         if heard is None:
             return _reject("bad_value", name, slots, cfg, channel, detail="question_shaped")
-        return _service(slots, heard, cfg, caller_said=caller_said)
+        return _service(slots, heard, cfg, caller_said=caller_said, channel=channel)
     if name == "give_name":
-        return _name(slots, args.get("first_name", ""), cfg)
+        return _name(slots, args.get("first_name", ""), cfg, caller_said=caller_said)
     if name == "give_phone":
         return _phone(slots, args.get("digits", ""), caller_phone, channel)
     if name == "choose_window":
@@ -882,7 +923,7 @@ def _reopen(slots: Slots, slot: str) -> Slots:
         "returning_client": {"returning_client": None, "offers_done": False},
         "practitioner": {"practitioner": None},
         "service": {"service_id": None},
-        "name": {"first_name": None},
+        "name": {"first_name": None, "name_spelled": False},
         "phone": {"phone": None, "phone_confirmed": False},
         "window": {"preferred_window": None},
     }.get(slot)
@@ -984,7 +1025,9 @@ def _after_slot(slots: Slots, cfg: TenantConfig) -> Applied:
     return Applied(slots=slots)
 
 
-def _practitioner(slots: Slots, said: str, cfg: TenantConfig, *, caller_said: str = "") -> Applied:
+def _practitioner(
+    slots: Slots, said: str, cfg: TenantConfig, *, caller_said: str = "", channel: str = "voice"
+) -> Applied:
     m = match_practitioner(said, cfg)
     if m.kind == "exact" and _caller_near_miss(caller_said, m.value or "", lambda t: match_practitioner(t, cfg)):
         # Founder call dc229ede (2026-09-11 22:51): "is there an Ellen?" reached the tool as
@@ -1000,13 +1043,14 @@ def _practitioner(slots: Slots, said: str, cfg: TenantConfig, *, caller_said: st
     if m.kind == "which":
         pending = Pending(kind="which", slot="practitioner", candidates=m.candidates)
         return Applied(slots=slots.with_(pending=pending))
-    missed = slots.with_(pending=None).miss("practitioner")
-    if missed.misses["practitioner"] >= 2:
-        return Applied(slots=missed.with_(practitioner="any"), say=(("practitioner_any", {}),))
-    return Applied(slots=missed)
+    # Nothing on the list: the model asks again in its own words, or answers what was asked
+    # (founder direction 2026-09-11: fewer fixed re-asks; the ladder went with them).
+    return _reject("bad_value", "choose_practitioner", slots.with_(pending=None), cfg, channel, detail="no_match")
 
 
-def _service(slots: Slots, said: str, cfg: TenantConfig, *, caller_said: str = "") -> Applied:
+def _service(
+    slots: Slots, said: str, cfg: TenantConfig, *, caller_said: str = "", channel: str = "voice"
+) -> Applied:
     m = match_service(said, cfg)
     if m.kind == "exact" and _caller_near_miss(caller_said, m.value or "", lambda t: match_service(t, cfg)):
         # The same rule as a name: "the MiroJet one" almost said MesoJet, so it is read back.
@@ -1022,14 +1066,17 @@ def _service(slots: Slots, said: str, cfg: TenantConfig, *, caller_said: str = "
     if m.kind == "kind":
         pending = Pending(kind="offers", slot="service_kind", value=m.value)
         return Applied(slots=slots.with_(pending=pending))
-    missed = slots.with_(pending=None).miss("service")
-    if missed.misses["service"] >= 2:
-        pending = Pending(kind="offers", slot="service_kind")
-        return Applied(slots=missed.with_(pending=pending))
-    return Applied(slots=missed)
+    return _reject("bad_value", "choose_service", slots.with_(pending=None), cfg, channel, detail="no_match")
 
 
-def _name(slots: Slots, first_name: str, cfg: TenantConfig) -> Applied:
+def _name(slots: Slots, first_name: str, cfg: TenantConfig, *, caller_said: str = "") -> Applied:
+    spelled = spelled_name(caller_said)
+    if spelled:
+        # Letters the caller gave one by one beat any rendering of the sound (call 23aad062).
+        return Applied(slots=slots.with_(first_name=spelled, name_spelled=True, pending=None))
+    if slots.name_spelled and slots.first_name:
+        # Already spelled; the recogniser's next guess at the sound does not overwrite it.
+        return Applied(slots=slots)
     name = _clean_name((first_name or "")[:80])
     if name is None:
         missed = slots.miss("name")

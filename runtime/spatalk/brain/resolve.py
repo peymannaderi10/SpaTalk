@@ -317,3 +317,21 @@ def spoken_digits(e164: str) -> str:
 def typed_digits(e164: str) -> str:
     n = e164[-10:]
     return f"{n[:3]}-{n[3:6]}-{n[6:]}"
+
+
+_SPELLED = re.compile(r"(?<![A-Za-z'])([A-Za-z](?:[\s\-.,]+[A-Za-z]){2,})(?![A-Za-z])")
+
+
+def spelled_name(text: str) -> str | None:
+    """A name the caller spelled out, letter by letter: "P-E-Y-M-A-N", "P E Y M A N",
+    "P, E, Y, M, A, N". The letters, joined and capitalised; None when nothing was spelled.
+    Founder call 23aad062 (2026-09-11 23:52): the recogniser's "Payman" replaced the spelled
+    "Peyman" the caller had just given.
+    """
+    m = _SPELLED.search(text or "")
+    if not m:
+        return None
+    letters = re.sub(r"[^A-Za-z]", "", m.group(1))
+    if len(letters) < 3:
+        return None
+    return letters.capitalize()

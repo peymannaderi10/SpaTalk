@@ -37,7 +37,7 @@ def test_step_message_names_what_is_known_and_the_tool_to_use():
     # still needed and its legal choices as well as the tool that takes it (memo §7
     # decision 1). It is still a paragraph, and it is still the only volatile input a turn
     # buys — `tests/test_prompt_budget.py` keeps the money honest.
-    assert len(m.split(". ")) <= 6
+    assert len(m.split(". ")) <= 7  # 7 since 2026-09-12: the service step carries one more sentence (say more before choosing; call dc229ede)
     qa = step_message(Step.QA, Slots(), _cfg(), "voice")
     assert qa.startswith(STEP_MARKER) and "start_request" in qa
     done = step_message(Step.COMPLETE, s.with_(first_name="Dana"), _cfg(), "voice")

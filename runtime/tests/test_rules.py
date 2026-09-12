@@ -219,3 +219,36 @@ def test_the_barge_in_floor_has_one_value():
     from spatalk.voice import pipeline
 
     assert rules.INTERRUPT_MIN_WORDS == pipeline.INTERRUPT_MIN_WORDS
+
+
+def test_anything_said_at_the_name_step_stands_the_payment_gate_down():
+    """Founder call 23aad062 (2026-09-11 23:51:48): "Yeah, sure. It's payment, that's
+    P-E-Y-M-A-N." filed two payment escalations at "Could I get your first name?". A whole
+    sentence is a name too; only the emergency, clinical and human-request gates keep
+    listening there."""
+    from spatalk.brain.rules import rules_gate
+    from spatalk.tenants.bundle import load_bundle
+
+    cfg = load_bundle(BUNDLE)
+    said = "Yeah, sure. It's payment, that's P-E-Y-M-A-N."
+    assert rules_gate(said, cfg, name_step=True) is None
+    assert rules_gate(said, cfg).reason == "payment"
+    assert rules_gate("my name is Sam and I can't breathe", cfg, name_step=True).reason == "emergency"
+
+
+def test_a_spelled_name_is_read_from_the_letters():
+    from spatalk.brain.resolve import spelled_name
+
+    assert spelled_name("Yeah, sure. It's payment, that's P-E-Y-M-A-N.") == "Peyman"
+    assert spelled_name("P E Y M A N") == "Peyman"
+    assert spelled_name("it's Sam, S, A, M") == "Sam"
+    assert spelled_name("Payman") is None
+    assert spelled_name("I'd like a facial") is None
+
+
+def test_a_cosmetic_concern_is_recognised_as_what_the_clinic_sells():
+    from spatalk.brain.rules import is_cosmetic_concern
+
+    assert is_cosmetic_concern("do you have anything for pigmentation on my arms?")
+    assert is_cosmetic_concern("something for fine lines and dark spots")
+    assert not is_cosmetic_concern("I had a reaction after my last treatment")

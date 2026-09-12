@@ -54,14 +54,16 @@ def test_close_practitioner_match_asks_did_you_mean_and_yes_stores_it():
     assert c.slots.practitioner is None and c.slots.misses["practitioner"] == 1
 
 
-def test_two_practitioner_misses_settle_on_any():
+def test_a_practitioner_miss_goes_to_the_model_in_its_own_words():
+    """MOVED 2026-09-12 (founder direction after call 23aad062: fewer fixed re-asks). Two
+    misses used to settle on "any" through `practitioner_any`; a miss is now a readable
+    refusal and the model asks again, or answers what was asked, in its own words."""
     from spatalk.brain.flow import Slots
 
     s = Slots(flow="new_booking", returning_client=True)
     a = _apply(s, "choose_practitioner", {"said": "xqzv"})
-    assert a.slots.misses["practitioner"] == 1 and a.slots.practitioner is None
-    b = _apply(a.slots, "choose_practitioner", {"said": "blorp"})
-    assert b.slots.practitioner == "any" and ("practitioner_any", {}) in b.say
+    assert a.ignored and a.rejection.detail == "no_match"
+    assert a.slots.practitioner is None and a.slots.misses == {}
 
 
 def test_practitioner_who_does_not_do_the_service():
@@ -846,9 +848,68 @@ def test_a_miss_on_a_question_hands_the_turn_back_instead_of_re_asking():
     a = _apply(s, "choose_service", {"said": "pigmentation on my arms"},
                said="Like, I have pigmentation on my arms. Is do you have anything for that?")
     assert a.ignored and a.rejection.detail == "question_shaped" and a.slots == s
-    # A plain miss that asked nothing still re-asks the way it did.
+    # A plain miss that asked nothing is also the model's to handle now (moved 2026-09-12).
     b = _apply(s, "choose_service", {"said": "the station one"}, said="the station one")
-    assert not b.ignored and b.slots.misses.get("service") == 1
+    assert b.ignored and b.rejection.detail == "no_match" and b.slots == s
     # The caller's words win when they resolve: "sure, the MesoJet one" is the MesoJet.
     c = _apply(s, "choose_service", {"said": "MesoJet and Sound Therapy facial"}, said="Uh, sure. The MesoJet one.")
     assert c.slots.service_id == "mesojet_facial"
+
+
+# --- founder call 23aad062, 2026-09-11 23:48 ------------------------------------------------
+
+
+def test_a_spelled_name_wins_over_the_recognisers_rendering_and_locks():
+    """23:52:06 the model stored the spelled "Peyman"; 23:52:15 the recogniser's "Payman"
+    replaced it through change_answer + give_name. Letters the caller gave one by one beat
+    any rendering of the sound, and change only when spelled again."""
+    from spatalk.brain.flow import Slots, Step, next_step
+
+    s = Slots(flow="new_booking", returning_client=False, offers_done=True,
+              service_id="mirapeel_facial", practitioner="any")
+    assert next_step(s, _cfg(), "voice") == Step.NAME
+    a = _apply(s, "give_name", {"first_name": "Payment"}, said="Yeah, sure. It's payment, that's P-E-Y-M-A-N.")
+    assert a.slots.first_name == "Peyman" and a.slots.name_spelled is True
+    # The recogniser hears the sound again; nothing changes.
+    b = _apply(a.slots, "change_answer", {"slot": "name", "said": "Payman"}, said="No, my name is Payman.")
+    assert b.ignored and b.rejection.detail == "spelled_name_stands" and b.slots.first_name == "Peyman"
+    c = _apply(a.slots, "give_name", {"first_name": "Payman"}, said="Yeah, it's Payman.")
+    assert c.slots.first_name == "Peyman"
+    # A new spelling is a real correction.
+    d = _apply(a.slots, "change_answer", {"slot": "name", "said": "P-A-Y-M-A-N"}, said="No: P-A-Y-M-A-N.")
+    assert not d.ignored and d.slots.first_name is None
+    e = _apply(d.slots, "give_name", {"first_name": "Payman"}, said="P-A-Y-M-A-N")
+    assert e.slots.first_name == "Payman" and e.slots.name_spelled is True
+
+
+def test_an_unanswered_clinical_offer_closes_when_the_caller_moves_on():
+    """23:50:39 to 23:51:26: the clinical offer stayed pending while the caller asked about
+    facials and tried to book; every tool was refused or dropped for a yes/no they never gave,
+    until the line went silent. Moving on is a no: the offer closes, the parked request comes
+    back, and the tool runs against it."""
+    from spatalk.brain.flow import Slots
+
+    booking = Slots(flow="new_booking", returning_client=False, offers_done=True)
+    clinical = Slots(flow="clinical", returning_client=False, parked=booking)
+    a = _apply(clinical, "choose_service", {"said": "Mirapeel facial"}, said="can I book the Mirapeel one?")
+    assert a.slots.flow == "new_booking" and a.slots.service_id == "mirapeel_facial"
+    assert a.slots.parked is None and a.say == ()
+    # A yes or a no still answers the offer itself.
+    b = _apply(clinical, "answer", {"value": "yes"})
+    assert b.slots.flow == "clinical" and b.slots.offer_accepted is True
+
+
+def test_a_cosmetic_question_cannot_be_escalated_as_clinical():
+    """23:50:39: "do you have any services for pigmentation on my arms" became
+    escalate(clinical). What the clinic sells is not a clinical question; a reaction is."""
+    from spatalk.brain.flow import Slots
+
+    s = Slots(flow="new_booking", returning_client=False, offers_done=True)
+    a = _apply(s, "escalate", {"reason": "clinical"},
+               said="I have some pigmentation on my arms. I'm looking if you guys have any services for that.")
+    assert a.ignored and a.rejection.detail == "cosmetic_not_clinical" and a.slots == s
+    b = _apply(s, "escalate", {"reason": "clinical"},
+               said="I had a bad reaction after my last peel and my face is swollen.")
+    assert b.slots.flow == "clinical" and b.slots.parked is not None
+    c = _apply(s, "escalate", {"reason": "clinical"})
+    assert c.slots.flow == "clinical"

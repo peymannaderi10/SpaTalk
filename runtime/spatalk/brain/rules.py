@@ -216,7 +216,12 @@ def rules_gate(
     down for it (see NAME_STEP_SUPPRESSED).
     """
     order = ORDER
-    if name_step and _is_bare_answer(text):
+    if name_step and "?" not in text:
+        # Whatever is *said* to "Could I get your first name?" is a name, however long
+        # (founder call 23aad062, 2026-09-11 23:51:48: "Yeah, sure. It's payment, that's
+        # P-E-Y-M-A-N." filed two payment escalations). A question asked there ("can I pay
+        # over the phone?") is still a question. Emergency, clinical and a request for a
+        # person gate either way; the two lexicons whose words collide with names do not.
         order = [r for r in ORDER if r not in NAME_STEP_SUPPRESSED]
     for reason in order:
         terms = DEFAULT_LEXICONS[reason] + list(getattr(cfg.lexicons, reason))
@@ -230,3 +235,20 @@ def rules_gate(
 def health_context_mentioned(text: str, cfg: TenantConfig) -> bool:
     """True when the caller volunteers a condition, medication, pregnancy or past procedure. Flag only, never a gate."""
     return _pattern(HEALTH_CONTEXT_DEFAULT + list(cfg.lexicons.health_context)).search(text) is not None
+
+
+# What the clinic treats, as a caller names it. A question carrying one of these and no clinical
+# word is a service question, not a clinical one (founder call 23aad062, 2026-09-11 23:50:39,
+# where "do you have any services for pigmentation on my arms" was escalated as clinical).
+COSMETIC_CONCERNS: tuple[str, ...] = (
+    "pigmentation", "pigment", "dark spot", "dark spots", "sun spot", "sun spots", "age spot",
+    "melasma", "acne", "breakout", "scar", "scarring", "fine lines", "wrinkle", "wrinkles",
+    "texture", "dull", "dullness", "hair removal", "unwanted hair", "contouring", "cellulite",
+    "stretch mark", "stretch marks", "brighten", "brightening", "glow", "hydration", "firming",
+    "lift", "tighten", "double chin", "redness", "pores",
+)
+
+
+def is_cosmetic_concern(text: str) -> bool:
+    """Does the caller name a cosmetic concern the clinic treats?"""
+    return bool(_pattern(list(COSMETIC_CONCERNS)).search(text or ""))
