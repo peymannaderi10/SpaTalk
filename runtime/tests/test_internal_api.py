@@ -691,7 +691,7 @@ def test_estimate_cad_prices_the_live_stack():
 
     assert estimate_cad({}) == 0.0
     # 5 minutes of telephony at 0.0095 + 0.0035, 5 minutes of Soniox stt at 0.002, 5400
-    # Soniox tts chars at 10.61/1M (the hourly price at the measured 1,100 characters a
+    # Soniox tts chars at 10.15/1M (the hourly price at the measured 1,150 characters a
     # spoken minute), and 30k input tokens of which 20k came from the model's cache, at
     # Flash-Lite's 0.25/0.025/1.50. In USD:
     #   0.065 + 0.010 + 0.0572940 + 0.0025 + 0.0005 + 0.00045 = 0.1357440
@@ -705,7 +705,7 @@ def test_estimate_cad_prices_the_live_stack():
             "llm_cached_tokens": 20000,
             "llm_output_tokens": 300,
         }
-    ) == pytest.approx(0.1886, abs=5e-4)
+    ) == pytest.approx(0.1852, abs=5e-4)  # moved 2026-09-12 with the re-derived speaking rate
     # one inbound and two outbound toll-free messages, carrier fees included
     assert estimate_cad({"sms_in": 1, "sms_out": 2}) == pytest.approx(0.0521, abs=5e-4)
 
