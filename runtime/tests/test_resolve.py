@@ -190,3 +190,36 @@ def test_a_category_word_the_rest_does_not_narrow_is_a_kind():
     acne = match_service("a facial for acne", cfg)
     assert acne.kind != "kind"
     assert "acne_facial" in (acne.candidates or (acne.value,))
+
+
+def test_a_whole_turn_asks_only_when_it_is_shaped_like_a_question():
+    """`is_question` judges a short tool ARGUMENT, where a bare "what" or "again" is the
+    caller asking to be told something. A whole caller turn is a different text: "The mesojet
+    one, that's what I want" and "Yeah, that one again please" are answers, and reading them
+    as questions costs a model call and tells the model to answer something nobody asked.
+    A turn asks when it carries a question mark, or when a clause of it opens on an
+    interrogative (defect 5, founder call 14ea2579, 2026-09-11 15:55:00)."""
+    from spatalk.brain.resolve import is_question, turn_asked
+
+    for said in (
+        "How much does it cost?",
+        "Yeah it's Payman. How much does it cost",
+        "Monday or Tuesday, and how much is that",
+        "does it hurt",
+        "what facials do you have",
+        "Sorry, what was that again?",
+        "I mean, is it safe",
+    ):
+        assert turn_asked(said) is True, said
+    for said in (
+        "The mesojet one, that's what I want.",
+        "Yeah, that one again please",
+        "No, that's what I meant",
+        "Monday or Tuesday afternoon",
+        "Any is fine",
+        "",
+    ):
+        assert turn_asked(said) is False, said
+    # The argument-grade detector is untouched: a one-word "again" is still a question there.
+    assert is_question("what was the facial one again?") is True
+    assert is_question("again") is True

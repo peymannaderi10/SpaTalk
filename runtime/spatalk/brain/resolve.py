@@ -74,6 +74,47 @@ def is_question(said: str) -> bool:
     return any(p in joined for p in QUESTION_PHRASES)
 
 
+# A clause of a caller's turn opens on one of these when the clause is a question. `is_question`
+# cannot be used on a whole turn: it reads a question WORD anywhere in the text, which is right
+# for a three-word tool argument and wrong for a sentence ("the mesojet one, that's what I
+# want"). "any" is deliberately absent — "any is fine" is the answer to the window question, in
+# the tenant's own script.
+TURN_OPENERS = frozenset({
+    "what", "what's", "whats", "whatre", "which", "how", "how's", "hows", "when", "where", "why",
+    "who", "who's", "whos", "do", "does", "did", "can", "could", "is", "are", "was", "were",
+    "will", "would", "should", "have", "has", "am", "may", "must", "isn't", "isnt", "don't",
+    "dont", "doesn't", "doesnt",
+})
+# Words a caller hangs off the front of a clause before they get to it.
+TURN_LEAD_IN = frozenset({
+    "and", "but", "so", "or", "um", "uh", "er", "oh", "ok", "okay", "yeah", "yep", "yes", "no",
+    "nope", "well", "sorry", "actually", "hey", "hi", "please", "just", "like", "then", "also",
+})
+_CLAUSE = re.compile(r"[.?!,;:]+|\band\b|\bbut\b|\bso\b")
+
+
+def turn_asked(said: str) -> bool:
+    """Did the caller's whole turn ask something, on top of whatever else it did?
+
+    The sibling of `is_question` for a different text: `is_question` judges the short argument
+    a model passed to a tool, where a bare "what" or "again" is the caller asking to be told
+    something; this judges the caller's own transcription for the turn, where the same word is
+    ordinary speech. A turn asks when it carries a question mark, or when one of its clauses
+    opens on an interrogative. Pure text, no tenant config; nothing here is spoken or stored.
+    """
+    text = (said or "")
+    if "?" in text:
+        return True
+    lowered = re.sub(r"[^a-z0-9' ]+", " ", text.lower())
+    for clause in _CLAUSE.split(text.lower()):
+        words = re.sub(r"[^a-z0-9' ]+", " ", clause).split()
+        while words and words[0] in TURN_LEAD_IN:
+            words.pop(0)
+        if words and words[0] in TURN_OPENERS:
+            return True
+    return any(p in " ".join(lowered.split()) for p in QUESTION_PHRASES)
+
+
 def _normalise(text: str) -> str:
     words = re.sub(r"[^a-z0-9' ]+", " ", (text or "").lower()).split()
     return " ".join(w for w in words if w not in STRIP_WORDS)

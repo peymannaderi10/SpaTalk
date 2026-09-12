@@ -426,3 +426,51 @@ async def test_the_receipt_is_recorded_before_the_outcome_is_spoken(fixed_clock)
     # And the receipt was there before the sentence that asserts it: the guard would have
     # retracted `captured` otherwise.
     assert _said(pushed)[0].startswith("I've sent that to the team as a request")
+
+
+async def test_a_reply_that_already_answered_buys_no_second_call(fixed_clock):
+    """The other half of the brief: the turn goes back only when the model's reply carried no
+    answer. A reply that answered the price in the same breath — which is exactly what the
+    prompt half tells it to do — was still being told "the caller asked you something in that
+    same turn and has not been answered", which is false, and the hand-back then dropped the
+    model's own next question on the floor for a completion that repeated the price."""
+    from spatalk.brain.flow import Slots
+    from spatalk.voice.frames import ToolTurnDoneFrame
+
+    slots = Slots(flow="new_booking", returning_client=False, offers_done=True)
+    session, llm, Params, pushed, _queued, results, _ledger = _world(fixed_clock, slots)
+    session.caller_said = "How much does it cost?"
+    session.caller_asked = True
+    # The guard counts every sentence of the model's own words that reached the wire.
+    session.spoken_sentences = 1
+    await llm.registered["choose_service"](
+        Params("choose_service", {"said": "MesoJet and Sound Therapy facial"})
+    )
+    assert session.slots.service_id == "mesojet_facial"
+    assert results[0][1].run_llm is False
+    assert "answer_first" not in results[0][0]
+    assert session.signals.counts().get("model_rerun", 0) == 0
+    done = [f for f in pushed if isinstance(f, ToolTurnDoneFrame)]
+    assert done and done[-1].handed_back is False
+
+
+async def test_the_side_question_and_the_debt_share_one_budget(fixed_clock):
+    """One model call on the caller's question, once per caller turn. `answer_question` hands
+    the turn back for the same debt, so it spends the same budget: without this, one turn
+    bought two hand-backs and three completions, the second of which had already answered the
+    question the third was told to answer."""
+    from spatalk.brain.flow import Slots
+
+    slots = Slots(flow="new_booking", returning_client=False, offers_done=True)
+    session, llm, Params, _pushed, _queued, results, _ledger = _world(fixed_clock, slots)
+    session.caller_said = "How much does it cost?"
+    session.caller_asked = True
+    await llm.registered["answer_question"](Params("answer_question", {}))
+    assert results[0][1].run_llm is True
+    assert session.answer_owed_spent is True
+    await llm.registered["choose_service"](
+        Params("choose_service", {"said": "MesoJet and Sound Therapy facial"})
+    )
+    assert session.slots.service_id == "mesojet_facial"
+    assert [r[1].run_llm for r in results].count(True) == 1
+    assert "answer_first" not in results[-1][0]

@@ -540,7 +540,7 @@ def test_a_slot_recorded_on_a_question_turn_owes_the_caller_an_answer():
     earlier, so `is_question`, which runs on the ARGUMENT, never saw a question. The write was
     right; the price was never answered. The caller asked twice more and got it at
     15:55:09.081: three turns and 8.4 s."""
-    from spatalk.brain.flow import ANSWER_FIRST_TOOLS, Slots, apply
+    from spatalk.brain.flow import Slots, apply
 
     cfg = _cfg()
     s = Slots(flow="new_booking", returning_client=False, offers_done=True)
@@ -553,29 +553,59 @@ def test_a_slot_recorded_on_a_question_turn_owes_the_caller_an_answer():
                   "voice", "+19055550101", caller_said=said)
         assert b.slots.service_id == "mesojet_facial", said
         assert b.answer_owed is False, said
-    assert ANSWER_FIRST_TOOLS == ("choose_service", "choose_practitioner")
+    # The debt follows the write, not the name of the tool that made it.
+    name_open = s.with_(service_id="mesojet_facial", practitioner="any")
+    c = apply(name_open, "give_name", {"first_name": "Payman"}, cfg, "voice", "+19055550101",
+              caller_said="Yeah it's Payman. How much does it cost?")
+    assert c.slots.first_name == "Payman" and c.answer_owed is True
 
 
-def test_only_the_two_tools_that_take_the_callers_words_can_owe_an_answer():
+def test_any_slot_recorded_on_a_question_turn_owes_the_caller_an_answer():
+    """MOVED 2026-09-11: this was `test_only_the_two_tools_that_take_the_callers_words_can_owe
+    _an_answer`, which pinned the debt to `choose_service` and `choose_practitioner` and
+    asserted the other three steps could never owe one. That scope belonged to the detector
+    this fix replaced — `is_question` on the tool ARGUMENT, which only those two tools carry.
+    The detector now runs on the caller's own transcript, where nothing distinguishes the name,
+    window or returning step: "How much does it cost?" is lost there exactly as it was lost at
+    the treatment step on founder call 14ea2579. The brief's condition is a slot recorded, not
+    a tool named, so the debt follows the write.
+
+    The negative half of the old test is kept and widened: a turn that asked nothing never
+    owes, whichever tool recorded it."""
     from spatalk.brain.flow import Slots, answer_owed
 
     cfg = _cfg()
     asked = "How much does it cost?"
+    answered = "Thursday afternoon is good"
     window_open = Slots(
         flow="new_booking", returning_client=False, offers_done=True, practitioner="any",
         service_id="mesojet_facial", first_name="Payman", phone="+19055550101",
         phone_confirmed=True,
     )
     assert answer_owed(window_open, "choose_window", {"date": "Thursday"}, cfg, "voice",
-                       "+19055550101", caller_said=asked) is False
+                       "+19055550101", caller_said=asked) is True
     assert answer_owed(Slots(flow="new_booking"), "answer", {"value": "no"}, cfg, "voice",
-                       "+19055550101", caller_said=asked) is False
+                       "+19055550101", caller_said=asked) is True
     name_open = Slots(
         flow="new_booking", returning_client=False, offers_done=True, practitioner="any",
         service_id="mesojet_facial",
     )
     assert answer_owed(name_open, "give_name", {"first_name": "Dana"}, cfg, "voice",
-                       "+19055550101", caller_said=asked) is False
+                       "+19055550101", caller_said=asked) is True
+    # A turn that asked nothing owes nothing, at every one of those steps.
+    for slots, tool, args in (
+        (window_open, "choose_window", {"date": "Thursday"}),
+        (Slots(flow="new_booking"), "answer", {"value": "no"}),
+        (name_open, "give_name", {"first_name": "Dana"}),
+    ):
+        assert answer_owed(slots, tool, args, cfg, "voice", "+19055550101",
+                           caller_said=answered) is False, tool
+        assert answer_owed(slots, tool, args, cfg, "voice", "+19055550101",
+                           caller_said="") is False, tool
+    # A call that records nothing is not a write, so it owes nothing either: the caller's
+    # question comes back to the model through the refusal, which already hands the turn over.
+    assert answer_owed(name_open, "answer_question", {}, cfg, "voice", "+19055550101",
+                       caller_said=asked) is False
 
 
 def test_a_debt_is_never_owed_on_a_filing_a_confirmation_or_a_refusal():

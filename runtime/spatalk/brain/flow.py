@@ -23,6 +23,7 @@ from spatalk.brain.resolve import (
     normalise_phone,
     sounds_like,
     spoken_digits,
+    turn_asked,
     typed_digits,
 )
 from spatalk.brain.tools import REQUEST_KINDS, always_tools, slot_tool
@@ -34,12 +35,13 @@ Flow = Literal[
 NAME_REQUIRED_FLOWS = ("new_booking", "callback", "reschedule", "cancel", "question", "clinical")
 BOOKING_LIKE = ("new_booking", "callback")
 
-# The two tools whose argument is the caller's own words — exactly the two that already run
-# `is_question` on that argument. On the founder's call of 2026-09-11 15:55:02 the model
-# rewrote "How much does it cost?" into a treatment name it had inferred two turns earlier,
-# so `is_question` saw no question at all and the price went unanswered for three turns.
-# `apply` therefore also looks at what the caller actually said, not only at the argument.
-ANSWER_FIRST_TOOLS: tuple[str, ...] = ("choose_service", "choose_practitioner")
+# On the founder's call of 2026-09-11 15:55:02 the model rewrote "How much does it cost?" into
+# a treatment name it had inferred two turns earlier, so `is_question` — which runs on the
+# ARGUMENT — saw no question at all and the price went unanswered for three turns. `apply`
+# therefore also looks at what the caller actually said, not only at the argument. The debt
+# follows the WRITE rather than the name of the tool that made it: nothing distinguishes the
+# name, window or returning step from the treatment step once the detector reads the caller's
+# own transcript, and the same question is lost at each of them.
 
 
 class Step(str, Enum):
@@ -531,14 +533,14 @@ def apply(
     """
     a = _finalize(_apply(slots, name, args, cfg, channel, caller_phone), cfg, channel, name)
     if (
-        name in ANSWER_FIRST_TOOLS
+        _slot_recorded(slots, a.slots)
         and not a.ignored
         and not a.file
         and not a.send_link
         and not a.end
         and not a.escalate
         and a.slots.pending is None
-        and is_question(caller_said)
+        and turn_asked(caller_said)
     ):
         return a.model_copy(update={"answer_owed": True})
     return a
@@ -722,6 +724,21 @@ _SLOT_FIELDS = {
     "phone": ("phone",),
     "window": ("preferred_window",),
 }
+
+
+_SLOT_VALUES: tuple[str, ...] = tuple(f for fields in _SLOT_FIELDS.values() for f in fields)
+
+
+def _slot_recorded(before: Slots, after: Slots) -> bool:
+    """Did this call put an answer of the caller's into a slot that was empty?
+
+    The question the caller asked in the same words is owed an answer when their answer was
+    recorded — whichever tool recorded it. A call that refused, confirmed, filed or only
+    re-opened a slot records nothing and is not a write.
+    """
+    return any(
+        getattr(before, f) is None and getattr(after, f) is not None for f in _SLOT_VALUES
+    )
 
 
 def _slot_filled(slots: Slots, slot: str) -> bool:

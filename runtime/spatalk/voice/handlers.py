@@ -101,6 +101,10 @@ async def _run_one_tool(session: VoiceSession, params: FunctionCallParams) -> bo
         session.slots = session.slots.with_(
             digression=next_step(session.slots, session.cfg, "voice")
         )
+        # The same debt, out of the same budget: this hand-back is for the caller's question
+        # too, so a slot recorded later in the turn must not buy a third completion whose
+        # brief tells the model to answer what the second one was handed over to answer.
+        session.answer_owed_spent = True
         session.record_signal("digression", step=session.slots.digression.value)
         sync_context(session, now)
         await params.result_callback(
@@ -189,9 +193,16 @@ async def _run_one_tool(session: VoiceSession, params: FunctionCallParams) -> bo
     # The caller's own words asked something this reply has not answered, and the model
     # recorded a slot instead (founder call 14ea2579, 2026-09-11 15:55:00). The write stands;
     # the turn goes back so the question gets an answer, once per caller turn.
+    #
+    # "has not answered" is half the condition and the reason for `spoken_sentences`: the
+    # guard counts every sentence of the model's own words that reached the wire this caller
+    # turn, so a reply that answered the price and recorded the treatment in one breath — what
+    # the prompt half asks for — buys no second completion and keeps its own question, which
+    # the hand-back would otherwise drop (`OutputGuardProcessor._finish_turn`).
     owed = (
         getattr(session, "caller_asked", False)
         and not getattr(session, "answer_owed_spent", False)
+        and not getattr(session, "spoken_sentences", 0)
         and outcome is None
         and not ended
         and not session.ended

@@ -1364,6 +1364,17 @@ async def test_the_gate_records_whether_the_callers_turn_asked_something(fixed_c
     )
     assert session.caller_said == "The mesojet one."
     assert session.caller_asked is False
+    # A whole turn is not a question because a question WORD appears somewhere in it: the
+    # argument-grade detector reads "that's what I want" as an ask, and a false debt costs a
+    # completion and tells the model to answer something nobody asked.
+    await run_test(
+        RulesGateProcessor(session),
+        frames_to_send=[TranscriptionFrame(
+            text="The mesojet one, that's what I want.", user_id="u", timestamp="t"
+        )],
+        expected_down_frames=[TranscriptionFrame], start_timeout=10.0,
+    )
+    assert session.caller_asked is False
 
 
 async def test_a_held_fragment_is_part_of_the_question_the_gate_records(fixed_clock):
