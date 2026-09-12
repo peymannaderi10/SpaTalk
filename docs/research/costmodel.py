@@ -1,7 +1,7 @@
 """
 Cost model for the AI front desk. All provider rates in USD unless noted.
 Rates are loaded from rates.json (filled from research notes). Exits non-zero
-if any recommended stack breaches a hard ceiling from brief section 8.
+if the live stack (or a recommended text stack) breaches a hard ceiling from brief section 8.
 """
 import json, sys, itertools
 
@@ -76,7 +76,9 @@ for name, stack in R["voice_stacks"].items():
     v = voice_per_minute(R["telephony"][stack["tel"]], R["stt"][stack["stt"]], R["tts"][stack["tts"]], R["llm"][stack["llm"]])
     print(f"\n{name}: tel={stack['tel']} stt={stack['stt']} tts={stack['tts']} llm={stack['llm']}")
     print(f"  breakdown USD/min: tel {v['tel']:.4f}  stt {v['stt']:.4f}  tts {v['tts']:.4f}  llm {v['llm']:.4f}")
-    check("per call-minute", v["total_cad"], CEIL["voice_min_target"], CEIL["voice_min_ceiling"], counts=bool(stack.get("recommended")))
+    # The September 1 research stacks are printed for comparison; only the live stack (above)
+    # has to hold the ceiling now that the sheet is re-derived from real calls (2026-09-12).
+    check("per call-minute", v["total_cad"], CEIL["voice_min_target"], CEIL["voice_min_ceiling"], counts=False)
     if stack.get("recommended"):
         print(f"  -> avg call of {AVG_CALL_MIN} min costs {v['total_cad']*AVG_CALL_MIN:.3f} CAD")
 

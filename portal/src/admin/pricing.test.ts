@@ -99,7 +99,7 @@ describe("the cost model, against the Python it is a port of", () => {
       ),
     ).toBe(0.1106);
     expect(voiceStackCad("B4 Soniox only (STT + TTS), single vendor")).toBe(
-      0.0418,
+      0.0414,
     );
   });
 
@@ -209,9 +209,9 @@ describe("the stack that is actually running", () => {
     );
     expect(cad4(perMinute.tel)).toBe(0.013);
     expect(cad4(perMinute.stt)).toBe(0.002);
-    expect(cad4(perMinute.tts)).toBe(0.0067);
+    expect(cad4(perMinute.tts)).toBe(0.0064);
     expect(cad4(perMinute.llm)).toBe(0.0069);
-    expect(cad4(perMinute.totalUsd * RATES.usd_to_cad)).toBe(0.0397);
+    expect(cad4(perMinute.totalUsd * RATES.usd_to_cad)).toBe(0.0393);
   });
 
   it("costs a conversation and an outbound message what the model says", () => {
@@ -284,9 +284,9 @@ describe("the quote at the founder's defaults", () => {
   it("reproduces the month's cost per tenant and its margin at the list price", () => {
     const result = quote(inputs, RATES);
 
-    expect(cad4(result.cogsCad)).toBe(92.8327);
-    expect(cad4(result.priceCad)).toBe(265.2364);
-    expect(marginOf(result.cogsCad, 999)).toBeCloseTo(0.9070743487, 6);
+    expect(cad4(result.cogsCad)).toBe(92.479);
+    expect(cad4(result.priceCad)).toBe(264.2256);
+    expect(marginOf(result.cogsCad, 999)).toBeCloseTo(0.9074284690, 6);
   });
 
   it("breaks the month down into the six lines the page prints", () => {
@@ -296,7 +296,7 @@ describe("the quote at the founder's defaults", () => {
     );
 
     expect(lines).toEqual({
-      voice: 34.7757,
+      voice: 34.422,
       sms: 22.6392,
       chat: 1.1968,
       outbound: 5.211,
@@ -310,8 +310,8 @@ describe("the quote at the founder's defaults", () => {
 
   it("gives the unit costs the model implies", () => {
     const result = quote(inputs, RATES);
-    expect(cad4(result.perMinute)).toBe(0.0397);
-    expect(cad4(result.perCall)).toBe(0.1391);
+    expect(cad4(result.perMinute)).toBe(0.0393);
+    expect(cad4(result.perCall)).toBe(0.1377);
     expect(cad4(result.perTextConv)).toBe(0.1509);
     expect(cad4(result.perChatConv)).toBe(0.012);
   });
@@ -320,8 +320,8 @@ describe("the quote at the founder's defaults", () => {
     const result = quote(inputs, RATES);
     // Each unit cost divided by 0.35, the same arithmetic as the monthly
     // price: what one call is worth at the margin, not what it cost.
-    expect(cad4(result.unitPrices.perCall)).toBe(0.3974);
-    expect(cad4(result.unitPrices.perMinute)).toBe(0.1136);
+    expect(cad4(result.unitPrices.perCall)).toBe(0.3934);
+    expect(cad4(result.unitPrices.perMinute)).toBe(0.1124);
     expect(cad4(result.unitPrices.perTextConv)).toBe(0.4312);
     expect(cad4(result.unitPrices.perChatConv)).toBe(0.0342);
     expect(result.unitPrices.perCall).toBeCloseTo(result.perCall / 0.35, 10);

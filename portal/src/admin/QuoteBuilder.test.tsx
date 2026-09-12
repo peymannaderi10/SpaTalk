@@ -71,13 +71,13 @@ describe("the quote page a client may be looking at", () => {
     render(<QuoteBuilder rates={RATES} />);
 
     // The founder's defaults over the live stack, on the sheet re-derived from measured calls
-    // (re-derived 2026-09-12 from the benchmark call ecc1c53d): CA$265.24 a month.
-    expect(screen.getByTestId("pricing-price")).toHaveTextContent("265.24");
+    // (re-derived 2026-09-12 from the benchmark call ecc1c53d): CA$264.23 a month.
+    expect(screen.getByTestId("pricing-price")).toHaveTextContent("264.23");
     expect(screen.getByTestId("pricing-price-per-call")).toHaveTextContent(
-      "0.3974",
+      "0.3934",
     );
     expect(screen.getByTestId("pricing-price-per-minute")).toHaveTextContent(
-      "0.1136",
+      "0.1124",
     );
     expect(screen.getByTestId("pricing-price-per-text")).toHaveTextContent(
       "0.4312",
@@ -149,7 +149,7 @@ describe("the quote page a client may be looking at", () => {
     for (const testId of COST_LINES) {
       expect(screen.getByTestId(testId)).toBeInTheDocument();
     }
-    expect(screen.getByTestId("pricing-cogs")).toHaveTextContent("92.83");
+    expect(screen.getByTestId("pricing-cogs")).toHaveTextContent("92.48");
     expect(screen.getByTestId("pricing-at")).toHaveTextContent("65%");
     expect(screen.getByTestId("pricing-list-margin")).toHaveTextContent("90.7");
     expect(screen.getByTestId("pricing-margin")).toBeInTheDocument();
