@@ -487,7 +487,9 @@ async def run_tool(
             applied.rejection.reason if applied.rejection else "unknown",
             rejection_text(applied.rejection) if applied.rejection else "no reason recorded",
         )
-        return slots, [], None, False, False
+        # A refusal writes no slot, but it may count a miss (an `unsure` at the returning
+        # step), and that count has to survive for the second non-answer to settle.
+        return applied.slots, [], None, False, False
     spoken = [render_script(key, cfg, now, urgent=False, **fills) for key, fills in applied.say]
     outcome: Outcome | None = None
     ended = applied.end

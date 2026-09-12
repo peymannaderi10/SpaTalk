@@ -22,8 +22,15 @@ def test_start_request_opens_a_flow_and_returning_yes_no_are_stored():
     assert a.slots.flow == "new_booking" and a.say == ()
     b = _apply(a.slots, "answer", {"value": "yes"})
     assert b.slots.returning_client is True
+    # MOVED 2026-09-11 (founder call 1565370e, 21:40:17): "Okay." to "have you been in before?"
+    # became `unsure`, which used to be stored as a new client and the call moved on. It is
+    # a non-answer: the first one is refused so the model asks again in its own words; the
+    # second settles as a new client, so a caller who will not say is still helped.
     c = _apply(a.slots, "answer", {"value": "unsure"})
-    assert c.slots.returning_client is False
+    assert c.ignored and c.rejection.detail == "needs_yes_or_no"
+    assert c.slots.returning_client is None and c.slots.misses == {"returning_client": 1}
+    d = _apply(c.slots, "answer", {"value": "unsure"})
+    assert d.slots.returning_client is False and not d.ignored
 
 
 def test_an_answer_lands_only_in_the_open_slot():
@@ -526,7 +533,11 @@ def test_a_question_shaped_answer_is_refused_with_a_reason():
     g = _apply(r, "answer", {"value": "what do you mean?"})
     assert g.ignored and g.rejection and g.slots.returning_client is None
     assert g.rejection.reason == "bad_value" and g.rejection.detail == "not_a_choice"
-    assert _apply(r, "answer", {"value": "unsure"}).slots.returning_client is False
+    # MOVED 2026-09-11: `unsure` is a non-answer here too (call 1565370e). The first is refused
+    # with a re-ask; the second settles as a new client.
+    u = _apply(r, "answer", {"value": "unsure"})
+    assert u.ignored and u.rejection.detail == "needs_yes_or_no" and u.slots.returning_client is None
+    assert _apply(u.slots, "answer", {"value": "unsure"}).slots.returning_client is False
 
 
 def test_a_generic_category_entry_does_not_fill_the_treatment_slot():
@@ -792,3 +803,21 @@ def test_a_question_that_only_names_a_slot_is_not_a_change():
     b = _apply(s, "change_answer", {"slot": "window", "said": "can we do Wednesday instead?"},
                said="can we do Wednesday instead?")
     assert b.ignored is False and b.slots.preferred_window is None
+
+
+def test_correcting_the_returning_answer_reopens_the_offers():
+    """Founder call 1565370e (2026-09-11 21:40): the offers question had been answered "no" on a
+    mis-heard turn while the caller was recorded as unsure; the caller then corrected "I haven't
+    been in before". The returning answer was re-asked and stored, but the offers flag stood,
+    so a caller who had just become a new client was never offered the new-client deals.
+    Changing an upstream answer clears the answers that depended on it."""
+    from spatalk.brain.flow import Slots, Step, next_step
+
+    s = Slots(flow="new_booking", returning_client=False, offers_done=True)
+    a = _apply(s, "change_answer", {"slot": "returning_client", "said": "I haven't been in before"},
+               said="Well, I haven't been in before")
+    assert a.slots.returning_client is None and a.slots.offers_done is False
+    assert next_step(a.slots, _cfg(), "voice") == Step.RETURNING
+    b = _apply(a.slots, "answer", {"value": "no"})
+    assert next_step(b.slots, _cfg(), "voice") == Step.OFFERS
+

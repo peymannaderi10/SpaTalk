@@ -836,7 +836,10 @@ def _slot_filled(slots: Slots, slot: str) -> bool:
 
 def _reopen(slots: Slots, slot: str) -> Slots:
     clear = {
-        "returning_client": {"returning_client": None},
+        # The offers question hangs off the returning answer: a caller who corrects "I have
+        # not been in before" is a new client again and is offered what a new client is
+        # (founder call 1565370e, 2026-09-11 21:40:25).
+        "returning_client": {"returning_client": None, "offers_done": False},
         "practitioner": {"practitioner": None},
         "service": {"service_id": None},
         "name": {"first_name": None},
@@ -891,6 +894,18 @@ def _answer(
             return Applied(slots=slots.with_(offer_accepted=True))
         return Applied(slots=slots.with_(ended_flow=True), say=(("clinical_declined", {}),))
     if step == Step.RETURNING:
+        if value == "unsure":
+            # "Okay." to "have you been in before?" (founder call 1565370e, 2026-09-11
+            # 21:40:17) is not an answer, and storing it as one sent the call on with the
+            # wrong client on the record. The first non-answer is refused so the model asks
+            # again in its own words; the second settles as a new client, who is offered
+            # everything a new client is, so a caller who will not say is still helped.
+            if slots.misses.get("returning_client", 0) >= 1:
+                return Applied(slots=slots.with_(returning_client=False))
+            return _reject(
+                "bad_value", "answer", slots.miss("returning_client"), cfg, channel,
+                detail="needs_yes_or_no",
+            )
         return Applied(slots=slots.with_(returning_client=yes))
     if step == Step.OFFERS:
         # The offers are the tenant's own words from the knowledge file, spoken by the runtime

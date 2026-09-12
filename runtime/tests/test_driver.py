@@ -344,3 +344,18 @@ def test_a_record_that_only_lacks_the_team_note_answer_is_still_unfiled_work(fix
     assert unfiled_record(short, ref.tenant, "voice") is True
     assert unfiled_record(short.with_(preferred_window=None), ref.tenant, "voice") is False
 
+
+async def test_a_refused_answer_keeps_the_miss_it_recorded(fixed_clock):
+    """`run_tool` used to hand back the caller's original record on every refusal, which was
+    right while a refusal changed nothing. A refused `unsure` at the returning step now counts
+    a miss, so the second one can settle; that count has to survive the round trip."""
+    from spatalk.brain.driver import run_tool
+    from spatalk.brain.flow import Slots
+
+    brain, ref, _ledger, _sms, _llm = _world(fixed_clock, [])
+    slots, spoken, outcome, ended, _speaks = await run_tool(
+        brain._caps, ref, Slots(flow="new_booking"), "answer", {"value": "unsure"}, fixed_clock.now()
+    )
+    assert spoken == [] and outcome is None and ended is False
+    assert slots.returning_client is None and slots.misses == {"returning_client": 1}
+
