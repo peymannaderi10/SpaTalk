@@ -71,19 +71,19 @@ describe("the quote page a client may be looking at", () => {
     render(<QuoteBuilder rates={RATES} />);
 
     // The founder's defaults over the live stack, on the sheet re-derived from measured calls
-    // (cost-gap-C1, 2026-09-11): CA$237.34 a month.
-    expect(screen.getByTestId("pricing-price")).toHaveTextContent("237.34");
+    // (re-derived 2026-09-12 from the benchmark call ecc1c53d): CA$265.24 a month.
+    expect(screen.getByTestId("pricing-price")).toHaveTextContent("265.24");
     expect(screen.getByTestId("pricing-price-per-call")).toHaveTextContent(
-      "0.2983",
+      "0.3974",
     );
     expect(screen.getByTestId("pricing-price-per-minute")).toHaveTextContent(
-      "0.0994",
+      "0.1136",
     );
     expect(screen.getByTestId("pricing-price-per-text")).toHaveTextContent(
-      "0.4187",
+      "0.4312",
     );
     expect(screen.getByTestId("pricing-price-per-chat")).toHaveTextContent(
-      "0.0217",
+      "0.0342",
     );
   });
 
@@ -149,9 +149,9 @@ describe("the quote page a client may be looking at", () => {
     for (const testId of COST_LINES) {
       expect(screen.getByTestId(testId)).toBeInTheDocument();
     }
-    expect(screen.getByTestId("pricing-cogs")).toHaveTextContent("83.07");
+    expect(screen.getByTestId("pricing-cogs")).toHaveTextContent("92.83");
     expect(screen.getByTestId("pricing-at")).toHaveTextContent("65%");
-    expect(screen.getByTestId("pricing-list-margin")).toHaveTextContent("91.7");
+    expect(screen.getByTestId("pricing-list-margin")).toHaveTextContent("90.7");
     expect(screen.getByTestId("pricing-margin")).toBeInTheDocument();
     expect(screen.getByTestId("pricing-clients")).toBeInTheDocument();
     expect(screen.getByTestId("pricing-fx")).toHaveTextContent(

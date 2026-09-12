@@ -80,31 +80,31 @@ describe("the cost model, against the Python it is a port of", () => {
       voiceStackCad(
         "A  founder suggestion at today's real prices (Telnyx + Flux + Aura-2 + Gemini Flash)",
       ),
-    ).toBe(0.0609);
+    ).toBe(0.0668);
     expect(
       voiceStackCad(
         "B  RECOMMENDED (Telnyx + Soniox + Inworld Flash + Gemini 2.5 Flash)",
       ),
-    ).toBe(0.0397);
+    ).toBe(0.0457);
     expect(
       voiceStackCad("B2 same but Deepgram Flux for native end-of-turn"),
-    ).toBe(0.0476);
-    expect(voiceStackCad("B3 same but Flash-Lite LLM")).toBe(0.0359);
+    ).toBe(0.0536);
+    expect(voiceStackCad("B3 same but Flash-Lite LLM")).toBe(0.0378);
     expect(
       voiceStackCad("C  cheapest (Plivo + Soniox + Inworld + Flash-Lite)"),
-    ).toBe(0.0283);
+    ).toBe(0.0302);
     expect(
       voiceStackCad(
         "D  expensive reference (Twilio + Nova-3 + ElevenLabs + Haiku 4.5)",
       ),
-    ).toBe(0.091);
+    ).toBe(0.1106);
     expect(voiceStackCad("B4 Soniox only (STT + TTS), single vendor")).toBe(
-      0.0358,
+      0.0418,
     );
   });
 
   it("splits a call-minute the way the Python's breakdown line does", () => {
-    // `breakdown USD/min: tel 0.0130  stt 0.0020  tts 0.0096  llm 0.0040`
+    // `breakdown USD/min: tel 0.0130  stt 0.0020  tts 0.0095  llm 0.0084` (re-derived 2026-09-12)
     const stack =
       RATES.voice_stacks[
         "B  RECOMMENDED (Telnyx + Soniox + Inworld Flash + Gemini 2.5 Flash)"
@@ -118,8 +118,8 @@ describe("the cost model, against the Python it is a port of", () => {
     );
     expect(cad4(perMinute.tel)).toBe(0.013);
     expect(cad4(perMinute.stt)).toBe(0.002);
-    expect(cad4(perMinute.tts)).toBe(0.0096);
-    expect(cad4(perMinute.llm)).toBe(0.004);
+    expect(cad4(perMinute.tts)).toBe(0.0095);
+    expect(cad4(perMinute.llm)).toBe(0.0084);
     expect(cad4(perMinute.totalUsd)).toBe(
       cad4(perMinute.tel + perMinute.stt + perMinute.tts + perMinute.llm),
     );
@@ -129,8 +129,8 @@ describe("the cost model, against the Python it is a port of", () => {
     // `=== TEXT conversation (SMS incl. carrier fees; chat has no msg cost) ===`
     const assumptions = conversationAssumptions(RATES);
     const expected: Record<string, [number, number, number]> = {
-      "Telnyx CA toll-free + Gemini 2.5 Flash": [0.1483, 0.0093, 0.0174],
-      "Twilio CA toll-free + Gemini 2.5 Flash": [0.2294, 0.0093, 0.0227],
+      "Telnyx CA toll-free + Gemini 2.5 Flash": [0.1535, 0.0146, 0.0174],
+      "Twilio CA toll-free + Gemini 2.5 Flash": [0.2347, 0.0146, 0.0227],
     };
 
     for (const [name, [sms, chat, outbound]] of Object.entries(expected)) {
@@ -209,9 +209,9 @@ describe("the stack that is actually running", () => {
     );
     expect(cad4(perMinute.tel)).toBe(0.013);
     expect(cad4(perMinute.stt)).toBe(0.002);
-    expect(cad4(perMinute.tts)).toBe(0.0068);
-    expect(cad4(perMinute.llm)).toBe(0.0033);
-    expect(cad4(perMinute.totalUsd * RATES.usd_to_cad)).toBe(0.0348);
+    expect(cad4(perMinute.tts)).toBe(0.0067);
+    expect(cad4(perMinute.llm)).toBe(0.0069);
+    expect(cad4(perMinute.totalUsd * RATES.usd_to_cad)).toBe(0.0397);
   });
 
   it("costs a conversation and an outbound message what the model says", () => {
@@ -221,12 +221,12 @@ describe("the stack that is actually running", () => {
       cad4(
         textConversation(live.sms, live.llm, "sms", assumptions).totalUsd * fx,
       ),
-    ).toBe(0.1466);
+    ).toBe(0.1509);
     expect(
       cad4(
         textConversation(live.sms, live.llm, "chat", assumptions).totalUsd * fx,
       ),
-    ).toBe(0.0076);
+    ).toBe(0.012);
     expect(cad4(outboundMessage(live.sms).totalUsd * fx)).toBe(0.0174);
   });
 
@@ -272,7 +272,7 @@ describe("the quote at the founder's defaults", () => {
       clients: 1,
       margin: 0.65,
       callsPerMonth: 250,
-      avgCallMinutes: 3,
+      avgCallMinutes: 3.5,
       smsConvsPerMonth: 150,
       chatConvsPerMonth: 100,
       outboundMsgsPerMonth: 300,
@@ -284,9 +284,9 @@ describe("the quote at the founder's defaults", () => {
   it("reproduces the month's cost per tenant and its margin at the list price", () => {
     const result = quote(inputs, RATES);
 
-    expect(cad4(result.cogsCad)).toBe(83.0688);
-    expect(cad4(result.priceCad)).toBe(237.3393);
-    expect(marginOf(result.cogsCad, 999)).toBeCloseTo(0.9168480939, 6);
+    expect(cad4(result.cogsCad)).toBe(92.8327);
+    expect(cad4(result.priceCad)).toBe(265.2364);
+    expect(marginOf(result.cogsCad, 999)).toBeCloseTo(0.9070743487, 6);
   });
 
   it("breaks the month down into the six lines the page prints", () => {
@@ -296,9 +296,9 @@ describe("the quote at the founder's defaults", () => {
     );
 
     expect(lines).toEqual({
-      voice: 26.1052,
-      sms: 21.9831,
-      chat: 0.7594,
+      voice: 34.7757,
+      sms: 22.6392,
+      chat: 1.1968,
       outbound: 5.211,
       "per-tenant-fixed": 4.5,
       "platform-share": 24.51,
@@ -310,20 +310,20 @@ describe("the quote at the founder's defaults", () => {
 
   it("gives the unit costs the model implies", () => {
     const result = quote(inputs, RATES);
-    expect(cad4(result.perMinute)).toBe(0.0348);
-    expect(cad4(result.perCall)).toBe(0.1044);
-    expect(cad4(result.perTextConv)).toBe(0.1466);
-    expect(cad4(result.perChatConv)).toBe(0.0076);
+    expect(cad4(result.perMinute)).toBe(0.0397);
+    expect(cad4(result.perCall)).toBe(0.1391);
+    expect(cad4(result.perTextConv)).toBe(0.1509);
+    expect(cad4(result.perChatConv)).toBe(0.012);
   });
 
   it("gives the unit prices those costs carry at the margin", () => {
     const result = quote(inputs, RATES);
     // Each unit cost divided by 0.35, the same arithmetic as the monthly
     // price: what one call is worth at the margin, not what it cost.
-    expect(cad4(result.unitPrices.perCall)).toBe(0.2983);
-    expect(cad4(result.unitPrices.perMinute)).toBe(0.0994);
-    expect(cad4(result.unitPrices.perTextConv)).toBe(0.4187);
-    expect(cad4(result.unitPrices.perChatConv)).toBe(0.0217);
+    expect(cad4(result.unitPrices.perCall)).toBe(0.3974);
+    expect(cad4(result.unitPrices.perMinute)).toBe(0.1136);
+    expect(cad4(result.unitPrices.perTextConv)).toBe(0.4312);
+    expect(cad4(result.unitPrices.perChatConv)).toBe(0.0342);
     expect(result.unitPrices.perCall).toBeCloseTo(result.perCall / 0.35, 10);
   });
 

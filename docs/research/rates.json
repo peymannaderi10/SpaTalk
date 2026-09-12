@@ -15,14 +15,14 @@
     }
   },
   "assumptions": {
-    "_note": "Re-derived 2026-09-10 from 38 calls and 42.03 metered minutes of tenant skincentrix (September to date), with the LLM and TTS meters corrected: the usage observer had been counting every metrics frame once per processor hop, so the ledger held eight times the tokens the provider reported and four times the characters. Corrected month: 811,088 input tokens, 311,730 of them read from the vendor cache, 4,625 output, 126 model turns, 28,762 characters sent to be spoken. turns_per_minute 3.00 is measured and unchanged. input_tokens_uncached_per_turn is the 6,400-token request less the ~2,500 the vendor's best-effort implicit cache reads (it caps at ~4,050 tokens and appears on about 6 turns in 10), and is 3,900 rather than the 3,750 the current prompt renders so a clinic with a longer catalogue is still inside it; the September 1 sheet's 600 assumed a cache that read the whole static prefix every turn, which this vendor does not do. output_tokens_per_turn 37 is measured, against 60 assumed. chars_per_spoken_minute 1100 and agent_speaking_fraction 0.58 are measured from the speaking spans of four logged calls (2026-09-10: 107.1 s of speech in a 185 s call); the old 0.5 x 825 = 412 characters a call-minute was an estimate of the same quantity that came out 40% low. avg_call_minutes stays the business assumption: the 38 metered calls average 1.11 minutes because most were hang-ups and tests, and the two real conversations ran 3.08 and 3.45.",
-    "avg_call_minutes": 3.0,
-    "agent_speaking_fraction": 0.58,
-    "chars_per_spoken_minute": 1100,
-    "turns_per_minute": 3.0,
-    "input_tokens_uncached_per_turn": 3900,
-    "input_tokens_cached_per_turn": 2500,
-    "output_tokens_per_turn": 37
+    "_note": "Re-derived 2026-09-12 from the founder's benchmark call ecc1c53d (2026-09-12 00:24, 3.51 metered minutes, 14 model turns, the first call the founder called good) and the four calls of that night (5.46 minutes, 22 turns), on the corrected meter and the live model-words engine: 160,060 input tokens of which 68,231 read from the vendor cache (43%), 566 output, 2,194 characters sent to be spoken, the assistant speaking 115.7 of 210.7 seconds (55%). turns_per_minute 4.0 (was 3.0: the engine asks and answers in the same reply, so turns are shorter). input_tokens_uncached_per_turn 6,250 and cached 4,000 (was 3,900/2,500: the static prompt grew to ~6,000 tokens with the consultative and cosmetic-concern rules; the implicit cache still reads ~4,000). output 40 a turn. agent_speaking_fraction 0.55 (was 0.58). chars_per_spoken_minute 1,150 (mean of 1,140 from four 09-03 calls, 1,137 on the benchmark, 1,292 across the night). Staff alert texts are priced under outbound messages: one filed request costs 3 segments, CA$0.052, 27% of the benchmark call.",
+    "avg_call_minutes": 3.5,
+    "agent_speaking_fraction": 0.55,
+    "chars_per_spoken_minute": 1150,
+    "turns_per_minute": 4.0,
+    "input_tokens_uncached_per_turn": 6250,
+    "input_tokens_cached_per_turn": 4000,
+    "output_tokens_per_turn": 40
   },
   "assumptions_text": {
     "turns_per_conversation": 5,
