@@ -31,8 +31,12 @@ def test_every_slot_tool_is_closed_or_one_of_the_three_transients():
     cfg = _cfg()
     # `choose_window.date` is a string the ledger closes itself (an ISO date, a weekday or
     # "any"; `PreferredWindow` turns anything else into "any"), as it always was.
+    # MOVED 2026-09-11: `change_answer.said` joins them (defect 7). It is the caller's own
+    # words, read by `_change_evidence` and thrown away — a correction is only a correction
+    # when the caller asked for one, and a slot name on its own is not evidence of that.
     transient = {("give_name", "first_name"), ("give_phone", "digits"),
                  ("choose_practitioner", "said"), ("choose_service", "said"),
+                 ("change_answer", "said"),
                  ("choose_window", "date")}
     for name in TOOL_NAMES:
         if name in ("escalate", "end_conversation"):

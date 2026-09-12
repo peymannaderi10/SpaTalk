@@ -119,6 +119,7 @@ async def _run_one_tool(session: VoiceSession, params: FunctionCallParams) -> bo
         session.cfg,
         session.ref.channel,
         session.ref.caller_phone,
+        caller_said=getattr(session, "caller_said", ""),
     )
     if rejection is not None:
         # The call changed nothing: the step does not offer this tool, the record is not
@@ -168,6 +169,7 @@ async def _run_one_tool(session: VoiceSession, params: FunctionCallParams) -> bo
         params.function_name,
         args,
         now,
+        caller_said=getattr(session, "caller_said", ""),
     )
     session.slots = slots
     # The receipt goes in at the ledger's own word, before the frame that asserts it:

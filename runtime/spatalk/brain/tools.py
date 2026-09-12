@@ -120,10 +120,15 @@ def slot_tool(name: str, cfg: TenantConfig) -> FunctionSchema:
             name="change_answer",
             description=(
                 "The caller changed their mind about an earlier answer. "
-                "The system asks that question again."
+                "The system asks that question again. Only when their own words name that "
+                "answer or give the new one: the system checks, and refuses the rest."
+                + ONLY_WHAT_THEY_SAID
             ),
-            properties={"slot": {"type": "string", "enum": SLOT_NAMES}},
-            required=["slot"],
+            properties={
+                "slot": {"type": "string", "enum": SLOT_NAMES},
+                "said": {"type": "string"},
+            },
+            required=["slot", "said"],
         )
     if name == "file_request":
         return FunctionSchema(

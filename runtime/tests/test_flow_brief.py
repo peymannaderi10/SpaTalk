@@ -116,3 +116,18 @@ def test_no_flow_no_open_question():
     cfg = _cfg()
     assert open_question(Slots(), cfg, "voice") is None
     assert open_question(Slots(flow="question", ended_flow=True), cfg, "voice") is None
+
+
+def test_the_brief_says_a_change_needs_the_callers_words():
+    """Defect 7. The brief used to read "If instead they change an earlier answer, call
+    change_answer with that slot", which invites the bare call that cleared a filled window on
+    "Oh, actually, you know." (founder call 14ea2579, 15:56:05). The runtime now refuses a
+    change the caller's words do not ask for, so the model is told the precondition it is
+    being judged on."""
+    from spatalk.brain.flow import Slots, Step, step_message
+
+    brief = step_message(Step.SERVICE, Slots(flow="new_booking", returning_client=True,
+                                             practitioner="any"), _cfg(), "voice")
+    assert "change_answer" in brief
+    assert "their own words" in brief
+    assert "name that answer or give the new one" in brief

@@ -94,6 +94,7 @@ def test_no_tool_carries_contact_lead_or_free_text_beyond_the_three_transients()
     allowed_free = {
         ("give_name", "first_name"), ("give_phone", "digits"),
         ("choose_practitioner", "said"), ("choose_service", "said"),
+        ("change_answer", "said"),
         ("choose_window", "date"),
     }
     for step in Step:
@@ -102,3 +103,17 @@ def test_no_tool_carries_contact_lead_or_free_text_beyond_the_three_transients()
                 assert prop not in ("contact", "notes", "returning_client", "concern"), (tool.name, prop)
                 if schema.get("type") == "string" and "enum" not in schema:
                     assert (tool.name, prop) in allowed_free, (tool.name, prop)
+
+
+def test_change_answer_carries_the_callers_words():
+    """Defect 7, founder call 14ea2579, 15:56:05. The schema was `slot` alone, so the runtime
+    had no way to tell a correction from "Oh, actually, you know" and cleared a filled window
+    on it. `said` is the caller's own words, read and thrown away like `choose_service.said`:
+    the engine judges the turn with it and stores nothing from it."""
+    from spatalk.brain.tools import slot_tool
+
+    tool = slot_tool("change_answer", _cfg())
+    assert set(tool.properties) == {"slot", "said"}
+    assert tool.required == ["slot", "said"]
+    assert tool.properties["said"]["type"] == "string"
+    assert "notes" not in tool.properties

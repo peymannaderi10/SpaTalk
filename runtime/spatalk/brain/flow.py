@@ -13,6 +13,7 @@ from typing import Literal
 from pipecat.adapters.schemas.function_schema import FunctionSchema
 from pydantic import BaseModel, Field
 
+from spatalk.brain.breath import item_lexicon
 from spatalk.brain.ports import ItemDraft
 from spatalk.brain.requests import ContactInfo, PreferredWindow
 from spatalk.brain.resolve import (
@@ -345,7 +346,7 @@ class Rejection(BaseModel, frozen=True):
     missing: Missing | None = None
     detail: Literal[
         "question_shaped", "unknown_kind", "empty_slot", "not_a_choice",
-        "needs_yes_or_no", "name_it_instead",
+        "needs_yes_or_no", "name_it_instead", "no_change_named",
     ] | None = None
 
 
@@ -390,6 +391,10 @@ _DETAIL_TEXT = {
     "not_a_choice": "that is not one of the values the system accepts",
     "needs_yes_or_no": "that question takes a yes or a no",
     "name_it_instead": "that question is answered by naming one of the two, not by yes or no",
+    "no_change_named": (
+        "nothing in what they said names that answer or gives a new one, so it stands as it "
+        "is — ask them what they would like to change"
+    ),
 }
 
 
@@ -531,7 +536,10 @@ def apply(
     away: it decides nothing about the record, only whether the turn left a question of
     theirs unanswered. Nothing of it is stored.
     """
-    a = _finalize(_apply(slots, name, args, cfg, channel, caller_phone), cfg, channel, name)
+    a = _finalize(
+        _apply(slots, name, args, cfg, channel, caller_phone, caller_said=caller_said),
+        cfg, channel, name,
+    )
     if (
         _slot_recorded(slots, a.slots)
         and not a.ignored
@@ -631,7 +639,14 @@ def pop_digression(slots: Slots, cfg: TenantConfig, channel: str) -> Slots:
 
 
 def _apply(
-    slots: Slots, name: str, args: dict, cfg: TenantConfig, channel: str, caller_phone: str | None
+    slots: Slots,
+    name: str,
+    args: dict,
+    cfg: TenantConfig,
+    channel: str,
+    caller_phone: str | None,
+    *,
+    caller_said: str = "",
 ) -> Applied:
     step = next_step(slots, cfg, channel)
     if name == "end_conversation":
@@ -678,6 +693,12 @@ def _apply(
             # 2026-09-10 20:54:29), and the step question came back for the second time in a
             # row with no answer in front of it. An ignored call hands the turn to the model.
             return _reject("bad_value", name, slots, cfg, channel, detail="empty_slot")
+        # The caller's own transcription decides, and the model's `said` is the fallback for a
+        # channel that has none: on the founder's call the model rewrote the caller's words
+        # once already (15:55:02), so an argument cannot be the evidence for destroying an
+        # answer the caller gave.
+        if not _change_evidence(slot, caller_said or args.get("said", ""), cfg):
+            return _reject("bad_value", name, slots, cfg, channel, detail="no_change_named")
         return Applied(slots=_reopen(slots, slot))
     if name == "answer":
         # The schema's enum is the whole vocabulary of this tool. Anything else is the
@@ -727,6 +748,69 @@ _SLOT_FIELDS = {
 
 
 _SLOT_VALUES: tuple[str, ...] = tuple(f for fields in _SLOT_FIELDS.values() for f in fields)
+
+# What the caller's own words have to carry before a filled slot is reopened. Two closed
+# vocabularies per slot, because a question that names a slot is a request to be told, not a
+# correction: `_SLOT_NAMED` is the slot itself ("what day did I say?") and `_SLOT_VALUE_WORDS`
+# is an answer that replaces the one on the record ("make it Wednesday"). A value wins even
+# inside a question ("can we do Wednesday instead?"); a name alone does not.
+_SLOT_NAMED = {
+    "window": ("day", "days", "date", "time", "times", "when", "schedule", "appointment"),
+    "service": ("treatment", "treatments", "service", "services", "procedure", "session"),
+    "name": ("name", "spelled", "spelling", "misspelled", "called"),
+    "phone": ("number", "phone", "cell", "mobile", "digits", "line"),
+    "practitioner": (
+        "who", "practitioner", "esthetician", "aesthetician", "therapist", "nurse", "doctor",
+    ),
+    "returning_client": ("client", "before", "first", "new", "returning", "been"),
+}
+_SLOT_VALUE_WORDS = {
+    "window": (
+        "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
+        "morning", "mornings", "afternoon", "afternoons", "evening", "evenings", "night",
+        "today", "tomorrow", "tonight", "weekend", "weekday", "noon", "am", "pm",
+        "earlier", "later", "sooner",
+    ),
+    # "anyone" is an answer to the practitioner question in the tenant's own script, so it is
+    # a new value there and nowhere else.
+    "practitioner": ("anyone", "anybody", "someone", "somebody", "whoever", "any"),
+}
+_DIGITS = re.compile(r"\d")
+
+
+def _change_evidence(slot: str, said: str, cfg: TenantConfig) -> bool:
+    """Do the caller's own words ask for that answer to be changed?
+
+    Founder call 14ea2579, 2026-09-11 15:56:05: "Oh, actually, you know." became
+    `change_answer{'slot': 'window'}`, the filled window was cleared and the day question came
+    back for the second time; the caller's next words were "What? I already-". The tool used to
+    take a slot name and nothing else, so the runtime had no way to tell a correction from a
+    filler. Read and thrown away, like every other transient: nothing here is stored.
+    """
+    words = re.sub(r"[^a-z0-9' ]+", " ", (said or "").lower()).split()
+    if not words:
+        return False
+    joined = " ".join(words)
+    value = any(w in _SLOT_VALUE_WORDS.get(slot, ()) for w in words)
+    if slot == "phone":
+        value = value or len(_DIGITS.findall(joined)) >= 7
+    if not value and slot in ("service", "practitioner"):
+        match = match_service(said, cfg) if slot == "service" else match_practitioner(said, cfg)
+        # "kind" is a category — "what facial did I say?" names no treatment to change to.
+        value = match.kind in ("exact", "confirm", "which")
+        if not value:
+            # The resolver reads a whole sentence as one answer, so "make it the hydrabrasion
+            # one" scores as no match at all. A distinctive catalogue word in the turn is the
+            # other half: the same lexicon the breath budget counts names with, and it holds
+            # only words that belong to exactly one entry and are four characters or longer.
+            lexicon = item_lexicon(cfg)
+            service_ids = {sv.id for sv in cfg.services}
+            hits = {lexicon[w] for w in words if w in lexicon}
+            value = any((h in service_ids) == (slot == "service") for h in hits)
+    if value:
+        return True
+    named = any(w in _SLOT_NAMED.get(slot, ()) for w in words)
+    return named and not turn_asked(said)
 
 
 def _slot_recorded(before: Slots, after: Slots) -> bool:
@@ -1255,7 +1339,8 @@ def step_message(step: Step, slots: Slots, cfg: TenantConfig, channel: str) -> s
         f"{STEP_MARKER} {known_text}Still needed: {wanted}{choices}. Ask for it in one short "
         f"question, in your own words, and put their answer in {tool}; when you record an "
         "answer with a tool, ask the next question in the same reply. If instead they change "
-        "an earlier answer, call change_answer with that slot."
+        "an earlier answer, call change_answer with that slot and their own words: the system "
+        "checks that those words name that answer or give the new one, and refuses the rest."
         + _BRIEF_TAIL
         + _STEP_EXTRA.get(step, "")
     )

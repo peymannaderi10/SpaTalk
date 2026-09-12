@@ -454,16 +454,29 @@ def drop_trailing_question(text: str) -> str:
 
 
 async def run_tool(
-    caps: Capabilities, ref: ConversationRef, slots: Slots, name: str, args: dict, now: datetime
+    caps: Capabilities,
+    ref: ConversationRef,
+    slots: Slots,
+    name: str,
+    args: dict,
+    now: datetime,
+    *,
+    caller_said: str = "",
 ) -> tuple[Slots, list[str], Outcome | None, bool, bool]:
     """One tool call through the engine. Returns (slots, spoken lines, outcome, ended,
     model_speaks): the last is True when the model's own words are the turn's content.
 
     Spoken lines are tenant scripts, never model text. A tool the step did not offer is
     ignored: nothing is said and nothing is written.
+
+    `caller_said` is the caller's own words for the turn, passed straight to `apply`, which
+    reads and throws them away: the engine judges a `change_answer` with them, and refusing
+    here for a reason the caller's driver already checked would be a silent no.
     """
     cfg = ref.tenant
-    applied = apply(slots, name, args or {}, cfg, ref.channel, ref.caller_phone)
+    applied = apply(
+        slots, name, args or {}, cfg, ref.channel, ref.caller_phone, caller_said=caller_said
+    )
     if applied.ignored:
         # The refusal's own words, so the log says what the model would have been told. On a
         # text channel it is not handed back: a turn there is one completion with no
@@ -595,7 +608,7 @@ class Brain:
         for tc in resp.tool_calls:
             names.append(tc.name)
             slots, spoken, out, did_end, speaks = await run_tool(
-                self._caps, ref, slots, tc.name, tc.arguments, now
+                self._caps, ref, slots, tc.name, tc.arguments, now, caller_said=user_text
             )
             model_speaks = model_speaks or speaks
             said.extend(spoken)

@@ -9,10 +9,10 @@ def _cfg():
     return load_bundle(BUNDLE)
 
 
-def _apply(slots, name, args, channel="voice", caller="+19055550101"):
+def _apply(slots, name, args, channel="voice", caller="+19055550101", said=""):
     from spatalk.brain.flow import apply
 
-    return apply(slots, name, args, _cfg(), channel, caller)
+    return apply(slots, name, args, _cfg(), channel, caller, caller_said=said)
 
 
 def test_start_request_opens_a_flow_and_returning_yes_no_are_stored():
@@ -345,13 +345,18 @@ def test_the_clinical_offer_is_answered_yes_or_no_before_the_name():
 
 
 def test_change_answer_reopens_a_step():
+    """MOVED 2026-09-11: the call carries the caller's own words now. A bare `{"slot": ...}`
+    is what "Oh, actually, you know." became on founder call 14ea2579 at 15:56:05, which
+    cleared a filled window and re-asked the day; a slot name on its own is no longer evidence
+    that the caller asked for anything to change."""
     from spatalk.brain.flow import Slots, Step, next_step
 
     s = Slots(
         flow="new_booking", returning_client=True, practitioner="Helen Courbetis",
         service_id="hydrabrasion_facial", first_name="Dana",
     )
-    a = _apply(s, "change_answer", {"slot": "service"})
+    a = _apply(s, "change_answer", {"slot": "service", "said": "actually, a different treatment"},
+               said="actually, a different treatment")
     assert a.slots.service_id is None and next_step(a.slots, _cfg(), "voice") == Step.SERVICE
 
 
@@ -460,9 +465,17 @@ def test_change_answer_for_a_slot_that_holds_nothing_is_ignored():
     assert a.ignored and a.slots == s
     # And the model is told which way it was wrong, so it stops guessing (2026-09-11 memo).
     assert a.rejection.reason == "bad_value" and a.rejection.detail == "empty_slot"
-    # A slot that does hold something is still reopened.
-    b = _apply(s.with_(service_id="mesojet_facial"), "change_answer", {"slot": "service"})
+    # A slot that does hold something is still reopened, when the caller's words ask for it
+    # (MOVED 2026-09-11: the call used to need nothing but the slot name).
+    b = _apply(s.with_(service_id="mesojet_facial"), "change_answer",
+               {"slot": "service", "said": "no, make it the hydrabrasion one"},
+               said="no, make it the hydrabrasion one")
     assert not b.ignored and b.slots.service_id is None
+    # And the empty-slot refusal still wins over the new one, so the 2026-09-10 20:54:29
+    # regression stays covered whatever the caller said.
+    c = _apply(s, "change_answer", {"slot": "service", "said": "no, make it the hydrabrasion one"},
+               said="no, make it the hydrabrasion one")
+    assert c.ignored and c.rejection.detail == "empty_slot"
     # A slot name the engine does not know was already ignored; it stays that way.
     assert _apply(s, "change_answer", {"slot": "mood"}).ignored
 
@@ -699,3 +712,83 @@ def test_a_repeated_clinical_escalation_keeps_the_parked_booking():
     no = _apply(again.slots, "answer", {"value": "no"})
     back = close_flow(no.slots)
     assert back.flow == "new_booking" and back.service_id == "mesojet_facial"
+
+
+def test_a_vague_turn_does_not_clear_a_filled_slot():
+    """Founder call 14ea2579, 2026-09-11 15:56:05. The window was filled ("Monday or Tuesday
+    of next week"), the system had asked whether there was anything for the team to know, and
+    the caller said "Oh, actually, you know." The model read that as a correction and called
+    change_answer(slot='window'); the runtime cleared the window and asked "Which day or time
+    of day suits you best for the visit?" for the second time. The caller's next words were
+    "What? I already-". A slot only reopens on words that name it or carry a new value."""
+    from spatalk.brain.flow import Slots, Step, next_step
+    from spatalk.brain.requests import PreferredWindow
+
+    s = Slots(
+        flow="new_booking", returning_client=False, offers_done=True,
+        service_id="mesojet_facial", practitioner="any", first_name="Payman",
+        phone="+19055550101", phone_confirmed=True,
+        preferred_window=PreferredWindow(date="2026-09-15", part_of_day="morning"),
+    )
+    assert next_step(s, _cfg(), "voice") == Step.TEAM_NOTE
+    a = _apply(s, "change_answer", {"slot": "window", "said": "Oh, actually, you know."},
+               said="Oh, actually, you know.")
+    assert a.ignored is True and a.slots == s
+    assert a.rejection.reason == "bad_value" and a.rejection.detail == "no_change_named"
+    assert next_step(a.slots, _cfg(), "voice") == Step.TEAM_NOTE
+    # The model's own argument cannot manufacture the evidence the caller never gave: the
+    # caller's transcription wins wherever the channel has one (defect 5, same call).
+    b = _apply(s, "change_answer", {"slot": "window", "said": "change the day"},
+               said="Oh, actually, you know.")
+    assert b.ignored is True and b.slots.preferred_window == s.preferred_window
+
+
+def test_a_named_slot_or_a_new_value_still_reopens_it():
+    """The other half: a real correction is still a correction, by the slot's name or by the
+    answer that replaces it."""
+    from spatalk.brain.flow import Slots, Step, next_step
+    from spatalk.brain.requests import PreferredWindow
+
+    s = Slots(
+        flow="new_booking", returning_client=False, offers_done=True,
+        service_id="mesojet_facial", practitioner="any", first_name="Payman",
+        phone="+19055550101", phone_confirmed=True,
+        preferred_window=PreferredWindow(date="2026-09-15", part_of_day="morning"),
+    )
+    for words in ("actually, can we make it Wednesday instead", "change the day", "sorry, the afternoon"):
+        a = _apply(s, "change_answer", {"slot": "window", "said": words}, said=words)
+        assert a.ignored is False, words
+        assert a.slots.preferred_window is None, words
+        assert next_step(a.slots, _cfg(), "voice") == Step.WINDOW, words
+    svc = _apply(s, "change_answer", {"slot": "service", "said": "no, the hydrabrasion one"},
+                 said="no, the hydrabrasion one")
+    assert svc.ignored is False and svc.slots.service_id is None
+    name = _apply(s, "change_answer", {"slot": "name", "said": "my name is Peyman actually"},
+                  said="my name is Peyman actually")
+    assert name.ignored is False and name.slots.first_name is None
+    phone = _apply(s, "change_answer", {"slot": "phone", "said": "use 416 555 0199 instead"},
+                   said="use 416 555 0199 instead")
+    assert phone.ignored is False and phone.slots.phone is None
+
+
+def test_a_question_that_only_names_a_slot_is_not_a_change():
+    """"What day did I say?" names the slot and asks to be told, which is the 2026-09-10
+    20:54:29 mistake in a record that is full rather than empty: the answer is read back, not
+    thrown away."""
+    from spatalk.brain.flow import Slots
+    from spatalk.brain.requests import PreferredWindow
+
+    s = Slots(
+        flow="new_booking", returning_client=False, offers_done=True,
+        service_id="mesojet_facial", practitioner="any", first_name="Payman",
+        phone="+19055550101", phone_confirmed=True,
+        preferred_window=PreferredWindow(date="2026-09-15", part_of_day="morning"),
+    )
+    a = _apply(s, "change_answer", {"slot": "window", "said": "what day did I say?"},
+               said="what day did I say?")
+    assert a.ignored is True and a.slots == s
+    assert a.rejection.detail == "no_change_named"
+    # A question that carries the new answer is still a correction.
+    b = _apply(s, "change_answer", {"slot": "window", "said": "can we do Wednesday instead?"},
+               said="can we do Wednesday instead?")
+    assert b.ignored is False and b.slots.preferred_window is None
