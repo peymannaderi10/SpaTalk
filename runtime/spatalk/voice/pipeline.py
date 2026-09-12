@@ -14,7 +14,6 @@ from datetime import datetime, timezone
 from fastapi import WebSocket
 from loguru import logger
 from pipecat.audio.turn.smart_turn.base_smart_turn import SmartTurnParams
-from pipecat.audio.turn.smart_turn.local_smart_turn_v3 import LocalSmartTurnAnalyzerV3
 from pipecat.audio.vad.silero import SileroVADAnalyzer
 from pipecat.audio.vad.vad_analyzer import VADParams
 from pipecat.frames.frames import EndFrame, TTSSpeakFrame
@@ -69,6 +68,7 @@ from spatalk.conversations import append_message, end_conversation, record_usage
 # Operations plan, Task E5: the call's per-stage p95, written at the end of the call.
 from spatalk.ops.latency import session_stage_ms
 from spatalk.text.textback import schedule_missed_call_textback
+from spatalk.voice.turns import TURN_RESCORE_SECS, RescoringSmartTurnAnalyzer
 from spatalk.voice.handlers import register_tool_handlers
 # Llm failover plan, Task F2: two vendors behind one place in the pipeline.
 from spatalk.voice.llm_router import LLMRouter
@@ -117,7 +117,8 @@ IDLE_NUDGE_SECS = 10.0
 
 def user_turn_params() -> LLMUserAggregatorParams:
     """How the pipeline decides the caller has finished speaking, and when it may listen."""
-    analyzer = LocalSmartTurnAnalyzerV3(
+    analyzer = RescoringSmartTurnAnalyzer(
+        rescore_secs=TURN_RESCORE_SECS,
         params=SmartTurnParams(stop_secs=TURN_END_FALLBACK_SECS, pre_speech_ms=TURN_PRE_SPEECH_MS)
     )
     return LLMUserAggregatorParams(
@@ -167,10 +168,15 @@ def make_tts(settings):
         # Single-vendor speech (founder decision 2026-09-02): the same Soniox key drives
         # both stages. tts-rt-v2 is Soniox's real-time model; the voice is an env choice.
         from pipecat.services.soniox.tts import SonioxTTSService, SonioxTTSSettings
+        from pipecat.services.tts_service import TextAggregationMode
 
         return SonioxTTSService(
             api_key=settings.soniox_api_key,
             settings=SonioxTTSSettings(model="tts-rt-v2", voice=settings.soniox_voice),
+            # Stream the model's words as they arrive rather than a sentence at a time: the
+            # first audio starts 150-300 ms sooner (founder, 2026-09-12, response time). The
+            # guard still releases whole sentences, so nothing half-judged reaches the voice.
+            text_aggregation_mode=TextAggregationMode.TOKEN,
         )
     from pipecat.services.inworld.tts import InworldTTSService
 
