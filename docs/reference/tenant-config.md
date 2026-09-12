@@ -96,7 +96,7 @@ payment: "I can't take or discuss payment details on this line. The team can hel
 captured: "I've sent that to the team as a request. Someone will confirm with you as soon as they're free. Is there anything else I can help with?"
 link_sent: "I've just texted you the booking link for {service}. Is there anything else I can help with?"
 link_captured: "I'll have the team send you the booking link for {service}. Someone will be in touch as soon as they're free. Is there anything else I can help with?"
-cannot_complete: "I can't complete that from here, but I've passed it to the team and someone will confirm with you as soon as they're free. Is there anything else I can help with?"
+cannot_complete: "I can't do that from this line myself, but the team can. Would you like me to pass it on to them?"
 goodbye: "Thanks for calling {name}. Have a great day."
 
 # Defaults exist for everything below. They never promise an action.

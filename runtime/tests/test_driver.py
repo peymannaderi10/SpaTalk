@@ -43,8 +43,11 @@ async def test_guard_blocks_hallucinated_completion_and_files_item(fixed_clock):
     from spatalk.brain.driver import LLMResponse
     brain, ref, ledger, *_ = _world(fixed_clock, [LLMResponse(text="Done, I've booked you for Thursday at 2.", tool_calls=[])])
     r = await brain.turn(ref, [], "Book me Thursday at 2")
-    assert r.guard_blocked and "booked" not in r.reply and "passed it to the team" in r.reply
-    assert ledger.items[0].type == "question"
+    assert r.guard_blocked and "booked" not in r.reply
+    # MOVED 2026-09-11 (call 977f0aa1): a blocked claim is replaced by the claim-free offer and
+    # files nothing; the request flow, with the caller's name, is the only way onto the ledger.
+    assert r.reply.startswith(ref.tenant.scripts.cannot_complete)
+    assert ledger.items == []
 
 
 @pytest.mark.skipif(not os.environ.get("GOOGLE_API_KEY"), reason="live Gemini smoke test")
@@ -79,7 +82,8 @@ async def test_openai_client_calls_a_tool(fixed_clock):
 
 
 async def test_guard_block_with_a_dead_ledger_refuses_and_claims_nothing(fixed_clock):
-    """The blocked claim could not be filed, so the caller gets the clinic's number, not a promise."""
+    """MOVED 2026-09-11 (call 977f0aa1): a blocked claim files nothing, so a dead ledger is never
+    reached on this path; the caller hears the claim-free offer, up or down."""
     from spatalk.brain.driver import LLMResponse
     from spatalk.brain.ports import MemoryLedger
 
@@ -91,9 +95,8 @@ async def test_guard_block_with_a_dead_ledger_refuses_and_claims_nothing(fixed_c
                             [LLMResponse(text="Done, I've booked you for Thursday at 2.", tool_calls=[])],
                             ledger=ExplodingLedger(fixed_clock))
     r = await brain.turn(ref, [], "Book me Thursday at 2")
-    assert r.guard_blocked and [o.kind for o in r.outcomes] == ["refused"]
-    assert r.outcomes[0].reason == "unavailable"
-    assert "905-703-7546" in r.reply
+    assert r.guard_blocked and r.outcomes == []
+    assert r.reply.startswith(ref.tenant.scripts.cannot_complete)
     low = r.reply.lower()
     for claim in ("sent", "passed it", "confirm with you", "booked"):
         assert claim not in low, f"refusal claimed an action: {r.reply!r}"
@@ -109,7 +112,7 @@ async def test_a_text_reply_that_claims_a_filing_with_nothing_filed_is_retracted
     r = await brain.turn(ref, [], "can someone call me")
     assert r.guard_blocked is True
     assert r.reply.startswith(ref.tenant.scripts.cannot_complete.split(".")[0])
-    assert len(ledger.items) == 1
+    assert ledger.items == []  # moved 2026-09-11 (call 977f0aa1): a blocked claim files nothing
 
 
 async def test_a_reply_that_restates_the_filing_this_turn_made_is_not_retracted(fixed_clock):

@@ -134,10 +134,13 @@ def test_the_receipt_lexicon_leaves_the_tenants_own_outcome_scripts_alone_once_a
 
     cfg = _bundle_cfg()
     now = datetime(2026, 9, 11, 18, 0, tzinfo=timezone.utc)
-    for key in ("captured", "clinical", "human_request", "complaint", "cannot_complete"):
+    for key in ("captured", "clinical", "human_request", "complaint"):
         text = render_script(key, cfg, now, urgent=False)
         assert guard(text, False, cfg, "X", receipts=1).blocked is False, key
         assert guard(text, False, cfg, "X", receipts=0).blocked is True, key
+    # `cannot_complete` left this list on 2026-09-11 (call 977f0aa1): it is the replacement for
+    # a blocked claim and files nothing, so it must pass with no receipt at all.
+    assert guard(render_script("cannot_complete", cfg, now, urgent=False), False, cfg, "X", receipts=0).blocked is False
 
 
 def test_a_question_and_a_refusal_are_never_receipts():

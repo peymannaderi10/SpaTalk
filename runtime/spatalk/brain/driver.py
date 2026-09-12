@@ -639,15 +639,11 @@ class Brain:
             )
             g = guard(resp.text, has_completed, cfg, replacement="", receipts=receipts)
             if g.blocked:
+                # Nothing is filed on a blocked claim (founder rule 2026-09-11, call 977f0aa1):
+                # the replacement claims nothing and offers the team; a yes runs the request
+                # flow, which asks for the name before anything reaches the ledger.
                 blocked = True
-                try:
-                    out = await self._caps.capture(ref, draft_from(Slots(flow="question"), cfg))
-                    said.insert(0, render_script("cannot_complete", cfg, now, urgent=False))
-                except Exception as e:  # noqa: BLE001  ledger down: nothing was filed, promise nothing
-                    logger.exception("guard could not file the blocked claim: {}", e)
-                    out = Refused(reason="unavailable")
-                    said.insert(0, render(out, cfg, now, channel=ref.channel))
-                outcomes.append(out)
+                said.insert(0, render_script("cannot_complete", cfg, now, urgent=False))
                 band = max(band, 2)
                 logger.warning("guard blocked model text ({}): {!r}", g.matched, resp.text)
             else:

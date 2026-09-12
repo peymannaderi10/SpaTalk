@@ -68,8 +68,9 @@ async def test_guard_replaces_completion_claim_and_drops_rest(fixed_clock):
                              expected_down_frames=[LLMFullResponseStartFrame, LLMTextFrame, LLMFullResponseEndFrame],
                              start_timeout=10.0)
     texts = [f.text for f in down if isinstance(f, LLMTextFrame)]
-    assert len(texts) == 1 and "passed it to the team" in texts[0] and "booked" not in texts[0]
-    assert session.guard_blocks == 1 and ledger.items[0].type == "question"
+    # MOVED 2026-09-11 (call 977f0aa1): the replacement claims nothing and files nothing.
+    assert len(texts) == 1 and texts[0].strip() == session.cfg.scripts.cannot_complete
+    assert "booked" not in texts[0] and session.guard_blocks == 1 and ledger.items == []
 
 
 async def test_guard_passes_clean_sentences(fixed_clock):
@@ -128,7 +129,9 @@ async def test_rules_gate_forwards_ordinary_transcription(fixed_clock):
 
 
 async def test_guard_block_with_a_dead_ledger_speaks_the_refusal(fixed_clock):
-    """Ledger down on the guard path: speak the clinic's number, never the cannot_complete promise."""
+    """MOVED 2026-09-11 (call 977f0aa1): the guard path files nothing any more, so the ledger is
+    never touched on a block, and the replacement is the claim-free `cannot_complete` offer
+    whether the ledger is up or down."""
     from spatalk.brain.ports import MemoryLedger
     from spatalk.voice.processors import OutputGuardProcessor
 
@@ -143,7 +146,7 @@ async def test_guard_block_with_a_dead_ledger_speaks_the_refusal(fixed_clock):
                              expected_down_frames=[LLMFullResponseStartFrame, LLMTextFrame, LLMFullResponseEndFrame],
                              start_timeout=10.0)
     texts = [f.text for f in down if isinstance(f, LLMTextFrame)]
-    assert len(texts) == 1 and "905-703-7546" in texts[0]
+    assert len(texts) == 1 and texts[0].strip() == session.cfg.scripts.cannot_complete
     low = texts[0].lower()
     for claim in ("sent", "passed it", "confirm with you", "booked"):
         assert claim not in low, f"refusal claimed an action: {texts[0]!r}"
@@ -782,8 +785,11 @@ async def test_a_paraphrased_outcome_claim_is_retracted_when_nothing_was_filed(f
     )
     said = [f.text.strip() for f in down if isinstance(f, LLMTextFrame)]
     assert said == [session.cfg.scripts.cannot_complete]
-    # The replacement sentence is true: an item exists, and its id is now a receipt.
-    assert len(ledger.items) == 1 and session.receipts == [f"item:{ledger.items[0].id}"]
+    # MOVED 2026-09-11 (founder call 977f0aa1, 21:59:57): the retraction used to FILE a
+    # nameless "question" item so that its "I've passed it to the team" was true. The
+    # founder's rule is that nothing is filed without the caller's name and a request they
+    # asked for, so the replacement now claims nothing, offers the team, and files nothing.
+    assert ledger.items == [] and session.receipts == []
     assert session.guard_blocks == 1
 
 
@@ -805,7 +811,7 @@ async def test_the_replacement_sentence_is_not_guarded_again(fixed_clock):
     )
     said = [f.text.strip() for f in down if isinstance(f, LLMTextFrame)]
     assert said == [session.cfg.scripts.cannot_complete]
-    assert len(ledger.items) == 1, "the retraction filed exactly one item"
+    assert ledger.items == [], "a retraction files nothing (moved 2026-09-11, call 977f0aa1)"
 
 
 async def test_a_stall_that_implies_an_outcome_never_reaches_the_wire(fixed_clock):
@@ -852,7 +858,7 @@ async def test_a_fixed_script_from_upstream_goes_out_with_its_receipt_and_is_hel
     assert [f.text for f in down2 if isinstance(f, TTSSpeakFrame)] == [
         session2.cfg.scripts.cannot_complete
     ]
-    assert len(ledger2.items) == 1, "the retraction filed the item its sentence asserts"
+    assert ledger2.items == [], "a retraction files nothing (moved 2026-09-11, call 977f0aa1)"
 
 
 # --- rung 0: the call reports on itself (memo §6) -----------------------------------------
@@ -1453,3 +1459,28 @@ async def test_the_gate_firing_clinical_again_at_the_offer_keeps_the_parked_book
     assert session.slots.flow == "clinical"
     assert session.slots.parked is not None
     assert session.slots.parked.service_id == "mesojet_facial"
+
+
+def test_the_replacement_line_claims_nothing_so_it_needs_no_receipt():
+    """Founder call 977f0aa1 (2026-09-11 21:59): "what do you have for pigmentation on my arm"
+    drew "I'll go ahead and file that as a question", the guard blocked it, and the old
+    `cannot_complete` then told the caller it had been passed to the team, backed by a filed
+    item with no name on it. The replacement is now an offer, not a claim: it passes the
+    guard with no receipt at all, in every bundle that ships one."""
+    from pathlib import Path
+
+    from spatalk.brain.guard import guard
+    from spatalk.tenants.bundle import load_bundle
+
+    import yaml
+
+    cfg = load_bundle(BUNDLE)
+    starter = Path(__file__).resolve().parents[1] / "spatalk" / "tenants" / "starter" / "scripts.yaml"
+    for bundle, line in (
+        ("skincentrix", cfg.scripts.cannot_complete),
+        ("starter", yaml.safe_load(starter.read_text(encoding="utf-8"))["cannot_complete"]),
+    ):
+        g = guard(line, False, cfg, "", receipts=0)
+        assert not g.blocked, (bundle, g.matched)
+        assert "passed" not in line.lower() and "filed" not in line.lower(), line
+        assert "team" in line.lower() and "?" in line, line

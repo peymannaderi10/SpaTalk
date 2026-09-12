@@ -38,9 +38,7 @@ from spatalk.brain.guard import guard
 from spatalk.brain.outcomes import Refused
 from spatalk.brain.renderer import render, render_script
 from spatalk.brain.flow import (
-    Slots,
     Step,
-    draft_from,
     next_step,
     open_flow,
     open_question,
@@ -524,35 +522,22 @@ class OutputGuardProcessor(FrameProcessor):
     async def _retract(
         self, sentence: str, g, *, model_words: bool, append_to_context: bool = True
     ) -> None:
-        """File a real item, then speak the tenant's replacement, so the sentence the caller
-        hears is true. Everything after a blocked sentence belonged to the same false claim,
-        so the rest of the turn is dropped rather than half-spoken. The replacement takes the
-        frame the blocked sentence would have taken, so a retracted script is still a script.
+        """Speak the tenant's replacement instead of the false claim, and file nothing.
+
+        Until 2026-09-11 this filed a nameless "question" item so that the replacement's
+        "I've passed it to the team" was true (founder call 977f0aa1, 21:59:57, item 19). The
+        founder's rule is the other way round: nothing reaches the ledger without the caller's
+        name and a request they asked for, so `scripts.cannot_complete` now claims nothing and
+        offers the team; a yes runs the ordinary request flow. Everything after a blocked
+        sentence belonged to the same false claim, so the rest of the turn is dropped rather
+        than half-spoken. The replacement takes the frame the blocked sentence would have
+        taken, so a retracted script is still a script.
         """
         self._dropping = True
         self._held = None
         self._s.guard_blocks += 1
         self._s.band = max(self._s.band, 2)
-        now = self._s.clock.now()
-        out = None
-        try:
-            out = await self._s.caps.capture(
-                self._s.ref, draft_from(Slots(flow="question"), self._s.cfg)
-            )
-        except Exception as e:  # noqa: BLE001  ledger down: nothing was filed, promise nothing
-            logger.exception("guard could not file the blocked claim: {}", e)
-        item_id = getattr(out, "item_id", None)
-        if item_id is None:
-            # Nothing was filed, so nothing may be asserted: the refusal names the clinic's
-            # own number and claims no action at all.
-            spoken = render(
-                Refused(reason="unavailable"), self._s.cfg, now, channel=self._s.ref.channel
-            )
-        else:
-            # The receipt goes in before the sentence that asserts it, which is also what
-            # keeps the replacement from being retracted in its turn.
-            self._s.remember_receipt("item", str(item_id))
-            spoken = render_script("cannot_complete", self._s.cfg, now, urgent=False)
+        spoken = render_script("cannot_complete", self._s.cfg, self._s.clock.now(), urgent=False)
         logger.warning("guard blocked {} ({}): {!r}", g.family, g.matched, sentence)
         self._s.record_signal("guard_block", family=g.family)
         self._retracting = True

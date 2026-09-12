@@ -88,6 +88,11 @@ Facts below come from skincentrix.com as of 2026-09-03. Prices are in Canadian d
 - XERF skin tightening, laser facials, fractional resurfacing, skin and scalp facials, body contouring and fat loss, tattoo removal, acne treatment programs.
 - Memberships also include Advanced Facials at $199 a month for six months.
 
+## Concerns and what addresses them
+
+- Pigmentation or dark spots on the face: the Mirapeel facial (softens dark spots) or the PureCarbon brightening peel facial; the free consultation confirms which.
+- Pigmentation on the body or arms: nothing dedicated on the list; the free consultation is the place to ask.
+
 ## Team
 
 - Sabah Shaikh, founder, aesthetician; leads the facial and skin programs.
