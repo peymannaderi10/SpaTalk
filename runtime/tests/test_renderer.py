@@ -17,7 +17,8 @@ def test_render_captured_uses_template_and_says_when_to_expect_contact():
     from spatalk.brain.outcomes import Captured
     from spatalk.brain.renderer import render
     out = Captured(item_id=7, urgency="normal", confirm_by=NOW + timedelta(hours=3), item_type="callback")
-    assert render(out, _cfg(), NOW) == "I've sent that to the team as a request. Someone will confirm with you as soon as they're free. Is there anything else I can help with?"
+    # The voice hears the tag; `channel="sms"` below shows a text never does.
+    assert render(out, _cfg(), NOW) == "[reassuringly] I've sent that to the team as a request. Someone will confirm with you as soon as they're free. Is there anything else I can help with?"
     assert "p.m." not in render(out, _cfg(), NOW) and "a.m." not in render(out, _cfg(), NOW)
 
 

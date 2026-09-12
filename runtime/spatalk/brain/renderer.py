@@ -53,11 +53,16 @@ def _fill(template: str, cfg: TenantConfig, now: datetime, urgent: bool, **extra
 
 
 def render_script(
-    name: str, cfg: TenantConfig, now: datetime, urgent: bool = True, **extra
+    name: str, cfg: TenantConfig, now: datetime, urgent: bool = True, *, channel: str = "voice", **extra
 ) -> str:
-    """Render one fixed script by its `Scripts` field name (`disclosure`, `clinical`, ...)."""
+    """Render one fixed script by its `Scripts` field name (`disclosure`, `clinical`, ...).
+
+    A script may open with one audio tag ("[calm] Could I get your first name?");
+    the voice performs it and a text channel never sees it (founder, 2026-09-11).
+    """
     template = getattr(cfg.scripts, name)
-    return _fill(template, cfg, now, urgent, **extra)
+    text = _fill(template, cfg, now, urgent, **extra)
+    return text if channel == "voice" else strip_audio_tags(text)
 
 
 def render(

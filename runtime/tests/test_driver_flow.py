@@ -1,6 +1,8 @@
 import uuid
 from pathlib import Path
 
+from spatalk.brain.audio_tags import strip_audio_tags as _plain  # a text never carries the voice tag
+
 BUNDLE = Path(__file__).resolve().parents[1] / "tenants" / "skincentrix"
 
 
@@ -46,13 +48,13 @@ async def test_a_callback_on_sms_walks_the_order_and_files_with_name_and_number(
         slots = r.slots
         history += [{"role": "user", "content": text}, {"role": "assistant", "content": r.reply}]
         replies.append(r.reply)
-    assert replies[0] == cfg.scripts.ask_returning
-    assert replies[1] == cfg.scripts.ask_practitioner
-    assert replies[2] == cfg.scripts.ask_service
-    assert replies[3] == cfg.scripts.ask_name
-    assert replies[4] == cfg.scripts.ask_window            # sms: no phone step
-    assert replies[5] == cfg.scripts.ask_team_note
-    assert replies[6].startswith("I've sent that to the team as a request")   # filed itself on the last answer
+    assert replies[0] == _plain(cfg.scripts.ask_returning)
+    assert replies[1] == _plain(cfg.scripts.ask_practitioner)
+    assert replies[2] == _plain(cfg.scripts.ask_service)
+    assert replies[3] == _plain(cfg.scripts.ask_name)
+    assert replies[4] == _plain(cfg.scripts.ask_window)            # sms: no phone step
+    assert replies[5] == _plain(cfg.scripts.ask_team_note)
+    assert replies[6].startswith("I've sent that to the team as a request")   # sms: no voice tag   # filed itself on the last answer
     item = ledger.items[0]
     assert item.type == "callback" and item.contact.name == "Dana" and item.contact.phone == "+14165550199"
     draft = ledger.drafts[0]
@@ -194,5 +196,5 @@ async def test_a_goodbye_at_the_last_question_speaks_the_outcome_then_the_goodby
               first_name="Dana", phone="+19055550101", phone_confirmed=True, preferred_window=PreferredWindow())
     r = await brain.turn(ref, [], "no, that's everything, thanks", s)
     assert ledger.items[0].type == "callback" and r.ended
-    assert r.reply.startswith("I've sent that to the team as a request")
+    assert r.reply.startswith("[reassuringly] I've sent that to the team as a request")
     assert r.reply.endswith(cfg.scripts.goodbye.format(name=cfg.name))

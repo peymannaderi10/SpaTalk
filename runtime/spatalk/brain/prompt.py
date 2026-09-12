@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from spatalk.brain.audio_tags import AUDIO_TAGS
+from spatalk.brain.audio_tags import PROMPT_TAGS
 from spatalk.brain.hours import BusinessCalendar, _clock
 from spatalk.tenants.schema import WEEKDAYS, TenantConfig
 
@@ -69,8 +69,8 @@ VOICE_STYLE = """
 ON THE PHONE
 {ack_rule}
 - No preambles. Never open with "we offer a wonderful range of treatments" or "great question, let me tell you about"; lead with the specifics, such as two or three concrete options, and end with the question that moves things forward.
-- Colour your delivery with an audio tag in square brackets at the start of a sentence, at most one per sentence and not every sentence, from this set only: {tags}. Use [laughs] only for a genuinely light moment. Never put a tag on clinical, safety or complaint wording.
-- Calm energy: this is a clinic. At most one exclamation mark in a reply, never in two sentences in a row, and [cheerful] at most once per call, on the greeting; the rest of the time [warm], [reassuring] or no tag.
+- Colour your delivery with an audio tag in square brackets opening a sentence, only from: {tags}. Never two on one sentence, not on every sentence, subtle, never reworded to add emotion. [warm] for greetings and friendly statements; [curious] for a genuine question; [reassuringly] when settling a worry; [calm] for routine questions; [sincerely] for an empathetic or important line; [cheerful] only when the content is naturally upbeat. Never put a tag on clinical, safety, complaint or payment wording.
+- Calm energy: this is a clinic. At most one exclamation mark in a reply, never in two sentences in a row, and [cheerful] at most once per call, on the greeting.
 - Say prices as words a person would say aloud, for example "two ninety-five" or "a hundred and twenty-five dollars", and phone numbers in groups of digits."""
 
 
@@ -118,7 +118,7 @@ def build_system_prompt(cfg: TenantConfig, channel: str, now: datetime) -> str:
         else '- Open with a brief acknowledgement of a few words, like "Sure thing" or "Of course", then answer in the same breath.'
     )
     voice_style = (
-        VOICE_STYLE.format(tags=", ".join(f"[{t}]" for t in AUDIO_TAGS), ack_rule=ack_rule)
+        VOICE_STYLE.format(tags=", ".join(f"[{t}]" for t in PROMPT_TAGS), ack_rule=ack_rule)
         if channel == "voice"
         else ""
     )
@@ -134,7 +134,7 @@ The AI disclosure has already been given; do not repeat it.
 WHAT YOU CAN DO
 - Answer questions about services, prices, hours, location and policies from the facts below. If the facts do not cover it, say so and offer to file a question for the team (start_request, kind question).
 - A request for the team (a booking, a callback, a change to an appointment, a question the facts do not answer) is handled by the system: call start_request, and from then on the system tells you what it still needs, one thing at a time, and you ask for it in your own words. The system decides what is asked and what is stored.
-- Asked what the clinic offers for a cosmetic concern (pigmentation or dark spots, acne, scarring, fine lines, texture, unwanted hair, body shape), answer from SERVICES: it is a service question, not a clinical one. If nothing on the list treats that concern on that part of the body, say so, name what is offered for it elsewhere (the face, say), and suggest the offer that plans a first visit; if they want it, start_request.
+- Asked what the clinic offers for a cosmetic concern (pigmentation, acne, fine lines, hair, body shape), answer from SERVICES; it is not a clinical question. If nothing on the list treats it on that part of the body, say so, name what is offered elsewhere and suggest the offer that plans a first visit.
 - Hand off to a person (escalate) for anything clinical or medical, any reaction or symptom after a treatment, complaints, payment or legal questions, or when the caller asks for a person.
 
 HARD RULES

@@ -760,7 +760,7 @@ def test_the_team_note_question_is_asked_once_by_the_engine_from_a_script():
     from spatalk.brain.requests import PreferredWindow
 
     cfg = _cfg()
-    assert cfg.scripts.ask_team_note == "Is there anything you'd like the team to know before they call?"
+    assert cfg.scripts.ask_team_note == "[curious] Is there anything you'd like the team to know before they call?"
     s = Slots(flow="callback", returning_client=True, practitioner="any", service_id="facial",
               first_name="Dana", phone="+19055550101", phone_confirmed=True, preferred_window=PreferredWindow())
     assert next_step(s, cfg, "voice") == Step.TEAM_NOTE

@@ -90,8 +90,8 @@ Facts below come from skincentrix.com as of 2026-09-03. Prices are in Canadian d
 
 ## Concerns and what addresses them
 
-- Pigmentation or dark spots on the face: the Mirapeel facial (softens dark spots) or the PureCarbon brightening peel facial; the free consultation confirms which.
-- Pigmentation on the body or arms: nothing dedicated on the list; the free consultation is the place to ask.
+- Pigmentation or dark spots on the face: the Mirapeel facial (softens dark spots) or the PureCarbon brightening peel facial; the consultation decides which.
+- Body or arm pigmentation: nothing dedicated on the list; ask at the free consultation.
 
 ## Team
 

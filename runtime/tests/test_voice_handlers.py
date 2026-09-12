@@ -53,7 +53,7 @@ async def test_handler_speaks_rendered_text_and_disables_llm_rerun(fixed_clock):
     # Every slot of a cancellation is in the record: the engine offers file_request.
     session.slots = Slots(flow="cancel", first_name="Dana", phone="+19055550101", phone_confirmed=True)
     await llm.registered["file_request"](Params("file_request", {}))
-    assert isinstance(pushed[0], TTSSpeakFrame) and pushed[0].text.startswith("I've sent that to the team")
+    assert isinstance(pushed[0], TTSSpeakFrame) and pushed[0].text.startswith("[reassuringly] I've sent that to the team")
     assert results[0][1].run_llm is False and session.band == 2 and ledger.items[0].type == "cancel"
     assert session.slots.flow is None
     await llm.registered["end_conversation"](Params("end_conversation", {}))
@@ -425,7 +425,7 @@ async def test_the_receipt_is_recorded_before_the_outcome_is_spoken(fixed_clock)
     assert session.receipts == [f"item:{ledger.items[0].id}"]
     # And the receipt was there before the sentence that asserts it: the guard would have
     # retracted `captured` otherwise.
-    assert _said(pushed)[0].startswith("I've sent that to the team as a request")
+    assert _said(pushed)[0].startswith("[reassuringly] I've sent that to the team as a request")
 
 
 async def test_a_reply_that_already_answered_buys_no_second_call(fixed_clock):

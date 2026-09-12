@@ -12,9 +12,17 @@ from __future__ import annotations
 import re
 
 # The tags the prompt offers. Kept small on purpose: delivery colour, not theatre.
+# The founder's list (2026-09-11), in the order the prompt asks the model to prefer them, plus
+# the three the earlier prompt taught that still perform fine. Anything else in brackets is
+# dropped before the voice by `drop_unknown_tags`.
 AUDIO_TAGS: tuple[str, ...] = (
-    "cheerful", "warm", "reassuring", "curious", "thoughtful", "apologetic", "laughs",
+    "warm", "calm", "curious", "reassuringly", "cheerful", "sincerely",
+    "reassuring", "thoughtful", "apologetic", "laughs",
 )
+
+# The six the prompt names, in the founder's order of preference; the rest are still
+# performed if the model reaches for them, but the prompt does not spend tokens on them.
+PROMPT_TAGS: tuple[str, ...] = AUDIO_TAGS[:6]
 
 # A tag is one or two lowercase words in square brackets, e.g. [warm] or [softly laughs].
 _TAG = re.compile(r"\[(?:[a-z]+)(?: [a-z]+)?\]\s*")

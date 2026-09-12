@@ -35,7 +35,11 @@ def test_the_voice_prompt_offers_the_tag_list_and_the_text_prompts_do_not():
 
     cfg = _cfg()
     voice = build_system_prompt(cfg, "voice", NOW)
-    assert "[cheerful]" in voice and all(f"[{t}]" in voice for t in AUDIO_TAGS)
+    from spatalk.brain.audio_tags import PROMPT_TAGS
+
+    # The prompt names the six preferred tags; the guard performs the wider set.
+    assert "[cheerful]" in voice and all(f"[{t}]" in voice for t in PROMPT_TAGS)
+    assert set(PROMPT_TAGS) <= set(AUDIO_TAGS)
     assert "acknowledgement" in voice.lower()
     for channel in ("sms", "chat", "instagram"):
         text = build_system_prompt(cfg, channel, NOW)
@@ -93,3 +97,47 @@ async def test_the_guard_never_speaks_a_bracketed_tool_name(fixed_clock):
     )
     spoken = [f.text for f in down if isinstance(f, LLMTextFrame)]
     assert spoken == ["[warm] Thanks! "]
+
+
+def test_the_fixed_lines_carry_at_most_one_known_tag_and_never_on_safety_wording():
+    """Founder, 2026-09-11: the fixed lines sounded flat next to the model's tagged speech, so the
+    questions and outcomes the runtime speaks carry one Soniox tag each. Only tags the voice
+    performs, one at a time, and never on the clinical, emergency, complaint, payment or
+    refusal wording (the prompt forbids the model the same)."""
+    import re
+
+    import yaml
+
+    from spatalk.brain.audio_tags import AUDIO_TAGS
+
+    never = ("clinical", "emergency", "complaint", "payment", "refuse_", "no_name", "loop_guard", "failover")
+    scripts = yaml.safe_load(BUNDLE.joinpath("scripts.yaml").read_text(encoding="utf-8"))
+    tagged = 0
+    for key, text in scripts.items():
+        if not isinstance(text, str):
+            continue
+        tags = re.findall(r"\[([a-z]+(?: [a-z]+)?)\]", text)
+        assert len(tags) <= 1, (key, tags)
+        assert all(t in AUDIO_TAGS for t in tags), (key, tags)
+        if any(key.startswith(n) for n in never):
+            assert tags == [], (key, text)
+        tagged += bool(tags)
+    assert tagged >= 15, "the fixed lines the caller hears most carry a tag"
+
+
+def test_a_tagged_fixed_line_reaches_text_channels_without_the_tag():
+    from datetime import datetime, timezone
+
+    from spatalk.brain.renderer import render_script
+    from spatalk.tenants.bundle import load_bundle
+
+    from spatalk.brain.audio_tags import strip_audio_tags
+
+    cfg = load_bundle(BUNDLE)
+    now = datetime(2026, 9, 11, 18, 0, tzinfo=timezone.utc)
+    voice = render_script("ask_name", cfg, now, urgent=False)
+    assert voice.startswith("[calm] ")
+    # The text service strips every reply before it is segmented (text/service.py), and the
+    # voice transcript strips assistant text before it is stored (voice/pipeline.py); this is
+    # the function both call.
+    assert strip_audio_tags(voice) == "Could I get your first name?"

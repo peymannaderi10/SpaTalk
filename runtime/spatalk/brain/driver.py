@@ -490,7 +490,10 @@ async def run_tool(
         # A refusal writes no slot, but it may count a miss (an `unsure` at the returning
         # step), and that count has to survive for the second non-answer to settle.
         return applied.slots, [], None, False, False
-    spoken = [render_script(key, cfg, now, urgent=False, **fills) for key, fills in applied.say]
+    spoken = [
+        render_script(key, cfg, now, urgent=False, channel=ref.channel, **fills)
+        for key, fills in applied.say
+    ]
     outcome: Outcome | None = None
     ended = applied.end
     try:
@@ -516,7 +519,7 @@ async def run_tool(
             spoken.append(render(outcome, cfg, now, channel=ref.channel))
         if name == "end_conversation":
             # A goodbye that also filed the request says the outcome first, then the goodbye.
-            spoken.append(render_script("goodbye", cfg, now, urgent=False))
+            spoken.append(render_script("goodbye", cfg, now, urgent=False, channel=ref.channel))
     except (ValueError, TypeError) as e:  # bad enum values or shapes from the model
         logger.warning("tool {} rejected args {}: {}", name, args, e)
         return slots, [], None, False, False
@@ -588,7 +591,7 @@ class Brain:
             # Clinical: the offer first, filed only on yes (slot engine design, §4.2).
             opened = open_flow("clinical", slots, ref.channel, ref.caller_phone)
             return TurnResult(
-                reply=render_script("clinical_offer", cfg, now, urgent=False),
+                reply=render_script("clinical_offer", cfg, now, urgent=False, channel=ref.channel),
                 band=3,
                 gate_reason="clinical",
                 health_context=ref.health_context,
@@ -643,7 +646,7 @@ class Brain:
                 # the replacement claims nothing and offers the team; a yes runs the request
                 # flow, which asks for the name before anything reaches the ledger.
                 blocked = True
-                said.insert(0, render_script("cannot_complete", cfg, now, urgent=False))
+                said.insert(0, render_script("cannot_complete", cfg, now, urgent=False, channel=ref.channel))
                 band = max(band, 2)
                 logger.warning("guard blocked model text ({}): {!r}", g.matched, resp.text)
             else:
@@ -652,7 +655,7 @@ class Brain:
         if not ended and slots.flow and not slots.ended_flow:
             q = step_question(next_step(slots, cfg, ref.channel), slots, cfg, ref.channel)
             if q is not None:
-                question = render_script(q[0], cfg, now, urgent=False, **q[1])
+                question = render_script(q[0], cfg, now, urgent=False, channel=ref.channel, **q[1])
         if question and ack:
             ack = drop_trailing_question(ack)
         # On a text channel the model answers the side question and calls the tool in one

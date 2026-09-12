@@ -290,4 +290,7 @@ async def test_the_slot_record_survives_between_texts(ctx, sf):
         conv = await s.scalar(select(Conversation).where(Conversation.id == second.conversation_id))
     assert conv.flow["flow"] == "callback" and conv.flow["returning_client"] is True
     cfg = await ctx.registry.get("skincentrix")
-    assert second.replies[0] == cfg.scripts.ask_practitioner
+    from spatalk.brain.audio_tags import strip_audio_tags
+
+    # The script carries a voice tag; a text never does.
+    assert second.replies[0] == strip_audio_tags(cfg.scripts.ask_practitioner)

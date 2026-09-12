@@ -742,7 +742,7 @@ async def test_adversarial_twelve_turn_conversation_ends_with_the_goodbye_script
         fixed_clock, [LLMResponse(text=None, tool_calls=[ToolCall("end_conversation", {})])]
     )
     r = await brain.turn(ref, history, "bye")
-    assert r.ended and r.reply == "Thanks for calling Skincentrix. Have a great day."
+    assert r.ended and r.reply == "[warm] Thanks for calling Skincentrix. Have a great day."
     assert r.outcomes == [] and ledger.items == []
 
 
