@@ -45,6 +45,20 @@ def _session(fixed_clock, ledger=None):
     return VoiceSession(ref=ref, cfg=cfg, caps=caps, clock=fixed_clock), ledger
 
 
+
+def _the_1556_booking():
+    """The founder's booking record at 15:56, every required slot on it and unfiled."""
+    from spatalk.brain.flow import Slots
+    from spatalk.brain.requests import PreferredWindow
+
+    return Slots(
+        flow="new_booking", returning_client=False, offers_done=True,
+        service_id="mesojet_facial", practitioner="any", first_name="Payman",
+        phone="+19055550101", phone_confirmed=True,
+        preferred_window=PreferredWindow(part_of_day="afternoon"), team_note_asked=True,
+    )
+
+
 async def test_guard_replaces_completion_claim_and_drops_rest(fixed_clock):
     from spatalk.voice.processors import OutputGuardProcessor
     session, ledger = _session(fixed_clock)
@@ -1404,3 +1418,27 @@ async def test_the_clinical_offer_the_gate_speaks_is_not_asked_twice(fixed_clock
     assert ledger.items == [] and ended == []
     assert session.asked_already(session.cfg.scripts.clinical_offer) is True
     assert session.runtime_asked_this_turn is True
+
+
+async def test_the_gate_firing_clinical_again_at_the_offer_keeps_the_parked_booking(fixed_clock):
+    """Founder call 14ea2579, the deterministic door into the same loss. The clinical offer
+    is open with the booking parked behind it; the caller re-asks the clinical question
+    instead of answering, the lexicon matches ("is it safe"), and the gate opens the clinical
+    flow a second time. The offer is spoken again and nothing is filed — but the booking must
+    still be there when the call ends."""
+    from spatalk.brain.flow import open_flow
+    from spatalk.voice.processors import RulesGateProcessor
+
+    session, ledger = _session(fixed_clock)
+    session.slots = open_flow("clinical", _the_1556_booking(), "voice", "+19055550101")
+    assert session.slots.parked.service_id == "mesojet_facial"
+    down, _ = await run_test(
+        RulesGateProcessor(session),
+        frames_to_send=[TranscriptionFrame(text="I mean, is it safe?", user_id="u", timestamp="t")],
+        expected_down_frames=[TTSSpeakFrame], start_timeout=10.0,
+    )
+    assert down[0].text == session.cfg.scripts.clinical_offer
+    assert ledger.items == []
+    assert session.slots.flow == "clinical"
+    assert session.slots.parked is not None
+    assert session.slots.parked.service_id == "mesojet_facial"

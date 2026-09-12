@@ -441,9 +441,15 @@ def _open(kind: str, previous: Slots, channel: str, caller_phone: str | None) ->
     booking lost the booking. Parking is automatic because `start_request` — the only other
     caller — is offered at `Step.QA` alone, where the previous flow is None or ended and the
     guard below is False; so nothing it opens can park anything.
+
+    A flow re-opened over itself keeps the frame it is already holding. The clinical flow is
+    opened twice by two doors that need no model judgement — the rules gate on every clinical
+    word (`voice/processors.py`) and `escalate`, which every step offers — so the caller who
+    re-asks the question instead of answering the offer used to take the parked booking down
+    with the rebuilt record. Depth stays at one, because the frame's own `parked` is cleared.
     """
     on_sms = channel == "sms" and bool(caller_phone)
-    parked = None
+    parked = previous.parked
     if previous.flow is not None and not previous.ended_flow and previous.flow != kind:
         parked = previous.with_(parked=None, digression=None)
     return Slots(

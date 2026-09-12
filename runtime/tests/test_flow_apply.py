@@ -647,3 +647,25 @@ def test_the_tool_is_offered_at_every_step_and_carries_no_argument():
             if t.name == "answer_question"
         )
         assert tool.properties == {} and tool.required == []
+
+
+def test_a_repeated_clinical_escalation_keeps_the_parked_booking():
+    """Founder call 14ea2579, the turn after 15:56:30. The clinical offer is open and the
+    caller asks the clinical question again instead of answering yes or no — on that call he
+    repeated himself three times. `_open` rebuilt the clinical record from scratch, and the
+    booking parked by the first escalation went with it: at the end of the call there was
+    nothing for `file_complete_record` to file. A flow re-opened over itself keeps the frame
+    it is already holding; depth stays at one, because a parked record never parks another."""
+    first = _apply(_filled_booking(), "escalate", {"reason": "clinical"})
+    again = _apply(first.slots, "escalate", {"reason": "clinical"})
+    assert again.slots.flow == "clinical" and again.end is False
+    assert again.slots.parked is not None
+    assert again.slots.parked.flow == "new_booking"
+    assert again.slots.parked.service_id == "mesojet_facial"
+    assert again.slots.parked.parked is None
+    # And the booking still comes back when the offer is finally answered.
+    from spatalk.brain.flow import close_flow
+
+    no = _apply(again.slots, "answer", {"value": "no"})
+    back = close_flow(no.slots)
+    assert back.flow == "new_booking" and back.service_id == "mesojet_facial"

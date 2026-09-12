@@ -208,3 +208,30 @@ async def test_the_1551_call_files_the_booking_alongside_the_clinical_escalation
     booking = next(i for i in session.caps._ledger.items if i.type == "new_booking")
     assert booking.contact.name == "Payman" and booking.service_id == "mesojet_facial"
     assert uuid.UUID(str(session.ref.conversation_id)) == session.ref.conversation_id
+
+
+async def test_a_re_asked_clinical_question_still_files_the_booking(ctx, sf):
+    """The same call, with the caller re-asking instead of answering the offer. The second
+    clinical open — the model's `escalate` again, or the rules gate's lexicon hit — used to
+    rebuild the clinical record and drop the parked booking, so the end of the call had one
+    item where the caller had made two requests."""
+    from spatalk.brain.driver import run_tool
+    from spatalk.brain.flow import open_flow
+    from spatalk.voice.pipeline import _finalize
+
+    session = await _session(ctx, sf)
+    slots, _spoken, _out, ended, _speaks = await run_tool(
+        session.caps, session.ref, _the_1556_record(), "escalate", {"reason": "clinical"},
+        ctx.clock.now(),
+    )
+    assert ended is False and slots.parked.service_id == "mesojet_facial"
+    # The caller asks again; the gate opens the clinical flow a second time.
+    slots = open_flow("clinical", slots, "voice", session.ref.caller_phone)
+    assert slots.parked is not None and slots.parked.service_id == "mesojet_facial"
+    slots, _spoken, _out, ended, _speaks = await run_tool(
+        session.caps, session.ref, slots, "answer", {"value": "yes"}, ctx.clock.now()
+    )
+    session.slots = slots
+    await _finalize(ctx, session, _StubContext([{"role": "user", "content": "is it safe?"}]))
+    types = sorted(i.type for i in session.caps._ledger.items)
+    assert types == ["escalation_clinical", "new_booking"]
