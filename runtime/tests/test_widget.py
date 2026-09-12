@@ -456,8 +456,11 @@ async def test_a_booking_link_on_sms_is_still_texted(sf, registry, fixed_clock):
     assert out.kind == "link_sent" and len(sms.sent) == 1
 
 
-async def test_a_booking_on_chat_walks_the_engine_and_ends_with_the_link_never_texted(sf, registry, fixed_clock):
-    """The slot record persists on the conversation, so nine messages walk one booking."""
+async def test_a_booking_on_chat_walks_the_engine_and_files_without_a_link_or_a_text(sf, registry, fixed_clock):
+    """The slot record persists on the conversation, so nine messages walk one booking.
+
+    MOVED 2026-09-12: the link is off by default (founder: most clinics are booked on their own
+    platform), so a chat booking ends with the captured line, not the link, and nothing is texted."""
     from spatalk.brain.driver import FakeLLM, LLMResponse, ToolCall
 
     calls = [
@@ -496,5 +499,6 @@ async def test_a_booking_on_chat_walks_the_engine_and_ends_with_the_link_never_t
     assert said[5] == cfg.scripts.confirm_phone.format(digits="416-555-0199")
     assert said[6] == cfg.scripts.ask_window
     assert said[7] == cfg.scripts.ask_team_note
-    assert "https://skincentrix.janeapp.com" in said[8] and "texted" not in said[8]
+    assert said[8].startswith(cfg.scripts.captured.split(".")[0])
+    assert "janeapp" not in said[8] and "texted" not in said[8]
     assert ctx.sms.sent == []

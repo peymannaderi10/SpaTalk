@@ -61,7 +61,7 @@ async def test_handler_speaks_rendered_text_and_disables_llm_rerun(fixed_clock):
     assert "Thanks for calling" in _said(pushed)[1]
 
 
-def _world(fixed_clock, slots=None):
+def _world(fixed_clock, slots=None, link=False):
     """A registered handler set over a real bundle, with the frames and results it produced."""
     import uuid
     from spatalk.brain.ports import MemoryLedger, MemorySms
@@ -71,7 +71,7 @@ def _world(fixed_clock, slots=None):
     from spatalk.voice.handlers import register_tool_handlers
     from spatalk.voice.session import VoiceSession
 
-    cfg = load_bundle(BUNDLE)
+    cfg = load_bundle(BUNDLE).model_copy(update={"offer_booking_link": link})
     ledger = MemoryLedger(fixed_clock)
     caps = TierCCapabilities(ledger=ledger, sms=MemorySms(), clock=fixed_clock)
     ref = ConversationRef(
@@ -101,6 +101,11 @@ def _world(fixed_clock, slots=None):
     session.worker = FakeWorker()
     register_tool_handlers(llm, session)
     return session, llm, Params, pushed, queued, results, ledger
+
+
+def _world_link(fixed_clock, slots=None):
+    """The offer's own tests: a tenant that offers the link (off by default since 2026-09-12)."""
+    return _world(fixed_clock, slots, link=True)
 
 
 async def test_an_ignored_tool_is_refused_in_words_that_name_what_is_missing(fixed_clock):
@@ -240,7 +245,7 @@ async def test_the_captured_line_is_followed_by_the_tenants_link_offer(fixed_clo
     """Founder call 14ea2579, 2026-09-11 15:56:02.950. The route question was asked in front
     of the ledger and talked over; the booking never became an item. The filing happens on
     the turn the last slot lands, and the link is put after it as an extra."""
-    session, llm, Params, pushed, _queued, results, ledger = _world(
+    session, llm, Params, pushed, _queued, results, ledger = _world_link(
         fixed_clock, _one_slot_short_booking()
     )
     cfg = session.cfg
@@ -255,7 +260,7 @@ async def test_the_captured_line_is_followed_by_the_tenants_link_offer(fixed_clo
 
 
 async def test_the_link_offer_answer_sends_the_link_and_files_nothing_more(fixed_clock):
-    session, llm, Params, pushed, _queued, _results, ledger = _world(
+    session, llm, Params, pushed, _queued, _results, ledger = _world_link(
         fixed_clock, _one_slot_short_booking()
     )
     await llm.registered["answer"](Params("answer", {"value": "no"}))

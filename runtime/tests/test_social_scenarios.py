@@ -466,6 +466,9 @@ async def test_the_provider_shows_the_booking_link_in_the_dm_and_sends_no_sms(
         lambda: FakeLLM([LLMResponse(text=None, tool_calls=[ToolCall("answer", {"value": "no"})])]),
     )
     monkeypatch.setattr(p, "_clock", lambda: fixed_clock)
+    # MOVED 2026-09-12: the inline link is a tenant choice, off by default.
+    real_load = p.load_bundle
+    monkeypatch.setattr(p, "load_bundle", lambda path: real_load(path).model_copy(update={"offer_booking_link": True}))
     slots = {
                 "flow": "new_booking", "returning_client": True, "practitioner": "any",
                 "service_id": "facial", "first_name": "Dana", "phone": "+14165550199",

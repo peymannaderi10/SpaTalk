@@ -133,7 +133,8 @@ def link_offer_open(slots: Slots, cfg: TenantConfig, channel: str) -> bool:
     """The booking is already filed and the team already has it; the only thing left is
     whether to text the caller the link as well."""
     return (
-        channel == "voice"
+        cfg.offer_booking_link
+        and channel == "voice"
         and slots.flow == "new_booking"
         and slots.filed
         and not slots.link_offered
@@ -281,6 +282,10 @@ def step_tools(
     tools: list[FunctionSchema] = []
     if step == Step.QA:
         tools.append(slot_tool("start_request", cfg))
+        if slots.filed and slots.service_id and slots.phone and slots.phone_confirmed and cfg.sms_from_number:
+            # A booking already filed on this call: the link is not offered, but a caller who
+            # asks for it gets it (founder, 2026-09-12).
+            tools.append(slot_tool("send_link", cfg))
     elif step == Step.PHONE:
         if slots.pending is not None and slots.pending.kind == "phone":
             tools.append(slot_tool("answer", cfg))
@@ -521,9 +526,9 @@ def _finalize(applied: Applied, cfg: TenantConfig, channel: str, name: str = "")
         return applied
     if next_step(s, cfg, channel) != Step.COMPLETE:
         return applied
-    if s.flow == "new_booking" and channel != "voice":
-        # Text channels show the booking link in the conversation itself (Task B4); a
-        # call without an SMS number files a callback instead.
+    if s.flow == "new_booking" and channel != "voice" and cfg.offer_booking_link:
+        # Text channels show the booking link in the conversation itself (Task B4) when the
+        # tenant offers links; otherwise the request is filed like any other.
         return applied.model_copy(update={"slots": s.with_(ended_flow=True), "send_link": True})
     filed = s.with_(filed=True)
     if next_step(filed, cfg, channel) == Step.LINK_OFFER:

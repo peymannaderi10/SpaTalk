@@ -27,6 +27,7 @@ A tenant can also start from the basics. The runtime ships a starter bundle as p
 | integration_tier | `A` `B` `C` | default `C` | |
 | fulfilment | string | default `tier_c` | capability implementation to load |
 | retention_days | int | default 30 | transcripts, and the call notes drafted from them [N1] |
+| offer_booking_link | bool | default false | whether a filed booking is followed by the link: on a call, the `link_offer` question after `captured_booking`; on a text channel, the inline link. Off (founder decision 2026-09-12: most clinics will be booked on their own platform) files the request and says so; the caller can still ask for the link (`send_link`), and the missed-call text keeps its link |
 | call_notes | bool | default true | whether the post-conversation job drafts `conversations.notes` from the transcript. False means no model call and no notes; the assistant still asks whether there is anything the team should know, because the answer stays in the transcript either way [N1] |
 | recording_enabled | bool | default false | not implemented in these plans; must stay false |
 | hours | map weekday → list of [start, end] `HH:MM` | yes | empty list means closed |

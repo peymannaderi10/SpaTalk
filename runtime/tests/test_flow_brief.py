@@ -12,6 +12,11 @@ from pathlib import Path
 BUNDLE = Path(__file__).resolve().parents[1] / "tenants" / "skincentrix"
 
 
+def _cfg_link():
+    """A tenant that offers the booking link after a filed booking (off by default since 2026-09-12)."""
+    return _cfg().model_copy(update={"offer_booking_link": True})
+
+
 def _cfg():
     from spatalk.tenants.bundle import load_bundle
 

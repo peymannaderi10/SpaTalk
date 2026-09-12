@@ -394,6 +394,13 @@ class TenantConfig(BaseModel, frozen=True):
     # call and no `conversations.notes`; the assistant still asks whether there is anything
     # the team should know, because the answer is in the transcript either way.
     call_notes: bool = True
+    # --- the booking link (founder, 2026-09-12) ---
+    # Off: a filed booking is the team's to book, on the clinic's own platform; the caller is
+    # not offered a link and a text booking does not end with one. The link still goes out
+    # when the caller asks for it (`send_link` stays callable after a filed booking) and in
+    # the missed-call text. On: the voice offer after the captured line and the inline link
+    # on text channels, as before.
+    offer_booking_link: bool = False
     hours: dict[str, list[tuple[str, str]]]
     holidays: list[date] = Field(default_factory=list)
     voice_numbers: list[str] = Field(default_factory=list)

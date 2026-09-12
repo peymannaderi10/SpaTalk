@@ -6,7 +6,7 @@ import pytest
 BUNDLE = Path(__file__).resolve().parents[1] / "tenants" / "skincentrix"
 
 
-def _world(fixed_clock, responses, sms_number=None, ledger=None):
+def _world(fixed_clock, responses, sms_number=None, ledger=None, link=False):
     from spatalk.brain.driver import Brain, FakeLLM
     from spatalk.brain.ports import MemoryLedger, MemorySms
     from spatalk.brain.requests import ConversationRef
@@ -15,12 +15,19 @@ def _world(fixed_clock, responses, sms_number=None, ledger=None):
     cfg = load_bundle(BUNDLE)
     if sms_number:
         cfg = cfg.model_copy(update={"sms_from_number": sms_number})
+    if link:
+        # The link is off by default since 2026-09-12; the offer's own tests turn it on.
+        cfg = cfg.model_copy(update={"offer_booking_link": True})
     ledger = ledger if ledger is not None else MemoryLedger(fixed_clock)
     sms = MemorySms()
     caps = TierCCapabilities(ledger=ledger, sms=sms, clock=fixed_clock)
     llm = FakeLLM(responses)
     ref = ConversationRef(conversation_id=uuid.uuid4(), tenant=cfg, channel="voice", caller_phone="+19055550101")
     return Brain(llm, caps, fixed_clock), ref, ledger, sms, llm
+
+
+def _world_link(*args, **kwargs):
+    return _world(*args, link=True, **kwargs)
 
 
 async def test_an_emergency_is_gated_to_the_911_script_without_llm(fixed_clock):
@@ -185,7 +192,7 @@ async def test_booking_link_and_end(fixed_clock):
     from spatalk.brain.driver import LLMResponse, ToolCall
     from spatalk.brain.flow import Slots
     from spatalk.brain.requests import PreferredWindow
-    brain, ref, ledger, sms, _ = _world(fixed_clock, [
+    brain, ref, ledger, sms, _ = _world_link(fixed_clock, [
         LLMResponse(text=None, tool_calls=[ToolCall("answer", {"value": "yes"})]),
         LLMResponse(text=None, tool_calls=[ToolCall("end_conversation", {})])], sms_number="+18885550100")
     # Filed on the call with an SMS number: the link offer is the one thing left.
@@ -216,7 +223,7 @@ async def test_the_booking_is_filed_before_the_link_is_offered(fixed_clock):
     ended the call with one escalation and no booking."""
     from spatalk.brain.driver import LLMResponse, ToolCall
 
-    brain, ref, ledger, sms, _ = _world(
+    brain, ref, ledger, sms, _ = _world_link(
         fixed_clock, [LLMResponse(text=None, tool_calls=[ToolCall("answer", {"value": "no"})])]
     )
     cfg = ref.tenant
@@ -307,7 +314,7 @@ async def test_a_capture_that_failed_leaves_the_record_unfiled(fixed_clock):
 async def test_yes_to_the_offer_texts_the_link_and_files_nothing_more(fixed_clock):
     from spatalk.brain.driver import LLMResponse, ToolCall
 
-    brain, ref, ledger, sms, _ = _world(fixed_clock, [
+    brain, ref, ledger, sms, _ = _world_link(fixed_clock, [
         LLMResponse(text=None, tool_calls=[ToolCall("answer", {"value": "no"})]),
         LLMResponse(text=None, tool_calls=[ToolCall("answer", {"value": "yes"})]),
     ])
@@ -321,7 +328,7 @@ async def test_yes_to_the_offer_texts_the_link_and_files_nothing_more(fixed_cloc
 async def test_no_to_the_offer_sends_nothing_and_claims_nothing(fixed_clock):
     from spatalk.brain.driver import LLMResponse, ToolCall
 
-    brain, ref, ledger, sms, _ = _world(fixed_clock, [
+    brain, ref, ledger, sms, _ = _world_link(fixed_clock, [
         LLMResponse(text=None, tool_calls=[ToolCall("answer", {"value": "no"})]),
         LLMResponse(text=None, tool_calls=[ToolCall("answer", {"value": "no"})]),
     ])

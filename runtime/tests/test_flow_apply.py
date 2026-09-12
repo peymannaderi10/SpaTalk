@@ -3,16 +3,26 @@ from pathlib import Path
 BUNDLE = Path(__file__).resolve().parents[1] / "tenants" / "skincentrix"
 
 
+def _cfg_link():
+    """A tenant that offers the booking link after a filed booking (off by default since 2026-09-12)."""
+    return _cfg().model_copy(update={"offer_booking_link": True})
+
+
 def _cfg():
     from spatalk.tenants.bundle import load_bundle
 
     return load_bundle(BUNDLE)
 
 
-def _apply(slots, name, args, channel="voice", caller="+19055550101", said=""):
+def _apply(slots, name, args, channel="voice", caller="+19055550101", said="", cfg=None):
     from spatalk.brain.flow import apply
 
-    return apply(slots, name, args, _cfg(), channel, caller, caller_said=said)
+    return apply(slots, name, args, cfg or _cfg(), channel, caller, caller_said=said)
+
+
+def _apply_link(slots, name, args, channel="voice", caller="+19055550101", said=""):
+    """`_apply` under a tenant that offers the booking link (off by default since 2026-09-12)."""
+    return _apply(slots, name, args, channel, caller, said, cfg=_cfg_link())
 
 
 def test_start_request_opens_a_flow_and_returning_yes_no_are_stored():
@@ -168,11 +178,13 @@ def test_a_voice_booking_files_at_the_last_slot_and_then_offers_the_link():
     """Founder call 14ea2579, 2026-09-11 15:56:02.948. The last slot landed and the runtime
     asked the route question instead of filing; the call ended with the booking nowhere but
     the transcript. The record files on that same call, and the link becomes an extra."""
+    # MOVED 2026-09-12: the link is off by default (founder); this test keeps the offer's
+    # mechanics under a tenant that offers it.
     from spatalk.brain.flow import Step, next_step, step_question
 
-    cfg = _cfg()
+    cfg = _cfg_link()
     one_short = _filled_booking().with_(team_note_asked=False)
-    a = _apply(one_short, "answer", {"value": "no"})
+    a = _apply_link(one_short, "answer", {"value": "no"})
     assert a.file is True and a.send_link is False
     assert a.slots.filed is True and a.slots.ended_flow is False
     assert next_step(a.slots, cfg, "voice") == Step.LINK_OFFER
@@ -181,10 +193,10 @@ def test_a_voice_booking_files_at_the_last_slot_and_then_offers_the_link():
 
 def test_yes_to_the_link_sends_it_and_no_says_so_and_neither_files_again():
     filed = _filled_booking().with_(filed=True)
-    yes = _apply(filed, "answer", {"value": "yes"})
+    yes = _apply_link(filed, "answer", {"value": "yes"})
     assert yes.send_link is True and yes.file is False
     assert yes.slots.link_offered is True and yes.slots.ended_flow is True
-    no = _apply(filed, "answer", {"value": "no"})
+    no = _apply_link(filed, "answer", {"value": "no"})
     assert no.file is False and no.send_link is False
     assert no.say == (("link_declined", {}),)
     assert no.slots.link_offered is True and no.slots.ended_flow is True
@@ -194,17 +206,19 @@ def test_a_filed_record_can_never_file_twice():
     """The ledger has no amend path, so a second row for one request is a second job for the
     team. Nothing the link step offers may file, and neither may a record forced back to
     COMPLETE with the offer already answered."""
+    # MOVED 2026-09-12: the link is off by default (founder); this test keeps the offer's
+    # mechanics under a tenant that offers it.
     from spatalk.brain.flow import Step, next_step, step_tools
 
-    cfg = _cfg()
+    cfg = _cfg_link()
     filed = _filled_booking().with_(filed=True)
     assert next_step(filed, cfg, "voice") == Step.LINK_OFFER
     for tool in step_tools(Step.LINK_OFFER, filed, cfg, "voice"):
         for args in ({"value": "yes"}, {"value": "no"}, {}):
-            assert _apply(filed, tool.name, args).file is False, (tool.name, args)
+            assert _apply_link(filed, tool.name, args).file is False, (tool.name, args)
     answered = filed.with_(link_offered=True)
     assert next_step(answered, cfg, "voice") == Step.COMPLETE
-    assert _apply(answered, "answer", {"value": "no"}).file is False
+    assert _apply_link(answered, "answer", {"value": "no"}).file is False
 
 
 def test_no_sms_number_files_and_ends_in_one_move():
@@ -382,6 +396,8 @@ def test_a_withheld_caller_id_is_asked_for_a_number_outright():
 
 
 def test_a_booking_on_a_text_channel_ends_with_the_link_and_a_call_without_sms_files():
+    # MOVED 2026-09-12: the link is off by default (founder); this test keeps the offer's
+    # mechanics under a tenant that offers it.
     from spatalk.brain.flow import Slots
     from spatalk.brain.requests import PreferredWindow
 
@@ -389,14 +405,14 @@ def test_a_booking_on_a_text_channel_ends_with_the_link_and_a_call_without_sms_f
         flow="new_booking", returning_client=True, practitioner="any", service_id="facial",
         first_name="Dana", phone="+14165550199", phone_confirmed=True, preferred_window=PreferredWindow(),
     )
-    chat = _apply(booking, "answer", {"value": "no"}, channel="chat")     # TEAM_NOTE
+    chat = _apply_link(booking, "answer", {"value": "no"}, channel="chat")     # TEAM_NOTE
     assert chat.send_link and not chat.file
     # And a reader who already has the link is never asked whether they want one.
     from spatalk.brain.flow import Step, next_step
 
-    assert next_step(chat.slots, _cfg(), "chat") == Step.QA
+    assert next_step(chat.slots, _cfg_link(), "chat") == Step.QA
     from spatalk.brain.flow import apply
-    no_sms = _cfg().model_copy(update={"sms_from_number": None})
+    no_sms = _cfg_link().model_copy(update={"sms_from_number": None})
     call = apply(booking, "answer", {"value": "no"}, no_sms, "voice", "+19055550101")
     assert call.file and not call.send_link
 

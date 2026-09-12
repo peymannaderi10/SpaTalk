@@ -3,6 +3,11 @@ from pathlib import Path
 BUNDLE = Path(__file__).resolve().parents[1] / "tenants" / "skincentrix"
 
 
+def _cfg_link():
+    """A tenant that offers the booking link after a filed booking (off by default since 2026-09-12)."""
+    return _cfg().model_copy(update={"offer_booking_link": True})
+
+
 def _cfg():
     from spatalk.tenants.bundle import load_bundle
 
@@ -69,7 +74,7 @@ def test_the_link_offer_comes_after_the_filing_not_before_it():
     is the link put as an extra."""
     from spatalk.brain.flow import Step, next_step
 
-    cfg = _cfg()
+    cfg = _cfg_link()  # moved 2026-09-12: the link is off by default
     s = _filled_booking()
     assert next_step(s, cfg, "voice") == Step.COMPLETE
     assert next_step(s.with_(filed=True), cfg, "voice") == Step.LINK_OFFER
@@ -80,7 +85,7 @@ def test_the_link_offer_comes_after_the_filing_not_before_it():
 def test_the_link_offer_is_voice_only_and_needs_an_sms_number_a_service_and_a_confirmed_number():
     from spatalk.brain.flow import link_offer_open
 
-    cfg = _cfg()
+    cfg = _cfg_link()  # moved 2026-09-12: the link is off by default
     s = _filled_booking().with_(filed=True)
     assert link_offer_open(s, cfg, "voice") is True
     for channel in ("sms", "chat"):
@@ -154,3 +159,24 @@ def test_step_question_keys_and_fills():
         cfg, "voice",
     )
     assert kind_q[0] == "ask_service_kind" and "consultation" in kind_q[1]["consultation"].lower()
+
+
+def test_the_link_is_not_offered_unless_the_tenant_offers_it():
+    """Founder, 2026-09-12: most clinics will be booked on their own platform, so a filed
+    booking is followed by nothing on a call and by the captured line on a text; the caller
+    who asks for the link still gets it."""
+    from spatalk.brain.flow import Slots, Step, link_offer_open, next_step, step_tools
+
+    cfg = _cfg()
+    assert cfg.offer_booking_link is False
+    s = Slots(flow="new_booking", returning_client=False, offers_done=True, service_id="mesojet_facial",
+              practitioner="any", first_name="Dana", phone="+19055550101", phone_confirmed=True,
+              team_note_asked=True, preferred_window=__import__("spatalk.brain.requests", fromlist=["PreferredWindow"]).PreferredWindow(part_of_day="any"))
+    assert link_offer_open(s.with_(filed=True), cfg, "voice") is False
+    assert next_step(s.with_(filed=True), cfg, "voice") == Step.COMPLETE
+    assert link_offer_open(s.with_(filed=True), _cfg_link(), "voice") is True
+    # After the filing the flow closes to Q&A, where a filed booking with a confirmed number
+    # still offers `send_link` for a caller who asks.
+    qa = s.with_(filed=True, flow=None)
+    assert "send_link" in [t.name for t in step_tools(Step.QA, qa, cfg, "voice")]
+    assert "send_link" not in [t.name for t in step_tools(Step.QA, qa.with_(filed=False), cfg, "voice")]
